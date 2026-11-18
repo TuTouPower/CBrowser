@@ -1,49 +1,50 @@
 import { Link } from "react-router";
-import { useQueries } from "@tanstack/react-query";
 import { useI18n } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";
-import type { ProfileRuntimeResponse } from "../../shared/api/types";
 import { Banner, Button, EmptyState, StatusBadge } from "../../shared/ui";
-import { profileKeys, useProfilesQuery } from "../profiles/useProfilesQuery";
+import {
+  useAllProfilesCollectionQuery,
+  useRuntimeSummaryQuery,
+} from "../profiles/useProfilesQuery";
 import { SESS_ENTRY_LINK, SESS_ENTRY_LIST, SESS_ENTRY_PAGE } from "./session_keys";
 
 export function SessionEntryPage() {
   const { t } = useI18n();
   const client = useApiClient();
-  const profilesQuery = useProfilesQuery(client);
+  // t076 review f006: the entry page reads the bounded collection
+  // page (server-filtered to running) instead of the whole profile
+  // table; the running check below keeps the exact "running, not
+  // starting" semantics against the batched summary.
+  // t076 review f008: the status is the exact running state (the
+  // "running" bucket also holds starting rows, which could crowd
+  // truly-running rows out of one page), and every page is walked —
+  // one 100-row page can never stand in for all running rows.
+  const profilesQuery = useAllProfilesCollectionQuery(
+    { status: "running_exact", page_size: 100 },
+    client,
+  );
   const profiles = profilesQuery.data ?? [];
   const profilesPending = profilesQuery.isPending;
   const profilesError = profilesQuery.isError
     ? (profilesQuery.error?.message ?? t("runtimeStateUnknown"))
     : null;
 
-  const runtimeQueries = useQueries({
-    queries: profiles.map((profile) => ({
-      queryKey: profileKeys.runtime(profile.id),
-      queryFn: () => client.profiles.getRuntime(profile.id),
-      // P2: 入口列表运行时查询加 enabled/staleTime，避免空转与抖动。
-      enabled: profiles.length > 0,
-      staleTime: 5000,
-    })),
-  });
-
-  const running = profiles.filter((_, index) => {
-    const runtime = runtimeQueries[index]?.data as
-      | ProfileRuntimeResponse
-      | undefined;
-    return runtime?.observed_state === "running";
-  });
-  const runtimeError = runtimeQueries.some((query) => query.isError)
-    ? (runtimeQueries.find((query) => query.isError)?.error?.message ??
-      t("runtimeStateUnknown"))
+  // t076 AC-002: one batched summary read instead of one runtime
+  // request per profile.
+  const summaryQuery = useRuntimeSummaryQuery(client);
+  const runningIds = new Set(
+    (summaryQuery.data?.entries ?? [])
+      .filter((entry) => entry.observed_state === "running")
+      .map((entry) => entry.profile_id),
+  );
+  const running = profiles.filter((profile) => runningIds.has(profile.id));
+  const runtimeError = summaryQuery.isError
+    ? (summaryQuery.error?.message ?? t("runtimeStateUnknown"))
     : null;
-  const loading =
-    profilesPending || runtimeQueries.some((query) => query.isPending);
+  const loading = profilesPending || summaryQuery.isPending;
   const handleRetry = () => {
     if (profilesQuery.isError) void profilesQuery.refetch();
-    for (const query of runtimeQueries) {
-      if (query.isError) void query.refetch();
-    }
+    if (summaryQuery.isError) void summaryQuery.refetch();
   };
 
   // P2: profiles 失败才整页错误；单个 runtime 失败只顶栏提示，不阻塞

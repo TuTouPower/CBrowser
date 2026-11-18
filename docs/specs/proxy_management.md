@@ -1,7 +1,7 @@
 ---
 slug: proxy_management
 status: active
-tasks: [baseline]
+tasks: [baseline, t076]
 ---
 # 代理库界面
 
@@ -10,7 +10,7 @@ tasks: [baseline]
 ## 1. 列表、卡片视图与测速（t038，t052+；t074 重写见 §10）
 
 - t074 起 `/proxies` 支持列表（8 列）与卡片网格两种视图，由工具栏右侧图标按钮切换；列定义见 §10。旧「6 列 / 位置列 / 使用环境数链接」描述已废弃。
-- 工具栏：搜索（名称、host、国家名、城市、地区标签，大小写不敏感）、协议筛选、独立国家筛选与城市筛选（联动去重）、批量闪电测速按钮（`Zap` 图标）、列表/卡片图标切换器、主按钮「添加代理」。筛选条件 `q` / `scheme` / `country` / `city` 存 URL SearchParams（`useProxyFilters`）、视图布局存 `localStorage`（`useProxyLayout`），刷新后筛选、视图、国家、城市、延迟、状态全部保留；联动筛选须单次原子提交。
+- 工具栏：搜索（名称、host、国家名、城市、地区标签，大小写不敏感）、协议筛选、独立国家筛选与城市筛选（联动去重）、批量闪电测速按钮（`Zap` 图标）、列表/卡片图标切换器、主按钮「添加代理」。筛选条件 `q` / `scheme` / `country` / `city` 存 URL SearchParams（`useProxyFilters`）、视图布局存 `localStorage`（`useProxyLayout`），刷新后筛选、视图、国家、城市、延迟、状态全部保留；联动筛选须单次原子提交。t076 起列表读服务端集合页（`GET /api/v1/proxies/collection`，每页 50 条，翻页器在列表下方），国家筛选值取稳定国家代码（选项由 `GET /api/v1/proxies/countries` 的范围提供，标签为国家名），城市选项随所选国家联动；批量测速只覆盖当前页。
 - 空列表显示空状态。每视图最多一个主按钮。
 - 单条 / 批量测速调用 `POST /api/v1/proxies/{id}/probe`（只接受代理 ID，无 body）+ `useProbeProxyMutation`；**彻底删除组件 `speedResults` state 与 `Date.now() - startedAt` 伪测速**，延迟只取后端持久化的 `ProxyResponse.latency_ms`。后端 `observation_status === "failed"` 即使 HTTP 200 也标红并提示错误 toast、不误报成功；`ok` 提示成功。
 
@@ -35,7 +35,7 @@ tasks: [baseline]
 
 - `used_by_count > 0` 时代理删除按钮禁用并提示先改绑。
 - 后端删除返回 409 时响应体为统一 `ErrorResponse`：`{"error":"proxy_in_use","message":"Conflict","details":{"used_by_count":N},"retryable":false}`；前端以 `errorCode === "proxy_in_use"` 判码、从 `ApiError.details` 取引用数并展示。
-- 使用环境列（t074）只渲染 `0 个` / `1 个` / `2 个` 等计数，不含「查看环境」文案：`0` 不可点；`1` 点击直接经 `useNavigate` 进入对应环境配置页；`>=2` 点击先开 `ProxyUsedByPopover` 列出全部环境（含名称与绿/灰运行点）再点选进入。计数按 `useProfilesQuery` 的 `proxy_id` 客户端分组。旧 `<Link to={"/?proxy=" + id}>` 跳转行为已删除。
+- 使用环境列（t074）只渲染 `0 个` / `1 个` / `2 个` 等计数，不含「查看环境」文案：`0` 不可点；`1` 点击直接经 `useNavigate` 进入对应环境配置页；`>=2` 点击先开 `ProxyUsedByPopover` 列出全部环境（含名称与绿/灰运行点）再点选进入。计数与明细取后端并集（`GET /api/v1/proxies/{id}/used-by`，当前配置 ∪ 运行绑定版本，按环境去重，每项标 `current` / `bound` / `both`），明细只在用户点击时读取；仅被运行中绑定版本占用的代理同样可进入对应环境，删除保护用同一口径。旧 `<Link to={"/?proxy=" + id}>` 跳转行为已删除。
 
 ## 5. 带认证 SOCKS5（t038 / AC-007）
 

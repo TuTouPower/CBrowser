@@ -178,6 +178,12 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 - 边缘解析端点只存在于内部 schema 与服务网络：渲染后的 Caddyfile 对外部 `/api/v1/internal/*` 显式 404，Caddy 的 `forward_auth` 子请求直达 API upstream、不重入外部站点路由。`/stream/agent/register` 不套用 viewer 授权，继续使用独立 Agent 凭证与 API runtime 绑定校验。
 - CDP 本体只由 Browser 容器以临时端口监听 `127.0.0.1`，端口不发布且不向普通 viewer 披露。唯一外部自动化入口仍是带 automation token 与控制权围栏的 `/api/v1/automation/profiles/{profileId}/cdp`；管理会话经专用 Automation 状态端点才可看到 `cdp_ws_path`，普通 Profile 响应不含该字段或 token。引擎内以域名 Host 发起的回环请求（DNS rebinding 的可观察形态）与跨 Origin CDP WebSocket 必须由真实引擎负向测试拒绝。
 
+### 5.8 集合读取投影与全局摘要（t076）
+
+- 列表读是服务端集合投影，不是全量拉取后客户端拼装：`GET /api/v1/profiles|proxies|groups/collection` 在持久层完成搜索 / 筛选 / 稳定排序 / 总数 / 有界分页（`page_size` 钳制 1..100）；有界候选 `…/candidates`（`limit` 钳制 1..50）与代理国家→城市范围 `GET /api/v1/proxies/countries`（键为稳定国家代码）供后续交互使用。
+- 代理引用聚合一次取 3 条 SELECT（当前引用、全部运行行、绑定配置版本 `IN` 查询），与代理数 × 运行绑定数无关；`list_proxies` 在 20/100/1000 规模下 SELECT 数恒定。
+- 运行状态只读一次批量摘要 `GET /api/v1/profiles/runtime-summary`（全部环境状态 + 运行总数）；SSE `runtime_state` 事件带 `config_version` 围栏，旧版本/旧实例迟到事件丢弃，重复事件无副作用且不触发列表重取，有效事件原地更新运行缓存与摘要缓存——摘要更新不依赖单环境运行缓存，围栏按两份缓存中现有的那份判定。环境集合页的行自带分组名/颜色与代理名（服务端按页批量查名），筛选选项读有界候选；任何变更路径失效列表键时同步失效集合键前缀。前端缓存职责：列表只读集合页与摘要，详情按需单读，批量操作目标按稳定 ID 与明确目标快照确定，当前页全选与全部匹配项语义分开。
+
 ## 6. 安全、网络与端口矩阵
 
 |来源|目标|允许操作与协议|安全约束|

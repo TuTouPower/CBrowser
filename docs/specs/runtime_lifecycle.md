@@ -1,7 +1,7 @@
 ---
 slug: runtime_lifecycle
 status: active
-tasks: [baseline]
+tasks: [baseline, t076]
 ---
 # 需求规范：Runtime 生命周期协调
 
@@ -19,6 +19,11 @@ tasks: [baseline]
 - 用户只经 `/api/v1` 设置运行意愿；API 持久化后经内部认证 RPC 驱动 Supervisor 真实启动/停止该 Profile 的 Browser/Stream，前端与测试不直调 Supervisor。
 - Supervisor 不可达时运行意愿保留，错误经 API 响应与 SSE 显式报告；恢复后按退避重试收敛并清除错误。API 重启时对意愿与观测不一致的 Profile 重新收敛。
 - 未配置 Supervisor 时 API 默认显式禁用协调并报告；`CBROWSER_REQUIRE_SUPERVISOR=1` 时缺失配置拒绝启动，生产部署必须启用。
+
+## 集合运行摘要与 SSE 围栏（t076）
+
+- `GET /api/v1/profiles/runtime-summary` 一次返回全部环境的运行摘要（`desired_state` / `observed_state` / `config_version` / 实例 / 失败计数 / 启停与预览捕获时间 / 协调器错误）与运行总数；列表、卡片、工作台入口与关闭的切换器只读它，不再按环境逐个请求 runtime。
+- SSE `runtime_state` 事件带 `config_version`：旧版本或旧实例的迟到事件丢弃，重复/重放事件无副作用且不触发列表重取；有效事件原地更新运行缓存与摘要缓存，重连后以服务端快照为准。
 
 ## 生命周期与代际
 

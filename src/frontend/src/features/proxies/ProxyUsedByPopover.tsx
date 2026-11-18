@@ -1,30 +1,46 @@
-import { useQueries } from "@tanstack/react-query";
 import { useApiClient } from "../../shared/api/client_context";
-import type { ProfileResponse } from "../../shared/api/types";
+import type { ProxyUsedByEntry } from "../../shared/api/types";
 import { Popover } from "../../shared/ui";
 import { useI18n } from "../../i18n";
-import { profileKeys } from "../profiles/useProfilesQuery";
+import { useRuntimeSummaryQuery } from "../profiles/useProfilesQuery";
+
+function kindLabel(
+  kind: ProxyUsedByEntry["kind"],
+  t: ReturnType<typeof useI18n>["t"],
+): string {
+  switch (kind) {
+    case "current":
+      return t("proxyUsedByKindCurrent");
+    case "bound":
+      return t("proxyUsedByKindBound");
+    case "both":
+      return t("proxyUsedByKindBoth");
+  }
+}
 
 export function ProxyUsedByPopover({
-  profiles,
+  entries,
   open,
   onOpenChange,
   onOpenProfile,
 }: {
-  profiles: ProfileResponse[];
+  /** Union detail from GET /proxies/{id}/used-by — same口径 as the count. */
+  entries: ProxyUsedByEntry[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onOpenProfile: (profile: ProfileResponse) => void;
+  onOpenProfile: (profile: { id: string }) => void;
 }) {
   const { t } = useI18n();
   const client = useApiClient();
-  const runtimeQueries = useQueries({
-    queries: profiles.map((profile) => ({
-      queryKey: profileKeys.runtime(profile.id),
-      queryFn: () => client.profiles.getRuntime(profile.id),
-      enabled: open,
-    })),
-  });
+  // t076 AC-002/AC-004 (p121): running dots come from one batched
+  // summary, read only while the popover is open.
+  const { data: summary } = useRuntimeSummaryQuery(client, { enabled: open });
+  const observedById = new Map(
+    (summary?.entries ?? []).map((entry) => [
+      entry.profile_id,
+      entry.observed_state,
+    ]),
+  );
 
   return (
     <Popover
@@ -36,20 +52,19 @@ export function ProxyUsedByPopover({
     >
       <div data-testid="proxy-used-by-popover" className="flex flex-col gap-xs">
         <p className="font-ui text-label-md text-on-surface-muted">
-          {t("proxyUsedByCount", { count: profiles.length })}
+          {t("proxyUsedByCount", { count: entries.length })}
         </p>
         <ul className="flex flex-col gap-2xs">
-          {profiles.map((profile, index) => {
-            const state = runtimeQueries[index]?.data?.observed_state;
-            const running = state === "running";
+          {entries.map((entry) => {
+            const running = observedById.get(entry.profile_id) === "running";
             return (
-              <li key={profile.id}>
+              <li key={entry.profile_id}>
                 <button
                   type="button"
-                  data-testid={`proxy-used-by-item-${profile.id}`}
+                  data-testid={`proxy-used-by-item-${entry.profile_id}`}
                   onClick={() => {
                     onOpenChange(false);
-                    onOpenProfile(profile);
+                    onOpenProfile({ id: entry.profile_id });
                   }}
                   className="flex w-full items-center gap-sm rounded-sm px-sm py-xs font-ui text-body-md text-on-surface hover:bg-surface-hover"
                 >
@@ -59,7 +74,13 @@ export function ProxyUsedByPopover({
                       running ? "bg-success" : "bg-on-surface-muted"
                     }`}
                   />
-                  <span className="truncate">{profile.name}</span>
+                  <span className="truncate">{entry.name}</span>
+                  <span
+                    data-testid={`proxy-used-by-kind-${entry.profile_id}`}
+                    className="ml-auto shrink-0 font-ui text-body-sm text-on-surface-muted"
+                  >
+                    {kindLabel(entry.kind, t)}
+                  </span>
                 </button>
               </li>
             );

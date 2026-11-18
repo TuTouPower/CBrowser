@@ -13,10 +13,8 @@ import {
 } from "lucide-react";
 import { useI18n, type TranslationKey } from "../../i18n";
 import type {
-  GroupResponse,
   ProfileResponse,
   ProfileRuntimeResponse,
-  ProxyResponse,
 } from "../../shared/api/types";
 import {
   Button,
@@ -31,6 +29,7 @@ import {
   TableHeader,
   TableRow,
   Tooltip,
+  type GroupHue,
   type StatusTone,
 } from "../../shared/ui";
 import { formatRelativeTime } from "./formatRelativeTime";
@@ -38,8 +37,10 @@ import { formatRelativeTime } from "./formatRelativeTime";
 export interface EnvironmentRow {
   profile: ProfileResponse;
   runtime?: ProfileRuntimeResponse;
-  group?: GroupResponse;
-  proxy?: ProxyResponse;
+  /** t076 review f006: only the row's display names travel with the
+   * collection page — the row never needs the whole group/proxy row. */
+  group?: { id: string; name: string; color: GroupHue };
+  proxy?: { id: string; name: string };
 }
 
 export type EnvironmentAction =
@@ -195,7 +196,7 @@ export function DirectNetwork({ id }: { id: string }) {
   );
 }
 
-export function ProxyNetwork({ proxy }: { proxy: ProxyResponse }) {
+export function ProxyNetwork({ proxy }: { proxy: { id: string; name: string } }) {
   return (
     <span className="font-ui text-body-sm text-on-surface">
       {proxy.name}

@@ -1,10 +1,13 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import { useQueries } from "@tanstack/react-query";
 import { useRuntimeSnapshot } from "../../app/useRuntimeSnapshot";
 import { useI18n } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";
-import type { ProfileRuntimeResponse } from "../../shared/api/types";
+import type {
+  ProfileResponse,
+  ProfileRuntimeResponse,
+  RuntimeSummaryEntry,
+} from "../../shared/api/types";
 import { Banner, Button, useToast } from "../../shared/ui";
 import { BatchActionBar } from "./BatchActionBar";
 import { EnvironmentCardGrid } from "./EnvironmentCardGrid";
@@ -20,22 +23,46 @@ import { ProfileCreateDialog } from "./ProfileCreateDialog";
 import { ProfileEditDialog } from "./ProfileEditDialog";
 import { useBatchActions } from "./useBatchActions";
 import {
-  filterEnvironmentRows,
   isFiltered,
-  sortEnvironmentRows,
   useEnvironmentFilters,
 } from "./useEnvironmentFilters";
 import { useEnvironmentLayout } from "./useEnvironmentLayout";
 import {
-  profileKeys,
   useDeleteProfileMutation,
   useDuplicateProfileMutation,
-  useGroupsQuery,
-  useProfilesQuery,
-  useProxiesQuery,
+  useGroupCandidatesQuery,
+  useGroupQuery,
+  useProfilesCollectionQuery,
+  useProxyCandidatesQuery,
+  useProxyQuery,
+  useRuntimeSummaryQuery,
   useSetDesiredStateMutation,
   useStopProfileMutation,
 } from "./useProfilesQuery";
+
+/** t076 AC-002: build the row runtime view from one batched summary
+ * entry — the list never issues a per-profile runtime request. */
+function summaryToRuntime(
+  entry: RuntimeSummaryEntry,
+  profile: ProfileResponse,
+): ProfileRuntimeResponse {
+  return {
+    profile_id: entry.profile_id,
+    display_number: profile.display_number,
+    desired_state: entry.desired_state,
+    observed_state: entry.observed_state,
+    runtime_instance_id: entry.runtime_instance_id ?? null,
+    config_version: entry.config_version,
+    failure_count: entry.failure_count,
+    restart_blocked: entry.restart_blocked,
+    last_exit_event_id: null,
+    last_started_at: entry.last_started_at,
+    last_stopped_at: entry.last_stopped_at,
+    preview_captured_at: entry.preview_captured_at ?? null,
+    last_coordinator_error: entry.last_coordinator_error,
+    updated_at: entry.updated_at,
+  };
+}
 
 export function EnvironmentListPage() {
   const { t } = useI18n();
@@ -45,6 +72,20 @@ export function EnvironmentListPage() {
   const { filters, setFilter, clearFilters } = useEnvironmentFilters();
   const [layout, setLayout] = useEnvironmentLayout();
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  // t076 AC-001: server-side paging (50/page); the page resets whenever
+  // any filter changes, so a filtered view never strands on an empty
+  // page. Header select-all below is page-scoped by definition.
+  const [page, setPage] = useState(1);
+  useEffect(() => {
+    setPage(1);
+  }, [
+    filters.q,
+    filters.status,
+    filters.group,
+    filters.platform,
+    filters.proxy,
+    filters.sort,
+  ]);
   const [createOpen, setCreateOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<EnvironmentRow | null>(null);
   const [groupsOpen, setGroupsOpen] = useState(false);
@@ -53,29 +94,72 @@ export function EnvironmentListPage() {
   const [pendingDeleteRow, setPendingDeleteRow] = useState<EnvironmentRow | null>(null);
   const [confirmingBatchDelete, setConfirmingBatchDelete] = useState(false);
 
-  const profilesQuery = useProfilesQuery(client);
-  const groupsQuery = useGroupsQuery(client);
-  const proxiesQuery = useProxiesQuery(client);
-  const profiles = profilesQuery.data ?? [];
-  const groups = groupsQuery.data ?? [];
-  const proxies = proxiesQuery.data ?? [];
+  const profilesQuery = useProfilesCollectionQuery(
+    {
+      search: filters.q || undefined,
+      group_id: filters.group === "all" ? undefined : filters.group,
+      proxy_id: filters.proxy === "all" ? undefined : filters.proxy,
+      status: filters.status === "all" ? undefined : filters.status,
+      platform: filters.platform === "all" ? undefined : filters.platform,
+      sort: filters.sort === "manual" ? "default" : filters.sort,
+      page,
+      page_size: 50,
+    },
+    client,
+  );
+  // t076 review f006: filter options and the move menu read the
+  // bounded candidate endpoints, never the whole group/proxy tables.
+  // The selected filter value is fetched on its own when it falls
+  // outside the first candidate page (e.g. a bookmarked filter URL),
+  // so the select keeps showing it.
+  const groupsQuery = useGroupCandidatesQuery("", 50, client);
+  const proxiesQuery = useProxyCandidatesQuery("", 50, client);
+  const selectedGroupId =
+    filters.group !== "all" && filters.group !== "ungrouped"
+      ? filters.group
+      : null;
+  const selectedProxyId =
+    filters.proxy !== "all" && filters.proxy !== "direct"
+      ? filters.proxy
+      : null;
+  const selectedGroupQuery = useGroupQuery(selectedGroupId, client);
+  const selectedProxyQuery = useProxyQuery(selectedProxyId, client);
+  const summaryQuery = useRuntimeSummaryQuery(client);
+  const profiles = profilesQuery.data?.items ?? [];
+  const total = profilesQuery.data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / 50));
+  const groups = [
+    ...(groupsQuery.data ?? []),
+    ...(selectedGroupQuery.data &&
+    !(groupsQuery.data ?? []).some(
+      (item) => item.id === selectedGroupQuery.data!.id,
+    )
+      ? [selectedGroupQuery.data]
+      : []),
+  ];
+  const proxies = [
+    ...(proxiesQuery.data ?? []),
+    ...(selectedProxyQuery.data &&
+    !(proxiesQuery.data ?? []).some(
+      (item) => item.id === selectedProxyQuery.data!.id,
+    )
+      ? [selectedProxyQuery.data]
+      : []),
+  ];
   const snapshot = useRuntimeSnapshot(client);
 
-  const runtimeQueries = useQueries({
-    queries: profiles.map((item) => ({
-      queryKey: profileKeys.runtime(item.id),
-      queryFn: () => client.profiles.getRuntime(item.id),
-      // P2: 列表运行时查询加 enabled/staleTime，避免空转与抖动。
-      enabled: profiles.length > 0,
-      staleTime: 5000,
-    })),
-  });
-
+  const summaryById = new Map(
+    (summaryQuery.data?.entries ?? []).map((entry) => [
+      entry.profile_id,
+      entry,
+    ]),
+  );
   const runtimeById = new Map<string, ProfileRuntimeResponse | undefined>();
-  profiles.forEach((item, index) => {
+  profiles.forEach((item) => {
+    const entry = summaryById.get(item.id);
     runtimeById.set(
       item.id,
-      runtimeQueries[index]?.data as ProfileRuntimeResponse | undefined,
+      entry ? summaryToRuntime(entry, item) : undefined,
     );
   });
 
@@ -87,17 +171,26 @@ export function EnvironmentListPage() {
     );
   });
 
-  const rows: EnvironmentRow[] = profiles.map((item) => ({
+  // t076 AC-001: search/filter/sort already ran server-side against the
+  // full set; the rows below are exactly the current page.
+  // t076 review f006: the row's group/proxy names travel with the
+  // collection page — no whole-table lookup to name a row.
+  const visibleRows: EnvironmentRow[] = profiles.map((item) => ({
     profile: item,
     runtime: runtimeById.get(item.id),
-    group: groups.find((entry) => entry.id === item.group_id),
-    proxy: proxies.find((entry) => entry.id === item.proxy_id),
+    group:
+      item.group_id && item.group_name
+        ? {
+            id: item.group_id,
+            name: item.group_name,
+            color: item.group_color ?? "slate",
+          }
+        : undefined,
+    proxy:
+      item.proxy_id && item.proxy_name
+        ? { id: item.proxy_id, name: item.proxy_name }
+        : undefined,
   }));
-
-  const visibleRows = sortEnvironmentRows(
-    filterEnvironmentRows(rows, filters),
-    filters.sort,
-  );
 
   const toggle = useCallback((id: string, checked: boolean) => {
     setSelected((prev) => {
@@ -132,7 +225,7 @@ export function EnvironmentListPage() {
 
   const { run, pending } = useBatchActions({
     selected,
-    rows,
+    rows: visibleRows,
     clearSelection,
   });
 
@@ -192,9 +285,8 @@ export function EnvironmentListPage() {
   const profilesError = profilesQuery.isError
     ? (profilesQuery.error?.message ?? t("runtimeStateUnknown"))
     : null;
-  const runtimeError = runtimeQueries.some((query) => query.isError)
-    ? (runtimeQueries.find((query) => query.isError)?.error?.message ??
-      t("runtimeStateUnknown"))
+  const runtimeError = summaryQuery.isError
+    ? (summaryQuery.error?.message ?? t("runtimeStateUnknown"))
     : null;
   // P2: groups/proxies 聚合进列表错误态，避免静默空列表。
   const groupsError = groupsQuery.isError
@@ -206,9 +298,7 @@ export function EnvironmentListPage() {
   const listError = profilesError ?? runtimeError ?? groupsError ?? proxiesError;
   const reloadList = () => {
     if (profilesQuery.isError) void profilesQuery.refetch();
-    for (const query of runtimeQueries) {
-      if (query.isError) void query.refetch();
-    }
+    if (summaryQuery.isError) void summaryQuery.refetch();
     if (groupsQuery.isError) void groupsQuery.refetch();
     if (proxiesQuery.isError) void proxiesQuery.refetch();
   };
@@ -292,6 +382,33 @@ export function EnvironmentListPage() {
           onAction={handleAction}
           previewCapturedAtById={previewCapturedAtById}
         />
+      )}
+
+      {totalPages > 1 && (
+        <div
+          data-testid="env-list-pager"
+          className="flex items-center gap-sm font-ui text-body-md text-on-surface"
+        >
+          <Button
+            size="sm"
+            data-testid="env-list-prev-page"
+            disabled={page <= 1}
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+          >
+            {t("pagePrev")}
+          </Button>
+          <span data-testid="env-list-page-status">
+            {t("pageStatus", { page, pages: totalPages, total })}
+          </span>
+          <Button
+            size="sm"
+            data-testid="env-list-next-page"
+            disabled={page >= totalPages}
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+          >
+            {t("pageNext")}
+          </Button>
+        </div>
       )}
 
       {selected.size > 0 && (

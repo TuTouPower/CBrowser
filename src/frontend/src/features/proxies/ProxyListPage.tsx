@@ -1,10 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { AlertCircle, Pencil, Trash2, Zap } from "lucide-react";
 import { useI18n } from "../../i18n";
 import { ApiError } from "../../shared/api/client";
 import { useApiClient } from "../../shared/api/client_context";
-import type { ProfileResponse, ProxyResponse } from "../../shared/api/types";
+import type { ProxyResponse, ProxyUsedByEntry } from "../../shared/api/types";
 import {
   Banner,
   Button,
@@ -19,8 +19,8 @@ import {
 import {
   useDeleteProxyMutation,
   useProbeProxyMutation,
-  useProfilesQuery,
-  useProxiesQuery,
+  useProxiesCollectionQuery,
+  useProxyCountriesQuery,
 } from "../profiles/useProfilesQuery";
 import { ProxyFormDialog } from "./ProxyFormDialog";
 import { ProxyListToolbar } from "./ProxyListToolbar";
@@ -117,13 +117,33 @@ export function ProxyListPage() {
   const client = useApiClient();
   const navigate = useNavigate();
   const toast = useToast();
-  const proxiesQuery = useProxiesQuery(client);
-  const profilesQuery = useProfilesQuery(client);
-  const proxies = proxiesQuery.data ?? [];
-  const deleteMutation = useDeleteProxyMutation(client);
-  const probeMutation = useProbeProxyMutation(client);
   const { filters, setFilter, setFilters } = useProxyFilters();
   const [layout, setLayout] = useProxyLayout();
+  // t076 AC-001: server-side collection page (50/page); the page resets
+  // whenever any filter changes, so a filtered view never strands on an
+  // empty page.
+  const [page, setPage] = useState(1);
+  useEffect(() => {
+    setPage(1);
+  }, [filters.q, filters.scheme, filters.country, filters.city]);
+  const proxiesQuery = useProxiesCollectionQuery(
+    {
+      search: filters.q || undefined,
+      scheme: filters.scheme === "all" ? undefined : filters.scheme,
+      country_code: filters.country === "all" ? undefined : filters.country,
+      city: filters.city === "all" ? undefined : filters.city,
+      page,
+      page_size: 50,
+    },
+    client,
+  );
+  const countriesQuery = useProxyCountriesQuery(client);
+  const proxies = proxiesQuery.data?.items ?? [];
+  const total = proxiesQuery.data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / 50));
+  const ranges = countriesQuery.data ?? [];
+  const deleteMutation = useDeleteProxyMutation(client);
+  const probeMutation = useProbeProxyMutation(client);
 
   const [probingId, setProbingId] = useState<string | null>(null);
   const [probingAll, setProbingAll] = useState(false);
@@ -132,48 +152,40 @@ export function ProxyListPage() {
   const [deleteTarget, setDeleteTarget] = useState<ProxyResponse | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [usedByTarget, setUsedByTarget] = useState<{
-    profiles: ProfileResponse[];
+    proxy: ProxyResponse;
+    entries: ProxyUsedByEntry[];
   } | null>(null);
 
-  const usedByProfiles = useMemo(() => {
-    const grouped: Record<string, ProfileResponse[]> = {};
-    for (const profile of profilesQuery.data ?? []) {
-      if (!profile.proxy_id) continue;
-      (grouped[profile.proxy_id] ??= []).push(profile);
-    }
-    return grouped;
-  }, [profilesQuery.data]);
+  // t076 AC-001: country/city options come from the server ranges, keyed
+  // by country code (the collection filter matches codes, not display
+  // names). City options follow the selected country (t074 AC-005
+  // linked filters); the country change still resets the city in one
+  // setSearchParams call (see onCountryChange below).
+  const countryOptions = useMemo(
+    () =>
+      ranges.map((range) => ({
+        value: range.country_code,
+        label: range.country_name || range.country_code,
+      })),
+    [ranges],
+  );
 
-  const countryOptions = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const proxy of proxies) {
-      const key = (proxy.country_name || proxy.country_code || "").trim();
-      if (!key || !map.has(key)) {
-        if (key) map.set(key, key);
-      }
-    }
-    return Array.from(map.entries()).map(([value, label]) => ({
-      value,
-      label,
-    }));
-  }, [proxies]);
-
-  // City options follow the selected country (t074 AC-005 linked filters).
   const cityOptions = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const proxy of proxies) {
-      const country = (proxy.country_name || proxy.country_code || "").trim();
-      if (filters.country !== "all" && country !== filters.country) continue;
-      const city = (proxy.city || "").trim();
-      if (city && !map.has(city)) map.set(city, city);
+    const cities = new Set<string>();
+    for (const range of ranges) {
+      if (filters.country !== "all" && range.country_code !== filters.country) {
+        continue;
+      }
+      for (const city of range.cities) cities.add(city);
     }
-    return Array.from(map.entries()).map(([value, label]) => ({
-      value,
-      label,
-    }));
-  }, [proxies, filters.country]);
+    return Array.from(cities).map((value) => ({ value, label: value }));
+  }, [ranges, filters.country]);
 
-  const visible = filterProxies(proxies, filters);
+  // t076 AC-001: search/filter already ran server-side against the full
+  // set; visible is exactly the current page. (filterProxies stays
+  // exported for its direct unit tests; the page no longer filters
+  // client-side.)
+  const visible = proxies;
   const loadError = proxiesQuery.isError
     ? (proxiesQuery.error?.message ?? t("runtimeStateUnknown"))
     : null;
@@ -256,15 +268,28 @@ export function ProxyListPage() {
     toast.show(t("proxyProbeAllSuccess", { count: visible.length }));
   };
 
-  const onUsedBySingle = (profile: ProfileResponse) => {
-    navigate(`/profiles/${encodeURIComponent(profile.id)}/config`);
+  // t076 AC-004: count, detail, navigation and delete protection all
+  // use the backend union (current config ∪ running bound version).
+  // The detail is fetched only when the user opens it; a single entry
+  // navigates straight to that environment, several open the popover.
+  const handleUsedByClick = async (proxy: ProxyResponse) => {
+    if (proxy.used_by_count === 0) return;
+    try {
+      const detail = await client.proxies.getUsedBy(proxy.id);
+      if (detail.entries.length === 1) {
+        navigate(
+          `/profiles/${encodeURIComponent(detail.entries[0]!.profile_id)}/config`,
+        );
+      } else if (detail.entries.length > 1) {
+        setUsedByTarget({ proxy, entries: detail.entries });
+      }
+    } catch {
+      toast.show(t("proxyUsedByLoadFailed"));
+    }
   };
 
-  const onUsedByMany = (
-    _proxy: ProxyResponse,
-    profiles: ProfileResponse[],
-  ) => {
-    setUsedByTarget({ profiles });
+  const onUsedBySingle = (profile: { id: string }) => {
+    navigate(`/profiles/${encodeURIComponent(profile.id)}/config`);
   };
 
   const onCountryChange = (value: string) => {
@@ -365,7 +390,6 @@ export function ProxyListPage() {
             const blocked = proxy.used_by_count > 0;
             const isTesting =
               probingId === id || proxy.observation_status === "pending";
-            const usedBy = usedByProfiles[id] ?? [];
             const count = proxy.used_by_count;
             return (
               <div
@@ -408,27 +432,18 @@ export function ProxyListPage() {
                   <ProxyStatusText proxy={proxy} />
                 </div>
                 <div className="flex items-center justify-between gap-sm border-t border-outline pt-sm">
-                  {count === 0 || usedBy.length === 0 ? (
+                  {count === 0 ? (
                     <span
                       data-testid={`proxy-used-by-${id}`}
                       className="font-ui text-body-sm text-on-surface-muted"
                     >
                       {usedByLabel(count, t)}
                     </span>
-                  ) : usedBy.length === 1 ? (
-                    <button
-                      type="button"
-                      data-testid={`proxy-used-by-${id}`}
-                      onClick={() => onUsedBySingle(usedBy[0]!)}
-                      className="font-ui text-body-sm text-accent hover:underline"
-                    >
-                      {usedByLabel(count, t)}
-                    </button>
                   ) : (
                     <button
                       type="button"
                       data-testid={`proxy-used-by-${id}`}
-                      onClick={() => onUsedByMany(proxy, usedBy)}
+                      onClick={() => void handleUsedByClick(proxy)}
                       className="font-ui text-body-sm text-accent hover:underline"
                     >
                       {usedByLabel(count, t)}
@@ -477,14 +492,39 @@ export function ProxyListPage() {
       ) : (
         <ProxyTable
           proxies={visible}
-          usedByProfiles={usedByProfiles}
           onEdit={openEdit}
           onDelete={requestDelete}
           onProbe={handleProbe}
           probingId={probingId}
-          onUsedBySingle={onUsedBySingle}
-          onUsedByMany={onUsedByMany}
+          onUsedByClick={(proxy) => void handleUsedByClick(proxy)}
         />
+      )}
+
+      {totalPages > 1 && (
+        <div
+          data-testid="proxy-list-pager"
+          className="flex items-center gap-sm font-ui text-body-md text-on-surface"
+        >
+          <Button
+            size="sm"
+            data-testid="proxy-list-prev-page"
+            disabled={page <= 1}
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+          >
+            {t("pagePrev")}
+          </Button>
+          <span data-testid="proxy-list-page-status">
+            {t("pageStatus", { page, pages: totalPages, total })}
+          </span>
+          <Button
+            size="sm"
+            data-testid="proxy-list-next-page"
+            disabled={page >= totalPages}
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+          >
+            {t("pageNext")}
+          </Button>
+        </div>
       )}
 
       <ProxyFormDialog
@@ -495,8 +535,8 @@ export function ProxyListPage() {
 
       {usedByTarget && (
         <ProxyUsedByPopover
-          profiles={usedByTarget.profiles}
-          open={usedByTarget.profiles.length > 0}
+          entries={usedByTarget.entries}
+          open={usedByTarget.entries.length > 0}
           onOpenChange={(open) => {
             if (!open) setUsedByTarget(null);
           }}

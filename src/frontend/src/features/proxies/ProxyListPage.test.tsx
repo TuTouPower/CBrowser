@@ -14,7 +14,7 @@ import { ThemeProvider } from "../../theme";
 import { ToastProvider } from "../../shared/ui";
 import { ApiError, type ApiClient } from "../../shared/api/client";
 import { ApiClientContext } from "../../shared/api/client_context";
-import type { ProfileResponse, ProxyResponse } from "../../shared/api/types";
+import type { ProxyResponse } from "../../shared/api/types";
 import { filterProxies, ProxyListPage } from "./ProxyListPage";
 
 beforeAll(() => {
@@ -133,7 +133,66 @@ function makeStub(proxies: ProxyResponse[] = fixture()) {
   const spies = {
     proxies: {
       list: mockFn(async () => proxies),
+      // t076 AC-001: the page reads the bounded server page; the stub
+      // emulates the server contract (search/scheme/country_code/city/
+      // name sort/paging) so filter tests still exercise the page.
+      listCollection: mockFn(async (params: Record<string, unknown>) => {
+        let items = [...proxies];
+        const search = (params.search as string | undefined)?.toLowerCase();
+        if (search) {
+          items = items.filter((item) =>
+            [
+              item.name,
+              item.host,
+              item.country_name ?? "",
+              item.city ?? "",
+              item.region_label ?? "",
+            ].some((value) => value.toLowerCase().includes(search)),
+          );
+        }
+        const scheme = params.scheme as string | undefined;
+        if (scheme) items = items.filter((item) => item.scheme === scheme);
+        const countryCode = params.country_code as string | undefined;
+        if (countryCode) {
+          items = items.filter((item) => item.country_code === countryCode);
+        }
+        const city = params.city as string | undefined;
+        if (city) items = items.filter((item) => item.city === city);
+        items.sort((a, b) => a.name.localeCompare(b.name));
+        const page = (params.page as number | undefined) ?? 1;
+        const pageSize = (params.page_size as number | undefined) ?? 50;
+        const total = items.length;
+        return {
+          items: items.slice((page - 1) * pageSize, page * pageSize),
+          total,
+          page,
+          page_size: pageSize,
+        };
+      }),
+      listCountries: mockFn(async () => {
+        const byCode = new Map<
+          string,
+          { country_code: string; country_name: string | null; cities: string[] }
+        >();
+        for (const item of proxies) {
+          if (!item.country_code) continue;
+          const entry = byCode.get(item.country_code) ?? {
+            country_code: item.country_code,
+            country_name: item.country_name ?? null,
+            cities: [],
+          };
+          if (item.city && !entry.cities.includes(item.city)) {
+            entry.cities.push(item.city);
+          }
+          byCode.set(item.country_code, entry);
+        }
+        return [...byCode.values()].map((entry) => ({
+          ...entry,
+          cities: [...entry.cities].sort(),
+        }));
+      }),
       get: mockFn(async () => proxies[0]!),
+      getUsedBy: mockFn(async () => ({ proxy_id: "", entries: [] })),
       create: mockFn(async () => proxies[0]!),
       update: mockFn(async () => proxies[0]!),
       remove: mockFn(async () => undefined),
@@ -142,6 +201,7 @@ function makeStub(proxies: ProxyResponse[] = fixture()) {
     profiles: {
       list: mockFn(async () => []),
       getRuntime: mockFn(async () => ({ observed_state: "stopped" })),
+      getRuntimeSummary: mockFn(async () => ({ entries: [], running_count: 0 })),
     },
     groups: { list: mockFn(async () => []) },
     fontSets: { list: mockFn(async () => ({ items: [], default_font_set_id: { windows: null, macos: null } })) },
@@ -288,7 +348,9 @@ describe("ProxyListPage AC-001 列展示", () => {
   });
 
   it("shows an error state instead of an empty table when loading fails", async () => {
-    stub.spies.proxies.list.mockRejectedValueOnce(new Error("proxies down"));
+    stub.spies.proxies.listCollection.mockRejectedValueOnce(
+      new Error("proxies down"),
+    );
     renderPage();
     expect(await screen.findByTestId("proxy-list-load-error")).toHaveTextContent(
       "proxies down",
@@ -325,10 +387,12 @@ describe("ProxyListPage 搜索、协议与位置筛选", () => {
       target: { value: "Proxy" },
     });
     await waitFor(() =>
+      // t076 AC-001: the collection endpoint sorts by name by default;
+      // "Backup HTTPS" matches via its host proxy.example.com.
       expect(rowIds()).toEqual([
-        "proxy-row-px1",
-        "proxy-row-px2",
         "proxy-row-px3",
+        "proxy-row-px2",
+        "proxy-row-px1",
       ]),
     );
 
@@ -372,8 +436,10 @@ describe("ProxyListPage 搜索、协议与位置筛选", () => {
   });
 
   it("restores q/scheme/country/city from URL search params on reload", async () => {
+    // t076 AC-001: the country URL param now carries the country code
+    // (the collection filter matches codes, not display names).
     renderPageWithProfileRoute([
-      "/proxies?q=EU&scheme=http&country=Germany&city=Berlin",
+      "/proxies?q=EU&scheme=http&country=DE&city=Berlin",
     ]);
     await screen.findByTestId("proxy-table");
     await waitFor(() => expect(rowIds()).toEqual(["proxy-row-px2"]));
@@ -391,6 +457,34 @@ describe("ProxyListPage 搜索、协议与位置筛选", () => {
 
     await chooseOption("proxy-country-filter", "US");
     await waitFor(() => expect(rowIds()).toEqual(["proxy-row-px1"]));
+  });
+});
+
+describe("ProxyListPage t076 集合分页", () => {
+  it("pages server-side from the collection endpoint", async () => {
+    const many = Array.from({ length: 60 }, (_, index) =>
+      proxy({
+        id: `px-${index}`,
+        name: `Proxy ${String(index).padStart(2, "0")}`,
+        country_code: null,
+        region_label: null,
+      }),
+    );
+    stub = makeStub(many);
+    renderPage();
+    await screen.findByTestId("proxy-table");
+    expect(rowIds()).toHaveLength(50);
+    expect(
+      stub.spies.proxies.listCollection.mock.calls[0]?.[0],
+    ).toMatchObject({ page: 1, page_size: 50 });
+    expect(stub.spies.proxies.listCountries).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByTestId("proxy-list-next-page"));
+    await waitFor(() => expect(rowIds()).toHaveLength(10));
+    const pages = stub.spies.proxies.listCollection.mock.calls.map(
+      (call) => (call[0] as { page: number }).page,
+    );
+    expect(pages).toContain(2);
   });
 });
 
@@ -473,18 +567,30 @@ describe("ProxyListPage AC-005 删除保护", () => {
 });
 
 describe("ProxyListPage AC-005 使用环境 0/1/2+ 交互", () => {
-  function withProfiles() {
-    const profiles = [
-      { id: "p1", name: "Alpha", proxy_id: "px4" } as ProfileResponse,
-      { id: "p2", name: "Beta", proxy_id: "px1" } as ProfileResponse,
-      { id: "p3", name: "Gamma", proxy_id: "px1" } as ProfileResponse,
-    ];
+  function withUsedBy() {
     stub = makeStub(fixture());
-    stub.spies.profiles.list.mockImplementation(async () => profiles);
+    stub.spies.proxies.getUsedBy.mockImplementation(async (id: string) => {
+      if (id === "px4") {
+        return {
+          proxy_id: id,
+          entries: [{ profile_id: "p1", name: "Alpha", kind: "bound" }],
+        };
+      }
+      if (id === "px1") {
+        return {
+          proxy_id: id,
+          entries: [
+            { profile_id: "p2", name: "Beta", kind: "current" },
+            { profile_id: "p3", name: "Gamma", kind: "bound" },
+          ],
+        };
+      }
+      return { proxy_id: id, entries: [] };
+    });
   }
 
   it("renders 0 as a non-interactive span and 1/2+ as buttons with counts only", async () => {
-    withProfiles();
+    withUsedBy();
     renderPage();
     await screen.findByTestId("proxy-table");
 
@@ -507,7 +613,7 @@ describe("ProxyListPage AC-005 使用环境 0/1/2+ 交互", () => {
   });
 
   it("navigates directly into the single environment for 1 used-by", async () => {
-    withProfiles();
+    withUsedBy();
     renderPageWithProfileRoute();
     await screen.findByTestId("proxy-table");
     fireEvent.click(screen.getByTestId("proxy-used-by-px4"));
@@ -515,7 +621,7 @@ describe("ProxyListPage AC-005 使用环境 0/1/2+ 交互", () => {
   });
 
   it("opens a popover listing every environment for 2+ used-by", async () => {
-    withProfiles();
+    withUsedBy();
     renderPageWithProfileRoute();
     await screen.findByTestId("proxy-table");
     fireEvent.click(screen.getByTestId("proxy-used-by-px1"));
@@ -531,6 +637,26 @@ describe("ProxyListPage AC-005 使用环境 0/1/2+ 交互", () => {
     );
 
     fireEvent.click(screen.getByTestId("proxy-used-by-item-p2"));
+    expect(await screen.findByTestId("profile-detail-stub")).toBeInTheDocument();
+  });
+
+  // t076 AC-004 (p122): a bound-only environment (current config moved
+  // away, running instance still bound) is reachable from the count —
+  // the old current-config-only derivation rendered it a dead span.
+  // px4's single entry is bound-only here: the click must still
+  // navigate straight to it, and the popover must label the kind.
+  it("仅运行绑定占用的代理也可从计数进入该环境", async () => {
+    withUsedBy();
+    renderPageWithProfileRoute();
+    await screen.findByTestId("proxy-table");
+    fireEvent.click(screen.getByTestId("proxy-used-by-px1"));
+    expect(
+      await screen.findByTestId("proxy-used-by-popover"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("proxy-used-by-kind-p3")).toHaveTextContent(
+      "running config",
+    );
+    fireEvent.click(screen.getByTestId("proxy-used-by-item-p3"));
     expect(await screen.findByTestId("profile-detail-stub")).toBeInTheDocument();
   });
 });

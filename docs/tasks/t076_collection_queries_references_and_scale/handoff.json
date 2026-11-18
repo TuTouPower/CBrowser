@@ -1,0 +1,17 @@
+{
+  "tid": "t076",
+  "attempt": 1,
+  "execution_id": "4a9b2a94b1c241438346974f561be8f4",
+  "status": "done",
+  "branch": "t076_collection_queries_references_and_scale",
+  "base_sha": "0445346773ab1c1152be2cbcfd4357395dc31b20",
+  "spec_source_sha": "0445346773ab1c1152be2cbcfd4357395dc31b20",
+  "tests": "全量门禁 evidence5（日志 `~/workspace/cloud-task-logs/t076_fix_gates_round2_fix3.log`，证据 `.scratch/t076_fix_evidence5/`）：contract 388 通过/1 跳过；unit 2210 通过、1 跳过，4 失败 + 10 错误为干净主干 0445346 同款老基线（t063/t068）；integration 210 通过、7 跳过、0 错误；frontend 677 通过、0 失败；design lint/check 与 frontend build 通过。Round 6 审阅双轴独立重跑：后端 t076 两文件 24/24、前端受影响文件 85/85、`test:types` 通过。失败逐项归因见下行。",
+  "blackbox": "云端无 Docker/Chrome/GPU，真实链路验证（AC-008）登记 p126，不在云端门禁内",
+  "review": "full 级；Round 1–4 共 14 条 finding 全部已修并重验消除；Round 5 代码轴因 AC-008 契约文字未修订判 TICK-VOID；契约修订（见上「AC-008 契约修订」条）后 Round 6 双轴均 PASS、0 条新 finding，AC-001–AC-007 TICK-VALID（re_verified），AC-008 按修订后契约判 TICK-VALID（处置型，非已实测通过，真实验证待 p126 本地补验闭环）；review-status overall=PASS",
+  "review_scope": "69ad025aed11463c",
+  "pending": [
+    "p126"
+  ],
+  "findings": []
+}

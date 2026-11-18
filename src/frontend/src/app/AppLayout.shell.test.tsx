@@ -37,6 +37,23 @@ function runtimeFor(id: string, observed = "stopped", error: string | null = nul
   } as ProfileRuntimeResponse;
 }
 
+function summaryFor(id: string, observed = "stopped", error: string | null = null) {
+  return {
+    profile_id: id,
+    desired_state: observed,
+    observed_state: observed,
+    runtime_instance_id: null,
+    config_version: 1,
+    failure_count: 0,
+    restart_blocked: false,
+    last_started_at: null,
+    last_stopped_at: null,
+    preview_captured_at: null,
+    last_coordinator_error: error,
+    updated_at: "2026-01-01T00:00:00Z",
+  };
+}
+
 function installMatchMedia(narrow: boolean) {
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
@@ -63,6 +80,12 @@ function renderShell() {
     profiles: {
       list: vi.fn(async () => PROFILES),
       getRuntime: vi.fn(async (id: string) => runtimeFor(id)),
+      // t076 AC-002: the shell snapshot reads one batched summary, never
+      // per-profile runtime endpoints.
+      getRuntimeSummary: vi.fn(async () => ({
+        entries: [summaryFor("p1"), summaryFor("p2")],
+        running_count: 0,
+      })),
       update: vi.fn(async () => PROFILES[0]),
     },
     health: { check: vi.fn(async () => undefined) },
@@ -158,14 +181,19 @@ describe("AppLayout shell contract (t036+)", () => {
   it("surfaces coordinator banner from SSE runtime data", async () => {
     const view = renderShell();
     await waitFor(() =>
-      expect(view.client.profiles.getRuntime).toHaveBeenCalledTimes(2),
+      expect(view.client.profiles.getRuntimeSummary).toHaveBeenCalledTimes(1),
     );
 
+    // t076 AC-002/AC-003: the banner reads the batched summary cache,
+    // which the SSE sync keeps in step without a refetch.
     act(() => {
-      view.queryClient.setQueryData(
-        profileKeys.runtime("p1"),
-        runtimeFor("p1", "running", "coordinator unreachable"),
-      );
+      view.queryClient.setQueryData(profileKeys.runtimeSummary(), {
+        entries: [
+          summaryFor("p1", "running", "coordinator unreachable"),
+          summaryFor("p2", "stopped"),
+        ],
+        running_count: 1,
+      });
     });
     const banner = await view.findByTestId("runtime-coordinator-error");
     expect(banner).toHaveAttribute("role", "alert");

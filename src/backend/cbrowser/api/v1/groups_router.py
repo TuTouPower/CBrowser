@@ -11,6 +11,8 @@ from cbrowser.api.v1.runtime_views import (
 )
 from cbrowser.auth.dependencies import require_csrf_and_origin
 from cbrowser.domain.models import (
+    CandidateEntry,
+    CollectionPage,
     GroupCreateRequest,
     GroupReorderRequest,
     GroupResponse,
@@ -31,6 +33,42 @@ Service = Annotated[ProfileService, Depends(get_profile_service)]
 @group_router.get("", response_model=list[GroupResponse])
 async def list_groups(service: Service):
     return await service.list_groups()
+
+
+@group_router.get("/collection", response_model=CollectionPage[GroupResponse])
+async def list_groups_collection(
+    service: Service,
+    search: Annotated[str | None, Query(max_length=255)] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=1000)] = 50,
+):
+    """t076 AC-001: bounded server-side group page."""
+    return await service.list_groups_page(
+        search=search, page=page, page_size=page_size
+    )
+
+
+@group_router.get("/candidates", response_model=list[CandidateEntry])
+async def list_group_candidates(
+    service: Service,
+    search: Annotated[str, Query(max_length=255)] = "",
+    limit: Annotated[int, Query(ge=1, le=500)] = 20,
+):
+    """t076 AC-006: bounded name search over groups."""
+    return await service.list_group_candidates(search=search, limit=limit)
+
+
+@group_router.get("/{group_id}", response_model=GroupResponse)
+async def get_group(group_id: str, service: Service):
+    """t076 review f006: one group by id, for echoing a selected
+    filter value that falls outside the bounded candidate page."""
+    group = await service.get_group(group_id)
+    if group is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Group {group_id} not found",
+        )
+    return group
 
 
 @group_router.post("", response_model=GroupResponse, status_code=status.HTTP_201_CREATED)

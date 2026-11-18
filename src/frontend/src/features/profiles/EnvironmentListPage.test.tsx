@@ -180,9 +180,21 @@ interface StubOptions {
 }
 
 function makeStub(options: StubOptions = {}) {
-  const profiles = options.profiles ?? [profile()];
   const groups = options.groups ?? [];
   const proxies = options.proxies ?? [];
+  // t076 review f006: the server fills the row display names into the
+  // collection page — the stub emulates that contract so row assertions
+  // exercise the page's name rendering, not a whole-table lookup.
+  const profiles = (options.profiles ?? [profile()]).map((item) => {
+    const group = groups.find((entry) => entry.id === item.group_id);
+    const proxy = proxies.find((entry) => entry.id === item.proxy_id);
+    return {
+      ...item,
+      group_name: group?.name ?? item.group_name ?? null,
+      group_color: group?.color ?? item.group_color ?? null,
+      proxy_name: proxy?.name ?? item.proxy_name ?? null,
+    };
+  });
   const runtimes =
     options.runtimes ??
     Object.fromEntries(
@@ -191,6 +203,79 @@ function makeStub(options: StubOptions = {}) {
   const spies = {
     profiles: {
       list: mockFn(async () => profiles),
+      // t076 AC-001: the page reads the bounded server page; the stub
+      // emulates the server contract (search/group/proxy/status/
+      // platform/sort/paging) so filter tests still exercise the page.
+      listCollection: mockFn(async (params: Record<string, unknown>) => {
+        let items = [...profiles];
+        const search = (params.search as string | undefined)?.toLowerCase();
+        if (search) {
+          const proxyById = new Map(proxies.map((item) => [item.id, item]));
+          items = items.filter((item) =>
+            [
+              item.name,
+              item.notes ?? "",
+              proxyById.get(item.proxy_id ?? "")?.name ?? "",
+            ].some((value) => value.toLowerCase().includes(search)),
+          );
+        }
+        const groupId = params.group_id as string | undefined;
+        if (groupId) {
+          items =
+            groupId === "ungrouped"
+              ? items.filter((item) => item.group_id == null)
+              : items.filter((item) => item.group_id === groupId);
+        }
+        const proxyId = params.proxy_id as string | undefined;
+        if (proxyId) {
+          items =
+            proxyId === "direct"
+              ? items.filter((item) => item.proxy_id == null)
+              : items.filter((item) => item.proxy_id === proxyId);
+        }
+        const status = params.status as string | undefined;
+        if (status && status !== "all") {
+          const bucket = (observed: string) =>
+            observed === "error"
+              ? "error"
+              : observed === "running" || observed === "starting"
+                ? "running"
+                : "stopped";
+          items = items.filter(
+            (item) =>
+              bucket(
+                (runtimes[item.id] ?? runtime(item.id, "stopped"))
+                  .observed_state,
+              ) === status,
+          );
+        }
+        const platform = params.platform as string | undefined;
+        if (platform && platform !== "all") {
+          items = items.filter(
+            (item) => (item.fingerprint_platform ?? "windows") === platform,
+          );
+        }
+        if (params.sort === "name") {
+          items.sort((a, b) => a.name.localeCompare(b.name));
+        } else if (params.sort === "created") {
+          items.sort(
+            (a, b) =>
+              Date.parse(b.created_at) - Date.parse(a.created_at),
+          );
+        } else {
+          // Server default (manual): stable sort_order, then created_at.
+          items.sort((a, b) => a.sort_order - b.sort_order);
+        }
+        const page = (params.page as number | undefined) ?? 1;
+        const pageSize = (params.page_size as number | undefined) ?? 50;
+        const total = items.length;
+        return {
+          items: items.slice((page - 1) * pageSize, page * pageSize),
+          total,
+          page,
+          page_size: pageSize,
+        };
+      }),
       get: mockFn(
         async (id: string) =>
           profiles.find((item) => item.id === id) ?? profiles[0]!,
@@ -198,6 +283,27 @@ function makeStub(options: StubOptions = {}) {
       getRuntime: mockFn(
         async (id: string) => runtimes[id] ?? runtime(id, "stopped"),
       ),
+      getRuntimeSummary: mockFn(async () => ({
+        entries: Object.values(runtimes).map((entry) => ({
+          profile_id: entry.profile_id,
+          desired_state: entry.desired_state,
+          observed_state: entry.observed_state,
+          config_version: entry.config_version,
+          runtime_instance_id: entry.runtime_instance_id,
+          failure_count: entry.failure_count,
+          restart_blocked: entry.restart_blocked,
+          last_started_at: entry.last_started_at ?? null,
+          last_stopped_at: entry.last_stopped_at ?? null,
+          preview_captured_at:
+            (entry as { preview_captured_at?: string | null })
+              .preview_captured_at ?? null,
+          last_coordinator_error: entry.last_coordinator_error ?? null,
+          updated_at: entry.updated_at,
+        })),
+        running_count: Object.values(runtimes).filter(
+          (entry) => entry.observed_state === "running",
+        ).length,
+      })),
       create: mockFn(async () => profiles[0]!),
       update: mockFn(
         options.updateImpl ??
@@ -223,6 +329,16 @@ function makeStub(options: StubOptions = {}) {
     },
     groups: {
       list: mockFn(async () => groups),
+      // t076 review f006: filter options and the move menu read the
+      // bounded candidate endpoints, never the whole table.
+      listCandidates: mockFn(async () =>
+        groups.map((item) => ({ id: item.id, name: item.name })),
+      ),
+      get: mockFn(async (id: string) => {
+        const found = groups.find((item) => item.id === id);
+        if (!found) throw new Error(`Group ${id} not found`);
+        return found;
+      }),
       create: mockFn(() => undefined),
       update: mockFn(() => undefined),
       remove: mockFn(() => undefined),
@@ -230,7 +346,20 @@ function makeStub(options: StubOptions = {}) {
     },
     proxies: {
       list: mockFn(async () => proxies),
-      get: mockFn(() => undefined),
+      listCandidates: mockFn(async () =>
+        proxies.map((item) => ({
+          id: item.id,
+          name: item.name,
+          country_code: item.country_code ?? null,
+          country_name: null,
+          city: null,
+        })),
+      ),
+      get: mockFn(async (id: string) => {
+        const found = proxies.find((item) => item.id === id);
+        if (!found) throw new Error(`Proxy ${id} not found`);
+        return found;
+      }),
     },
     fontSets: { list: mockFn(async () => ({ items: [], default_font_set_id: { windows: null, macos: null } })) },
     artifacts: { list: mockFn(async () => []) },
@@ -632,8 +761,30 @@ describe("EnvironmentListPage AC-004 SSE 增量", () => {
       last_coordinator_error: "sse failure",
     });
     stub.runtimes.p1 = next;
+    // t076 AC-002/AC-003: the list reads runtime state from the batched
+    // summary cache (kept in step by the SSE sync); writing the summary
+    // is the cache update the page observes.
+    const summaryEntries = Object.values(stub.runtimes).map((entry) => ({
+      profile_id: entry.profile_id,
+      desired_state: entry.desired_state,
+      observed_state: entry.observed_state,
+      config_version: entry.config_version,
+      runtime_instance_id: entry.runtime_instance_id,
+      failure_count: entry.failure_count,
+      restart_blocked: entry.restart_blocked,
+      last_started_at: entry.last_started_at ?? null,
+      last_stopped_at: entry.last_stopped_at ?? null,
+      preview_captured_at: null,
+      last_coordinator_error: entry.last_coordinator_error ?? null,
+      updated_at: entry.updated_at,
+    }));
     act(() => {
-      queryClient.setQueryData(profileKeys.runtime("p1"), next);
+      queryClient.setQueryData(profileKeys.runtimeSummary(), {
+        entries: summaryEntries,
+        running_count: summaryEntries.filter(
+          (entry) => entry.observed_state === "running",
+        ).length,
+      });
     });
 
     await waitFor(() =>
@@ -649,6 +800,47 @@ describe("EnvironmentListPage AC-004 SSE 增量", () => {
         en.runningProfiles.replace("{count}", "0"),
       ),
     );
+  });
+});
+
+describe("EnvironmentListPage t076 集合分页", () => {
+  it("pages server-side and never issues per-profile runtime reads", async () => {
+    const many = Array.from({ length: 60 }, (_, index) =>
+      profile({
+        id: `px-${index}`,
+        name: `Env ${index}`,
+        display_number: index + 1,
+        sort_order: index,
+        created_at: "2026-01-01T00:00:00Z",
+      }),
+    );
+    stub = makeStub({ profiles: many });
+    renderPage();
+    await screen.findByTestId("env-table");
+    expect(rowIds()).toHaveLength(50);
+    expect(
+      screen.getByTestId("env-list-page-status").textContent,
+    ).toContain("1");
+    expect(
+      stub.spies.profiles.listCollection.mock.calls[0]?.[0],
+    ).toMatchObject({ page: 1, page_size: 50 });
+    // t076 AC-002: runtime state comes from one summary read; the
+    // per-profile endpoint is never called for the list.
+    expect(stub.spies.profiles.getRuntime).not.toHaveBeenCalled();
+    expect(stub.spies.profiles.getRuntimeSummary).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByTestId("env-list-next-page"));
+    await waitFor(() =>
+      expect(rowIds()).toHaveLength(10),
+    );
+    expect(
+      screen.getByTestId("env-list-page-status").textContent,
+    ).toContain("2");
+    const pages = stub.spies.profiles.listCollection.mock.calls.map(
+      (call) => (call[0] as { page: number }).page,
+    );
+    expect(pages).toContain(2);
+    expect(stub.spies.profiles.getRuntime).not.toHaveBeenCalled();
   });
 });
 
