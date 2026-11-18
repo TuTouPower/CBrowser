@@ -112,8 +112,36 @@ async def test_core_refuses_unbound_profile(
     key_file = tmp_path / "agent.key"
     key_file.write_text("k" * 32, encoding="utf-8")
     key_file.chmod(0o600)
-    transport = httpx.MockTransport(
-        lambda request: httpx.Response(
+    def _handler(request):
+        # t083: start intent is read through the minimal batch
+        # snapshot — serve it so the state gate passes and the test
+        # reaches the font check (mirrors t041's _running_handler).
+        if request.url.path.endswith("/state/snapshot"):
+            return httpx.Response(
+                200,
+                json={
+                    "api_epoch": "t075-test-epoch",
+                    "profiles": [
+                        {
+                            "profile_id": "p1",
+                            "display_number": 1,
+                            "desired_state": "running",
+                            "observed_state": "stopped",
+                            "runtime_instance_id": None,
+                            "config_version": 1,
+                            "failure_count": 0,
+                            "restart_blocked": False,
+                            "last_exit_event_id": None,
+                            "backoff_started_at": None,
+                            "next_retry_at": None,
+                            "updated_at": "2026-01-01T00:00:00+00:00",
+                            "state_revision": 1,
+                        }
+                    ],
+                    "next_cursor": None,
+                },
+            )
+        return httpx.Response(
             200,
             json={
                 "status": "ok",
@@ -121,7 +149,8 @@ async def test_core_refuses_unbound_profile(
                 "restart_blocked": False,
             },
         )
-    )
+
+    transport = httpx.MockTransport(_handler)
     async with httpx.AsyncClient(
         transport=transport, base_url="http://api"
     ) as api:
