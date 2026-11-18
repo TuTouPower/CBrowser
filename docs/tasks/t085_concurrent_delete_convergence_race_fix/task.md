@@ -26,11 +26,11 @@ pending p139：`tests/unit/test_t078_deletion_lifecycle.py::test_concurrent_requ
 
 <!-- /规范 -->
 
-- [ ] AC-001：同一 profile 的两并发 `request_deletions` 调用只生成一个 intent（`len(ids) == 1`），且该 intent 最终 stage 为 done。
-- [ ] AC-002：新增并发压力回归测试：多轮循环双并发及更高并发数（如 8 并发）均收敛为单 intent、无 `profile_not_found` 误报，修复前在原代码上可复现失败（红信号）。
-- [ ] AC-003：`:350` 的 `profile_not_found` 模式根因已查清并修复（或在 progress.md 书面论证其为同一竞态的不同表现且已覆盖）。
-- [ ] AC-004：`test_t078_deletion_lifecycle.py` 全套隔离通过，且连续 3 轮 `-n 4` 并行复跑不再出现该用例失败。
-- [ ] AC-005：p139 经 `pending.py close p139 --resolution resolved --fix-ref <task/commit> --write` 关闭。
+- [x] AC-001：同一 profile 的两并发 `request_deletions` 调用只生成一个 intent（`len(ids) == 1`），且该 intent 最终 stage 为 done。
+- [x] AC-002：新增并发压力回归测试：多轮循环双并发及更高并发数（如 8 并发）均收敛为单 intent、无 `profile_not_found` 误报，修复前在原代码上可复现失败（红信号）。
+- [x] AC-003：`:350` 的 `profile_not_found` 模式根因已查清并修复（或在 progress.md 书面论证其为同一竞态的不同表现且已覆盖）。
+- [x] AC-004：`test_t078_deletion_lifecycle.py` 全套隔离通过，且连续 3 轮 `-n 4` 并行复跑不再出现该用例失败。
+- [x] AC-005：p139 经 `pending.py close p139 --resolution resolved --fix-ref <task/commit> --write` 关闭。
 
 ### 可测试性声明
 

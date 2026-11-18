@@ -351,6 +351,140 @@ async def test_concurrent_requests_create_single_open_intent(service, repo):
     assert await repo.get_profile(profile.id) is None
 
 
+async def test_concurrent_requests_converge_under_repeated_pressure(
+    service, repo
+):
+    """t085 (p139): repeated concurrent duplicate submissions converge
+    on one intent and finish it; no duplicate intent and no spurious
+    ``profile_not_found`` failure.
+
+    The single-shot test above only exercises one interleaving. The
+    gate failures (final3, t084 merge gate) showed two intermittent
+    modes under parallel load: two intents created for one profile,
+    and the single converged intent ending ``failed`` with
+    ``profile_not_found``. Ten rounds of 8-way concurrency with fresh
+    profiles per round make the race window wide enough to catch
+    both modes on unfixed code.
+    """
+    for round_no in range(10):
+        profile = await _make_profile(repo, f"race-pressure-{round_no}")
+        results = await asyncio.gather(
+            *(
+                service.request_deletions([profile.id])
+                for _ in range(8)
+            )
+        )
+        ids = {ops[0].id for _batch, ops in results}
+        assert len(ids) == 1, f"round {round_no}: {len(ids)} intents"
+        await service.await_pending_deletions()
+        final = await service.get_deletion(ids.pop())
+        assert final is not None, f"round {round_no}: intent vanished"
+        assert final.stage == "done", (
+            f"round {round_no}: stage={final.stage} "
+            f"error={final.error}"
+        )
+        assert await repo.get_profile(profile.id) is None
+
+
+async def test_late_duplicate_intent_completes_when_sibling_deleted_row(
+    service, repo
+):
+    """t085 (p139 :350): a duplicate intent created after the first
+    intent completed must not fail with ``profile_not_found`` — its
+    machine finds the row gone because the sibling already deleted
+    it, and the deletion it represents is complete, so it is done.
+
+    Built directly (the per-profile lock now prevents the race from
+    producing the duplicate in-process): first intent driven to done,
+    then a second intent for the same profile, then drive the second.
+    """
+    profile = await _make_profile(repo, "sibling-victim")
+    first = await repo.create_deletion(
+        batch_id="batch-first",
+        profile_id=profile.id,
+        profile_name=profile.config.name,
+    )
+    await service._drive_deletion(first.id)
+    done_first = await service.get_deletion(first.id)
+    assert done_first is not None and done_first.stage == "done"
+    assert await repo.get_profile(profile.id) is None
+
+    late = await repo.create_deletion(
+        batch_id="batch-late",
+        profile_id=profile.id,
+        profile_name=profile.config.name,
+    )
+    await service._drive_deletion(late.id)
+
+    final = await service.get_deletion(late.id)
+    assert final is not None and final.stage == "done"
+    assert final.error is None
+    assert final.detail["steps"]["database"] == "ok"
+
+
+async def test_guard_still_fails_without_sibling_intent(service, repo):
+    """t085: the accepted-stage guard keeps failing with
+    ``profile_not_found`` when no sibling intent exists — the
+    genuinely-missing receipt semantics (a profile that never
+    existed, or whose row vanished with no other intent) is
+    preserved; only the sibling-proven case completes as done.
+    """
+    profile = await _make_profile(repo, "vanished-alone")
+    operation = await repo.create_deletion(
+        batch_id="batch-alone",
+        profile_id=profile.id,
+        profile_name=profile.config.name,
+    )
+    assert await repo.delete_profile(profile.id)
+
+    await service._drive_deletion(operation.id)
+
+    final = await service.get_deletion(operation.id)
+    assert final is not None and final.stage == "failed"
+    assert final.failed_stage == "accepted"
+    assert final.error == "profile_not_found"
+
+
+async def test_integrity_retry_joins_winner_that_completed(
+    service, repo, monkeypatch
+):
+    """t085: if the winning intent completes while the
+    ``IntegrityError`` retry is polling for an open intent, the retry
+    falls back to the finished intent instead of raising after 50
+    empty polls.
+
+    Simulated with a mocked ``create_deletion`` that — standing in
+    for a concurrent submission — really creates the winner and marks
+    it done before raising ``IntegrityError`` (the in-process
+    per-profile lock makes the real interleaving unreachable; the
+    fallback is the cross-process backstop).
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    profile = await _make_profile(repo, "retry-winner")
+    orig_create = repo.create_deletion
+
+    async def _create_then_conflict(*args, **kwargs):
+        winner = await orig_create(*args, **kwargs)
+        await repo.update_deletion(
+            winner.id,
+            stage="done",
+            failed_stage=None,
+            error=None,
+            detail={},
+        )
+        raise IntegrityError("INSERT", None, Exception("unique"))
+
+    monkeypatch.setattr(repo, "create_deletion", _create_then_conflict)
+
+    _batch, operations = await service.request_deletions([profile.id])
+    assert len(operations) == 1
+    assert operations[0].stage == "done"
+    winner = await repo.find_deletion_for_profile(profile.id)
+    assert winner is not None
+    assert operations[0].id == winner.id
+
+
 async def test_resume_pending_deletions_from_cleaning(service, repo):
     """AC-004: an intent interrupted during cleaning is resumed by a
     fresh service instance and completes without redoing harm."""

@@ -1,0 +1,15 @@
+{
+  "tid": "t085",
+  "attempt": 1,
+  "execution_id": "d3ddb8c12d714df1b5e8dc8b866b58a0",
+  "status": "done",
+  "branch": "t085_concurrent_delete_convergence_race_fix",
+  "base_sha": "5461004dee9b1fac277232b0d5d2f9ddb40e9071",
+  "spec_source_sha": "5461004dee9b1fac277232b0d5d2f9ddb40e9071",
+  "tests": "t078 文件隔离 22/22；连续 3 轮 `-n 4` 全部 22/22；4 进程重负载复现 2000 次零失败；全量门禁 8/9 套件过（unit 14 项非通过全为 t063/t068 老基线，`database is locked` 0 次）",
+  "blackbox": "不适用（无 `[deploy]` AC，真实多进程并发不测）",
+  "review": "2 轮；Round 1 FAIL（仅程序性 AC-005 未完成）；Round 2 PASS，零 finding",
+  "review_scope": "bd3d9a36a30696a4",
+  "pending": [],
+  "findings": []
+}

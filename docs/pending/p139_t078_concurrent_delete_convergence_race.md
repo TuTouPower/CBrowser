@@ -1,7 +1,10 @@
 ---
 pid: "p139"
 slug: "t078_concurrent_delete_convergence_race"
-status: "todo"
+status: "closed"
+resolution: "resolved"
+reason: "t085 修复并发删除收敛竞态：per-profile 锁原子化收敛判定、IntegrityError 重试回退、accepted 守卫 sibling 标 done；压力测试与 3 轮 -n 4 复跑全绿"
+fix_ref: "t085"
 ---
 # p139 t078 并发删除收敛竞态：两并发请求偶发生成 2 个 intent
 
@@ -10,4 +13,4 @@ status: "todo"
 - 根因：待查。收敛路径（`ProfileService.request_deletions` 的去重/建 intent）存在竞态窗口：两请求同时查不到既有 open intent 后各自新建。注意与 p138 的关系：p138 是字体审计写路径缺写事务导致的 `database is locked`；本条的 `:350` 模式曾被误归因为 t068 引擎 pin（`EngineArtifactError: unapproved_engine_build`），经第 2 轮审阅逐行核查 final3.log 证实该报错全部属于 t068 两条测试小节，与本测试无关——读失败日志须按小节标题划界，不能只看 grep 上下文。
 - 测试缺口：现有用例只做一次 `asyncio.gather` 双并发；未覆盖高并发次数、重复运行稳定性（stress 循环）与收敛失败后的可观测断言。应补并发压力回归测试（多次循环双并发断言单 intent）与竞态根因修复后的回归用例。
 - 线索：证据日志 `~/workspace/cloud-task-logs/gate-t077-final3.log`（t078 小节约 559–615 行）；隔离复跑命令：worktree 内 `.scratch/gate_venv/bin/python -m pytest tests/unit/test_t078_deletion_lifecycle.py::test_concurrent_requests_create_single_open_intent -q -p no:xdist`（1 passed，7.41 秒）。
-- 处理：待单立 task 执行（修复收敛竞态＋并发回归测试）。
+- 处理：t085；resolution=resolved；reason=t085 修复并发删除收敛竞态：per-profile 锁原子化收敛判定、IntegrityError 重试回退、accepted 守卫 sibling 标 done；压力测试与 3 轮 -n 4 复跑全绿
