@@ -621,6 +621,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/font-sets/{platform}/{set_id}/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Audit Font Set
+         * @description Schedule an explicit audit of one published set.
+         *
+         *     Returns ``in_flight`` when an audit for the same set is already
+         *     running (requests are deduplicated, never queued twice); the
+         *     verdict lands in the catalog when the audit completes.
+         */
+        post: operations["audit_font_set_api_v1_font_sets__platform___set_id__audit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/profiles/{profile_id}/artifacts": {
         parameters: {
             query?: never;
@@ -1195,6 +1219,15 @@ export interface components {
             /** Missing */
             missing: string[];
         };
+        /** FontSetAuditResponse */
+        FontSetAuditResponse: {
+            /** Platform */
+            platform: string;
+            /** Set Id */
+            set_id: string;
+            /** Status */
+            status: string;
+        };
         /** FontSetInfo */
         FontSetInfo: {
             /** Platform */
@@ -1215,6 +1248,14 @@ export interface components {
              * @default 0
              */
             used_by_count: number;
+            /** State */
+            state: string;
+            /** Revision */
+            revision: number;
+            /** Verified At */
+            verified_at: string | null;
+            /** Audited At */
+            audited_at: string | null;
         };
         /** FontSetIntegrity */
         FontSetIntegrity: {
@@ -1240,11 +1281,11 @@ export interface components {
         };
         /**
          * FontSetListResponse
-         * @description Font sets plus the backend-chosen default per platform (t053 A16).
+         * @description Font sets plus the backend-chosen default per platform.
          *
-         *     ``default_font_set_id`` is decided only by the backend, from the same
-         *     integrity-ok rule as profile creation; the create form preselects it
-         *     and never derives a default of its own.
+         *     ``default_font_set_id`` is decided only by the backend, from the
+         *     catalog's verified records; the create form preselects it and never
+         *     derives a default of its own.
          */
         FontSetListResponse: {
             /** Items */
@@ -5072,6 +5113,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    audit_font_set_api_v1_font_sets__platform___set_id__audit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                platform: string;
+                set_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FontSetAuditResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */

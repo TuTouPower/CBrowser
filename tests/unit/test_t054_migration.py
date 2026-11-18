@@ -25,10 +25,13 @@ REVISION_0007 = "1a8db6b91744"
 REVISION_0008 = "3751fed02a4a"
 # t056 adds 0009 (display_number NOT NULL); t074 adds 0010
 # (country_name/city/latency_ms on proxy_egress_observations); t078 adds
-# 0011 (durable profile deletion intents), which is the current single
-# head. The 0008 assertions below still target 0008 as the revision that
-# deletes the network rows.
+# 0011 (durable profile deletion intents); t081 adds 0012
+# (font_set_assets catalog; numbered 0011 on its branch and
+# rechained to 0012 at merge time), which is the current single
+# head. The 0008 assertions below still target 0008 as the revision
+# that deletes the network rows.
 REVISION_0011 = "c41d9a02e6b7"
+REVISION_0012 = "c81f0a11b001"
 
 NETWORK_KEYS = (
     "network.pending_config",
@@ -51,10 +54,10 @@ def _revision_of_head(tmp_path: Path) -> str:
     return heads[0]
 
 
-def test_head_is_0011_and_single(tmp_path: Path) -> None:
-    """Replaces ``test_head_is_0010_and_single``: t078 0011 is the new
+def test_head_is_0012_and_single(tmp_path: Path) -> None:
+    """Replaces ``test_head_is_0011_and_single``: t081 0012 is the new
     single head; asserting 0010 would lock an obsolete migration head."""
-    assert _revision_of_head(tmp_path) == REVISION_0011
+    assert _revision_of_head(tmp_path) == REVISION_0012
 
 
 def test_upgrade_deletes_all_network_settings_rows(tmp_path: Path) -> None:

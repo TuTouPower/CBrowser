@@ -99,7 +99,7 @@
 
 ## 存储逻辑引用（t080）
 
-领域层只持逻辑引用：Profile 以 UUID 定位其用户数据目录，Artifact 以 artifact id 定位交换文件，字体以 `font_set_id` 定位字体集，部署归属以 instance_id 定位卷集。物理位置（named volume + subpath）只在 Supervisor 的 MountPlanner 与部署/迁移工具中解析（ADR 029）；DB 中保存的 `user_data_dir` 等路径是 API 容器内逻辑路径（`/data/…`），不构成宿主路径契约，宿主目录布局变化不改变任何领域引用与身份。
+领域层只持逻辑引用：Profile 以 UUID 定位其用户数据目录，Artifact 以 artifact id 定位交换文件，字体以 `font_set_id` 定位字体集，部署归属以 instance_id 定位卷集。物理位置（named volume + subpath）只在 Supervisor 的 MountPlanner 与部署/迁移工具中解析（ADR 029）；DB 中保存的 `user_data_dir` 等路径是 API 容器内逻辑路径（`/data/…`），不构成宿主路径契约，宿主目录布局变化不改变任何领域引用与身份。 字体集另有资产目录记录（`font_set_assets`，ADR 030）：`font_set_id` 的可绑定性由目录中该集的验证状态决定（verified 才可绑定/启动），目录记录携带内容身份、detection 覆盖与验证时间，是与 Profile 配置相互独立的资源状态；审计失败撤销可用性但不改动任何 Profile 与用户数据。
 
 ## 语言、时区与高级选项默认值（t053）
 

@@ -331,8 +331,10 @@ def test_fresh_db_schema_matches_golden_except_intended_changes(
     pre-existing column is dropped. t078 0011 extends the registered
     deltas by exactly one new table (``profile_deletions`` with its two
     named indexes, primary-key autoindex and the partial unique index
-    that enforces one open intent per profile); nothing else may appear
-    and nothing pre-existing may vanish."""
+    that enforces one open intent per profile); t081 0012 extends the
+    allowed deltas by exactly one more new table, ``font_set_assets``
+    (the font asset catalog); nothing else may appear and nothing
+    pre-existing may vanish."""
     db = tmp_path / "fresh.db"
     run_database_migrations(db)
     before = {}
@@ -347,7 +349,21 @@ def test_fresh_db_schema_matches_golden_except_intended_changes(
         ("index", "idx_profile_deletions_profile"),
         ("index", "sqlite_autoindex_profile_deletions_1"),
         ("index", "uq_profile_deletions_open_profile"),
+        ("table", "font_set_assets"),
+        ("index", "sqlite_autoindex_font_set_assets_1"),
     }
+    catalog_sql = after[("table", "font_set_assets")]
+    for column in (
+        "platform VARCHAR(32)",
+        "set_id VARCHAR(64)",
+        "integrity TEXT",
+        "state VARCHAR(16)",
+        "revision INTEGER",
+        "state_seq INTEGER",
+        "verified_at VARCHAR(64)",
+        "audited_at VARCHAR(64)",
+    ):
+        assert column in catalog_sql, column
     for key in before:
         if key in (
             ("table", "profiles"),

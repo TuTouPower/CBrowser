@@ -15,8 +15,8 @@ from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 from typing import Any
 
-from cbrowser import font_sets
 from cbrowser.adapters.database.db_errors import classify_dbapi_error
+from cbrowser.adapters.database.font_repository import FontSetRepository
 from cbrowser.adapters.database.repository import (
     ProfileRepository,
 )
@@ -45,6 +45,7 @@ from cbrowser.domain.models import (
 )
 from cbrowser.domain.proxy_endpoint import ProxyEndpoint
 from cbrowser.services.egress_probe import EgressProbeRunner
+from cbrowser.services.font_set_catalog import FontSetCatalogService
 from cbrowser.shared.egress import EgressProbeError
 from cbrowser.shared.profile_locks import ProfileLockRegistry
 from cbrowser.preview import (
@@ -146,29 +147,6 @@ class ReferenceValidationError(ProfileServiceError):
         message = "; ".join(str(d.get("msg", "")) for d in details)
         super().__init__(message)
         self.details = details
-
-
-def _validate_font_set_binding(platform: str, font_set_id: str | None) -> None:
-    """Reject a non-null binding whose set is missing, cross-platform, or
-    fails its integrity check."""
-    if font_set_id is None:
-        return
-    found = font_sets.get_font_set(platform, font_set_id)
-    if found is None:
-        raise InvalidFontSetBindingError(
-            f"font_set_id {font_set_id!r} does not reference an available "
-            f"{platform} font set"
-        )
-    directory, manifest = found
-    if manifest.get("platform") != platform:
-        raise InvalidFontSetBindingError(
-            f"font set {font_set_id!r} platform does not match "
-            f"fingerprint_platform {platform!r}"
-        )
-    if not font_sets.check_font_set(directory)["ok"]:
-        raise InvalidFontSetBindingError(
-            f"font set {font_set_id!r} failed its integrity check"
-        )
 
 
 _SKIP_COPY_FILES = frozenset({"SingletonLock", "SingletonCookie", "SingletonSocket"})
@@ -320,6 +298,39 @@ class ProfileService:
         self._artifact_cleaner: Callable[[str], Awaitable[None]] | None = None
         self.deletion_stop_timeout_seconds = 120.0
         self.deletion_poll_interval_seconds = 0.5
+        self._font_catalog: FontSetCatalogService | None = None
+
+    def set_font_catalog(self, catalog: FontSetCatalogService | None) -> None:
+        """Wire the font catalog after construction (app lifespan)."""
+        self._font_catalog = catalog
+
+    def font_catalog(self) -> FontSetCatalogService:
+        """The shared font asset catalog bound to this service's DB."""
+        if self._font_catalog is None:
+            self._font_catalog = FontSetCatalogService(
+                FontSetRepository(self._repo._session_maker)
+            )
+        return self._font_catalog
+
+    async def _validate_font_set_binding(
+        self, platform: str, font_set_id: str | None
+    ) -> None:
+        """t081: reject a binding the catalog does not record as a
+        verified published set for the platform.  Reads catalog metadata
+        only — font bytes are verified by import/adoption/audit, never
+        on the binding path."""
+        if font_set_id is None:
+            return
+        record = await self.font_catalog().get_asset(platform, font_set_id)
+        if record is None:
+            raise InvalidFontSetBindingError(
+                f"font_set_id {font_set_id!r} does not reference an available "
+                f"{platform} font set"
+            )
+        if not record.verified:
+            raise InvalidFontSetBindingError(
+                f"font set {font_set_id!r} failed its integrity check"
+            )
 
     async def get_settings(self) -> UserSettingsResponse:
         return await self._repo.get_settings()
@@ -490,10 +501,14 @@ class ProfileService:
         # did not supply font_set_id at all. An explicit null ("no font
         # set") is honored and never silently replaced by the default.
         if config.font_set_id is None and not font_set_id_supplied:
-            default = font_sets.default_font_set(config.fingerprint_platform)
+            default = await self.font_catalog().default_set_id(
+                config.fingerprint_platform
+            )
             if default is not None:
                 config = config.model_copy(update={"font_set_id": default})
-        _validate_font_set_binding(config.fingerprint_platform, config.font_set_id)
+        await self._validate_font_set_binding(
+            config.fingerprint_platform, config.font_set_id
+        )
         await self._validate_references(config.group_id, config.proxy_id)
         try:
             return await self._repo.create_profile(
@@ -589,7 +604,7 @@ class ProfileService:
                 font_set_id = patch_dict.get(
                     "font_set_id", current.config.font_set_id
                 )
-                _validate_font_set_binding(platform, font_set_id)
+                await self._validate_font_set_binding(platform, font_set_id)
         # t056 A28: only keys present in the patch are validated; an
         # explicit null clears the reference and needs no lookup.
         if "group_id" in patch_dict or "proxy_id" in patch_dict:

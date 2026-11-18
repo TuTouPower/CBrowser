@@ -93,6 +93,10 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 
 正式运行数据全部位于按部署前缀命名的 Linux named volume（ADR 029，替代 ADR 028 的同路径宿主挂载技巧）：`<prefix>-db`（控制面 DB，独立不变）、`<prefix>-data`（Profile userDataDir、Artifact、预览、runtime-events/outbox、快照、engine/GeoIP 缓存与持久控制状态）、`<prefix>-fonts`（字体集，subpath `<platform>/<set_id>`）、`<prefix>-runtime`（运行期文件：`<profile_id>/…`、`gates/…`、`sockets/…`、`.secrets/…`）。API 与 Supervisor 的容器内逻辑路径不变（`/data`、`/fonts`、socket 根）；Supervisor 的 data_root 成为纯容器内逻辑路径，不再是宿主路径。消费方挂载一律经 `storage_layout.MountPlanner` 把已校验本地路径解析为 `(volume, subpath, target, read_only)` typed mount：Browser 只得自身 Profile 精确 subpath，Stream 不得 Profile/Artifact/字体，字体只读且只给绑定集合；解析不出受管卷归属的来源在构造期拒绝，不存在宿主 bind 回退。宿主数据/字体目录只作迁移源与显式导入/导出源；迁移由 `scripts/storage_migration.py` 以只读盘点、写者/容量/归属校验、恢复点可恢复验证、staging 拷贝、逐文件 SHA-256、journal 分阶段切换与幂等恢复/回退完成，源目录只读保留。release env/manifest 记录卷身份（`CBROWSER_*_VOLUME` / `storage_volumes`）而非宿主路径。跨 DB/data/fonts 的切换不是单一原子事务，靠 journal + 旧集保留收敛（同 3.3 的恢复点口径）。
 
+### 3.5 字体资产目录与验证权威（t081）
+
+字体集是发布后不可变的资源（ADR 030）：受信发布者经导入 CLI 完整验证后以内容寻址 set_id 原子发布进 fonts 卷；API（唯一 DB 写者）在启动接管与显式审计时把验证结论持久化到资产目录 `font_set_assets`（平台、来源/版本、内容身份、文件数、detection 覆盖、验证状态/时间、资源修订 `revision` 与审计围栏 `state_seq`）。runtime REST/SSE、字体列表、默认集选择与 Profile 绑定校验只读目录记录，成本与字体字节数无关；审计有界并发（2）、同集去重、回执按 `state_seq` 围栏条件写入，迟到回执不覆盖已应用的新回执/接管（发布/修复只写文件、经后续审计生效）。运行状态的字体口径以运行实例绑定的配置版本为准。Supervisor 对实际挂入集的启动验证每实例只执行一次（见 supervisor.md），细节与旧实时扫描契约的废止见 ADR 030。
+
 ### 3.3 环境恢复点（t066）
 
 环境级备份恢复的唯一契约是恢复点（`scripts/restore_point.py`，经 `deploy.sh env-backup` / `env-restore` 以一次性 API 镜像容器挂载 named volume `db` 与数据根运行）：一个恢复点 = 同一静默时刻的控制面 DB（SQLite 在线 backup + integrity_check + schema stamp）与全部 Profile 用户数据目录（逐文件 SHA-256 manifest），外加只记文件名/大小的凭据前提清单。备份在 DB 记录存在实际写者时拒绝。恢复先把整套内容 staging 到目标旁并全量校验（哈希/完整性/版本一致/空间），再按 journal 逐项 rename 成套切换；跨介质（DB 卷与数据根）的切换不是单一原子事务，靠 journal + 旧集保留（`.pre-restore-<switch-id>`）保证任一中断点收敛为完整旧集或完整新集，下一次调用先回滚未完成切换。旧的「tar data/instance + db_restore.py 直覆」不构成环境恢复（tar 漏 named volume DB、直覆不校验），仅保留 db_backup/db_restore 作发布流程的 DB 单件备份。契约细节见 `docs/specs/release_deployment.md` 的 t066 节。

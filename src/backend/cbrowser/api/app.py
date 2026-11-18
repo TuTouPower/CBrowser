@@ -322,6 +322,28 @@ def create_app(
         )
         app.state.coordinator = coordinator
 
+        # t081: font asset catalog adoption — published sets lacking a
+        # verified catalog record are fully verified once, in the
+        # background; read paths serve catalog metadata meanwhile and
+        # never hash font bytes.
+        font_catalog = service.font_catalog()
+        app.state.font_catalog = font_catalog
+        adopt_task = asyncio.create_task(font_catalog.adopt_all())
+        app.state.font_adopt_task = adopt_task
+
+        def _log_adoption_failure(task: asyncio.Task) -> None:
+            if task.cancelled():
+                return
+            exc = task.exception()
+            if exc is not None:
+                logging.getLogger("cbrowser.api").exception(
+                    "Font catalog adoption failed; affected sets stay "
+                    "unbindable until a later adoption or audit",
+                    exc_info=exc,
+                )
+
+        adopt_task.add_done_callback(_log_adoption_failure)
+
         # t052: egress probes run in the Supervisor helper (Browser
         # network perspective).  Without a Supervisor the service records
         # a failed observation instead of probing from this process.

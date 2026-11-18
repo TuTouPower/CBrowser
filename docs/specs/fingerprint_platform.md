@@ -1,13 +1,13 @@
 ---
 slug: fingerprint_platform
 status: active
-tasks: [baseline, t080]
+tasks: [baseline, t080, t081]
 ---
 # 需求规范：指纹平台与平台字体集 (fingerprint_platform)
 
 ## 1. 业务目标与适用范围
 
-本 spec 累积 t041 交付的指纹平台选择与平台专有字体集隔离契约，以及 t053 交付的语言分流与字体集链路收紧。Profile 可选 `windows` / `macos` 指纹平台并绑定同平台的不可变字体集；平台专有字体只从官方渠道取得、只在运行时只读挂载，不进镜像与仓库。基础开源字体进入 Browser 镜像满足 CloakBrowser 安装要求，但不进入指纹 Profile 的 fontconfig 白名单；Profile 可见集合只含绑定的平台字体集，避免 Linux 专属字体形成平台指纹矛盾（用户 2026-11-06 裁决）。关联 task：`docs/tasks/t041_fingerprint_platform_fonts/task.md`（AC-001~009）、`docs/tasks/t053_profile_locale_fonts_defaults/task.md`（AC-001~015）。证据：正式 spike `docs/spikes/s014_fingerprint_platform_fonts/report.md`、findings `d032`（UA-CH architecture 裁决）与 `d033`（字体集隔离实测）、`docs/plan_20261105_ui_redesign.md` 6.8 节。
+本 spec 累积 t041 交付的指纹平台选择与平台专有字体集隔离契约，以及 t053 交付的语言分流与字体集链路收紧。Profile 可选 `windows` / `macos` 指纹平台并绑定同平台的不可变字体集；平台专有字体只从官方渠道取得、只在运行时只读挂载，不进镜像与仓库。基础开源字体进入 Browser 镜像满足 CloakBrowser 安装要求，但不进入指纹 Profile 的 fontconfig 白名单；Profile 可见集合只含绑定的平台字体集，避免 Linux 专属字体形成平台指纹矛盾（用户 2026-11-06 裁决）。关联 task：`docs/tasks/t041_fingerprint_platform_fonts/task.md`（AC-001~009）、`docs/tasks/t053_profile_locale_fonts_defaults/task.md`（AC-001~015）、`docs/tasks/t081_immutable_font_resource_lifecycle/task.md`（AC-001~009，字体集不可变资源生命周期与资产目录，ADR 030）。证据：正式 spike `docs/spikes/s014_fingerprint_platform_fonts/report.md`、findings `d032`（UA-CH architecture 裁决）与 `d033`（字体集隔离实测）、`docs/plan_20261105_ui_redesign.md` 6.8 节。
 
 ## 2. 行为契约
 
@@ -17,7 +17,7 @@ tasks: [baseline, t080]
 - `font_set_id`：引用同平台、按内容寻址的不可变字体集，可为 null（未配置平台字体）。
 - 两字段经增量迁移 `0002_fingerprint_platform.py` 加入，属运行配置；修改任一都生成新 `ProfileConfigVersion`，重建容器后生效，不影响其他 Profile。
 - Runner 按绑定配置版本快照选择平台，删除写死的 `--fingerprint-platform=windows` 启动参数。
-- `font_set_id` 必须引用已存在且平台一致的字体集；引用不存在或平台不一致被拒绝。新建 Profile 默认使用后端按完整性规则给出的默认集（只取完整性通过的集，其中最新导入的胜出，无可用集时为 null），前端不再自行按创建时间推导；「无」为显式 null 选项（t053 A16）。
+- `font_set_id` 必须引用已存在且平台一致的字体集；引用不存在或平台不一致被拒绝。新建 Profile 默认使用后端按资产目录给出的默认集（只取目录中 verified 的集，其中最近一次验证通过的胜出，无可用集时为 null；t081 起完整性结论以目录记录为准，读路径不再实时哈希），前端不再自行按创建时间推导；「无」为显式 null 选项（t053 A16）。
 
 ### 2.2 字体分层与 fontconfig 白名单
 

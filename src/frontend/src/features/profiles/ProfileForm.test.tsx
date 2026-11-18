@@ -75,6 +75,10 @@ function fontSet(overrides: Partial<FontSetInfo> = {}): FontSetInfo {
     },
     file_count: 10,
     used_by_count: 0,
+    state: "verified",
+    revision: 1,
+    verified_at: "2026-11-18T00:00:00+00:00",
+    audited_at: null,
     ...overrides,
   };
 }
