@@ -1,7 +1,7 @@
 ---
 slug: proxy_management
 status: active
-tasks: [baseline, t076]
+tasks: [baseline, t076, t079]
 ---
 # 代理库界面
 
@@ -10,7 +10,7 @@ tasks: [baseline, t076]
 ## 1. 列表、卡片视图与测速（t038，t052+；t074 重写见 §10）
 
 - t074 起 `/proxies` 支持列表（8 列）与卡片网格两种视图，由工具栏右侧图标按钮切换；列定义见 §10。旧「6 列 / 位置列 / 使用环境数链接」描述已废弃。
-- 工具栏：搜索（名称、host、国家名、城市、地区标签，大小写不敏感）、协议筛选、独立国家筛选与城市筛选（联动去重）、批量闪电测速按钮（`Zap` 图标）、列表/卡片图标切换器、主按钮「添加代理」。筛选条件 `q` / `scheme` / `country` / `city` 存 URL SearchParams（`useProxyFilters`）、视图布局存 `localStorage`（`useProxyLayout`），刷新后筛选、视图、国家、城市、延迟、状态全部保留；联动筛选须单次原子提交。t076 起列表读服务端集合页（`GET /api/v1/proxies/collection`，每页 50 条，翻页器在列表下方），国家筛选值取稳定国家代码（选项由 `GET /api/v1/proxies/countries` 的范围提供，标签为国家名），城市选项随所选国家联动；批量测速只覆盖当前页。
+- 工具栏：搜索（名称、host、国家名、城市、地区标签，大小写不敏感）、协议筛选、独立国家筛选与城市筛选（联动去重）、批量闪电测速按钮（`Zap` 图标）、列表/卡片图标切换器、主按钮「添加代理」。筛选条件 `q` / `scheme` / `country` / `city` 存 URL SearchParams（`useProxyFilters`）、视图布局存 `localStorage`（`useProxyLayout`），刷新后筛选、视图、国家、城市、延迟、状态全部保留；联动筛选须单次原子提交。t076 起列表读服务端集合页（`GET /api/v1/proxies/collection`，每页 50 条，翻页器在列表下方），国家筛选值取稳定国家代码（选项由 `GET /api/v1/proxies/countries` 的范围提供，t079 起标签为国旗 + 国家名并按规范英文名排序、城市按同一规则排序，身份始终是代码），城市选项随所选国家联动；批量测速只覆盖当前页。t079 起测速失败在表格、卡片与编辑弹窗统一呈本地化错误说明（机器码仅作诊断保留），国家呈现统一为国旗 + 名称（未知代码用占位），见 ui_design_system §2.9。
 - 空列表显示空状态。每视图最多一个主按钮。
 - 单条 / 批量测速调用 `POST /api/v1/proxies/{id}/probe`（只接受代理 ID，无 body）+ `useProbeProxyMutation`；**彻底删除组件 `speedResults` state 与 `Date.now() - startedAt` 伪测速**，延迟只取后端持久化的 `ProxyResponse.latency_ms`。后端 `observation_status === "failed"` 即使 HTTP 200 也标红并提示错误 toast、不误报成功；`ok` 提示成功。
 

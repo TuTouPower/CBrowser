@@ -30,7 +30,7 @@ export function EnvironmentCard({
   const { t } = useI18n();
   const id = row.profile.id;
   const observed = row.runtime?.observed_state ?? "stopped";
-  const status = statusDescriptor(observed);
+  const status = statusDescriptor(row.runtime?.observed_state);
   const running = observed === "running";
   const [failedCapturedAt, setFailedCapturedAt] = useState<string | null>(null);
   const capturedAt = previewCapturedAt ?? null;

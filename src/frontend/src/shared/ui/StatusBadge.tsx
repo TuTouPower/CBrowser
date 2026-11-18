@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { AlertTriangle, CircleCheck, CircleX, LoaderCircle, MinusCircle } from "lucide-react";
+import { AlertTriangle, CircleCheck, CircleX, Globe, LoaderCircle, MinusCircle } from "lucide-react";
+import { regionFlagEmoji } from "../presentation";
 import { cn } from "./cn";
 
 export type StatusTone = "running" | "transition" | "error" | "stopped";
@@ -82,10 +83,39 @@ export function ProtocolChip({ protocol }: { protocol: string }) {
   );
 }
 
-export function RegionCode({ code }: { code: string }) {
+export function RegionBadge({
+  code,
+  name,
+  unknownLabel,
+}: {
+  code: string;
+  /** Localized display name; falls back to the code itself. */
+  name?: string | null;
+  /** Accessible name used when the code is not a valid region code. */
+  unknownLabel: string;
+}) {
+  const flag = regionFlagEmoji(code);
+  if (flag === null) {
+    // Unknown code: never fabricate a flag; one consistent placeholder
+    // with a complete accessible name (t079 AC-005).
+    return (
+      <span
+        role="img"
+        aria-label={unknownLabel}
+        className="inline-flex items-center gap-xs rounded-sm bg-surface-subtle px-sm py-2xs font-ui text-label-sm text-on-surface-muted"
+      >
+        <Globe aria-hidden="true" className="size-(--component-icon-xs-size)" />
+        <span aria-hidden="true">{name ?? code}</span>
+      </span>
+    );
+  }
+  const displayName = name ?? code.toUpperCase();
   return (
-    <span className="inline-flex items-center rounded-sm bg-surface-subtle px-sm py-2xs font-mono text-mono-md text-on-surface">
-      {code}
+    <span className="inline-flex items-center gap-xs rounded-sm bg-surface-subtle px-sm py-2xs font-ui text-label-sm text-on-surface">
+      <span role="img" aria-label={displayName} className="leading-none">
+        <span aria-hidden="true">{flag}</span>
+      </span>
+      <span>{displayName}</span>
     </span>
   );
 }

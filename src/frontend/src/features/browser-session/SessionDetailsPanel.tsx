@@ -8,6 +8,7 @@ import type {
   ProxyResponse,
 } from "../../shared/api/types";
 import { Banner, Button, MonoValue } from "../../shared/ui";
+import { proxyProbeErrorLabelKey } from "../../shared/presentation";
 import { formatFontSetDisplayName } from "../settings/SettingsPage";
 import { formatPlatformLabel } from "../profiles/EnvironmentTable";
 import { SESS_COPY_VALUE, SESS_DETAILS_PANEL, sessId } from "./session_keys";
@@ -154,7 +155,7 @@ export function SessionDetailsPanel(props: SessionDetailsPanelProps): JSX.Elemen
     if (!proxy) return "-";
     if (proxy.observation_status === "pending") return t("proxyCountryProbing");
     if (proxy.observation_status === "failed") {
-      return proxy.observation_error_code ?? t("proxyProbeFailed");
+      return t(proxyProbeErrorLabelKey(proxy.observation_error_code));
     }
     if (proxy.observation_status === "ok") {
       const place = [proxy.country_name ?? proxy.country_code, proxy.city]

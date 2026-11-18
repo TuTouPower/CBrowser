@@ -51,8 +51,7 @@ export function ProfileDetailPage() {
         ? "maintenance"
         : "config";
 
-  const observed = runtime?.observed_state ?? "stopped";
-  const status = statusDescriptor(observed);
+  const status = statusDescriptor(runtime?.observed_state);
   const group = groups?.find((item) => item.id === profile?.group_id);
   const profileLoadError = profileQuery.isError
     ? (profileQuery.error?.message ?? t("runtimeStateUnknown"))

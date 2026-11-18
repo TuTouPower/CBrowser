@@ -10,7 +10,7 @@ import {
   IconButton,
   MonoValue,
   ProtocolChip,
-  RegionCode,
+  RegionBadge,
   Table,
   TableBody,
   TableCell,
@@ -19,6 +19,7 @@ import {
   TableRow,
   Tooltip,
 } from "../../shared/ui";
+import { proxyProbeErrorLabelKey } from "../../shared/presentation";
 
 export interface ProxyTableProps {
   proxies: ProxyResponse[];
@@ -108,14 +109,17 @@ export function ProxyTable({
                   <MonoValue>{`${proxy.host}:${proxy.port}`}</MonoValue>
                 </TableCell>
                 <TableCell>
-                  <div className="flex items-center gap-xs">
-                    {proxy.country_code ? (
-                      <RegionCode code={proxy.country_code} />
-                    ) : null}
+                  {proxy.country_code ? (
+                    <RegionBadge
+                      code={proxy.country_code}
+                      name={proxy.country_name}
+                      unknownLabel={t("regionUnknown")}
+                    />
+                  ) : (
                     <span className="font-ui text-body-sm text-on-surface">
-                      {proxy.country_name ?? proxy.country_code ?? "—"}
+                      {"—"}
                     </span>
-                  </div>
+                  )}
                 </TableCell>
                 <TableCell>
                   <span className="font-ui text-body-sm text-on-surface">
@@ -140,8 +144,9 @@ export function ProxyTable({
                     <span
                       data-testid={`proxy-status-${id}`}
                       className="font-ui text-body-sm text-danger"
+                      title={proxy.observation_error_code ?? undefined}
                     >
-                      {proxy.observation_error_code ?? t("proxyProbeFailed")}
+                      {t(proxyProbeErrorLabelKey(proxy.observation_error_code))}
                     </span>
                   ) : (
                     <span className="font-ui text-body-sm text-on-surface-muted">

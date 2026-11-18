@@ -1,0 +1,15 @@
+{
+  "tid": "t079",
+  "attempt": 1,
+  "execution_id": "c9a1ccd9dfa941c0836a6d0df3f091a2",
+  "status": "done",
+  "branch": "t079_ui_status_errors_and_location_semantics",
+  "base_sha": "a8c916410d2e470de38d18c0c2e450a487ab1036",
+  "spec_source_sha": "dffadb298c123ae77a8e8b1f224731ba59030076",
+  "tests": "全量门禁（日志 ~/workspace/cloud-task-logs/t079_gate3.log＋.scratch/t079_gate_evidence3/）：protocol_drift_check、requirements_check、design_lint、design_check、frontend_build 均 exit 0；contract 388 过/1 跳；unit 2226 过、4 失败/10 错误与 t076/t078 基线逐项一致（t063×2 失败＋t063 built 系列 10 错误依赖本机外构建产物路径、t068×2 失败）；integration 213 过/7 跳、4 错误均为隔离 API 就绪窗口负载 flaky（test_normal_exit_replay×2、test_supervisor_observation_authority、test_supervisor_manual_retry，逐条单跑全过）；frontend 692 过/1 失败（ProxyListPage 列展示用例 5000ms 负载超时，单跑 582ms 通过）。相对基线无新增失败；新增 presentation 单测 10 条全过。前两轮门禁失败均为环境问题（gate venv 缓存缺失、jpeginfo 断链、Node 24 回落），已按既有配方修复后重跑，非交付问题。",
+  "blackbox": "本 task 为纯前端呈现语义统一，无 [deploy] AC；真实浏览器长名称/窄窗口目视检查未在云端执行（无真实浏览器拓扑），组件级断言已覆盖下拉去徽标与可访问状态，余目视项不阻塞本 task 契约（AC 均可自动测试，见 task.md 可测试性声明）。",
+  "review": "Round 1 general 轴 FAIL（3 条：f001 important 未分配国家代码伪造国旗、f002 minor DisplayNames 重复构造、f003 minor 非拉丁排序断言缺失）→ 全部修复并写入 Review 处置表 → Round 2 复审（见 review_general.md 最新轮次）",
+  "review_scope": "06ec404687dd87f7",
+  "pending": [],
+  "findings": []
+}

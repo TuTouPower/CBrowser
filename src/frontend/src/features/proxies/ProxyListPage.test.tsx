@@ -311,7 +311,9 @@ describe("ProxyListPage AC-001 列展示", () => {
     expect(px1.textContent).toContain("US Proxy");
     expect(px1.textContent).toContain("socks5");
     expect(px1.textContent).toContain("1.2.3.4:1080");
-    expect(px1.textContent).toContain("US");
+    // t079 AC-005: the country cell shows flag + name, not the raw
+    // letter code as a badge.
+    expect(px1.textContent).toContain("🇺🇸");
     expect(within(px1).getByTestId("proxy-status-px1")).toHaveTextContent(
       en.proxyAvailable,
     );
@@ -320,7 +322,7 @@ describe("ProxyListPage AC-001 列展示", () => {
     expect(px2.textContent).toContain("10.0.0.1:8080");
     expect(px2.textContent).toContain("Germany");
     expect(px2.textContent).toContain("Berlin");
-    expect(px2.textContent).toContain("DE");
+    expect(px2.textContent).toContain("🇩🇪");
     expect(screen.getByTestId("proxy-note-trigger-px2")).toHaveAttribute(
       "aria-label",
       "primary",
@@ -449,13 +451,15 @@ describe("ProxyListPage 搜索、协议与位置筛选", () => {
     renderPage();
     await screen.findByTestId("proxy-table");
 
-    await chooseOption("proxy-country-filter", "Germany");
+    // t079 AC-004/AC-005: country options carry flag + name (identity
+    // stays the country code), so selection uses the new labels.
+    await chooseOption("proxy-country-filter", "🇩🇪 Germany");
     await waitFor(() => expect(rowIds()).toEqual(["proxy-row-px2"]));
 
     await chooseOption("proxy-city-filter", "Berlin");
     await waitFor(() => expect(rowIds()).toEqual(["proxy-row-px2"]));
 
-    await chooseOption("proxy-country-filter", "US");
+    await chooseOption("proxy-country-filter", "🇺🇸 US");
     await waitFor(() => expect(rowIds()).toEqual(["proxy-row-px1"]));
   });
 });
@@ -697,7 +701,7 @@ describe("ProxyListPage 闪电测速与可用性检测 (t052+)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("renders successful latency in green and failed error code in red", async () => {
+  it("renders successful latency in green and failed probe errors as localized text in red", async () => {
     stub = makeStub([
       proxy({
         id: "ok1",
@@ -720,7 +724,12 @@ describe("ProxyListPage 闪电测速与可用性检测 (t052+)", () => {
     expect(ok.className).toContain("text-success");
 
     const bad = screen.getByTestId("proxy-status-bad1");
-    expect(bad).toHaveTextContent("proxy_auth_failed");
+    // t079 AC-001: the main status shows the localized explanation for
+    // the code; the raw machine code stays available for diagnostics
+    // via the title, never as the primary text.
+    expect(bad).toHaveTextContent(en.proxyErrorAuthFailed);
+    expect(bad).not.toHaveTextContent("proxy_auth_failed");
+    expect(bad).toHaveAttribute("title", "proxy_auth_failed");
     expect(bad.className).toContain("text-danger");
   });
 

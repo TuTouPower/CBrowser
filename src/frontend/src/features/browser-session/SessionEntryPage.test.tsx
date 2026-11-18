@@ -229,7 +229,7 @@ describe("SessionEntryPage", () => {
     expect(links).toHaveLength(1);
     expect(links[0]).toHaveAttribute("href", "/session/p1");
     expect(links[0]!.textContent).toContain("Alpha");
-    expect(links[0]!.textContent).toContain(en.sessRunning);
+    expect(links[0]!.textContent).toContain(en.statusRunning);
     expect(screen.getByTestId(SESS_ENTRY_PAGE)).toBeInTheDocument();
     expect(screen.getByTestId(SESS_ENTRY_LIST)).toBeInTheDocument();
     expect(screen.queryByText("Beta")).toBeNull();

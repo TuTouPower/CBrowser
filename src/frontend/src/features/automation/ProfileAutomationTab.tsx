@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { Check, Copy, Cpu } from 'lucide-react';
 import { useI18n } from '../../i18n';
+import { environmentStatusDescriptor } from '../../shared/presentation';
 import { useApiClient } from '../../shared/api/client_context';
 import {
   Banner,
   Button,
   MonoValue,
   StatusBadge,
-  type StatusTone,
 } from '../../shared/ui';
 import {
   useProfileRuntimeQuery,
@@ -19,13 +19,6 @@ function absoluteWebSocketUrl(path: string): string {
   if (typeof window === 'undefined') return path;
   const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
   return `${scheme}://${window.location.host}${path}`;
-}
-
-function stateTone(state: string): StatusTone {
-  if (state === 'running') return 'running';
-  if (state === 'stopped') return 'stopped';
-  if (state === 'error') return 'error';
-  return 'transition';
 }
 
 export function ProfileAutomationTab({ profileId }: { profileId: string }) {
@@ -51,13 +44,10 @@ export function ProfileAutomationTab({ profileId }: { profileId: string }) {
     }
   };
 
-  const runtimeState = automation.data?.runtime_observed_state ?? '';
-  const stateLabel =
-    runtimeState === 'running'
-      ? t('statusRunning')
-      : runtimeState === 'stopped'
-        ? t('statusStopped')
-        : runtimeState;
+  const runtimeDescriptor = environmentStatusDescriptor(
+    automation.data?.runtime_observed_state,
+  );
+  const stateLabel = t(runtimeDescriptor.label);
 
   const control = runtime.data?.control ?? null;
 
@@ -128,7 +118,7 @@ export function ProfileAutomationTab({ profileId }: { profileId: string }) {
               <h3 className="mb-sm font-ui text-label-sm text-on-surface-muted">
                 {t('automationRuntimeState')}
               </h3>
-              <StatusBadge tone={stateTone(runtimeState)} label={stateLabel} />
+              <StatusBadge tone={runtimeDescriptor.tone} label={stateLabel} />
             </div>
             <div>
               <h3 className="mb-sm font-ui text-label-sm text-on-surface-muted">

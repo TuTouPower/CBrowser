@@ -216,9 +216,15 @@ describe("EnvironmentSwitcher", () => {
     fireEvent.click(trigger);
     const firstItem = await screen.findByTestId(sessId("switcher-item", "p1"));
     await waitFor(() =>
-      expect(firstItem.textContent).toContain(en.sessRunning),
+      expect(firstItem.textContent).toContain(en.statusRunning),
     );
-    expect(trigger.textContent).not.toContain(en.sessRunning);
+    // t079 AC-003: no duplicate right-side badge on items; the status
+    // is carried by the leading dot plus an accessible text label.
+    expect(firstItem).toHaveAttribute(
+      "aria-label",
+      `Alpha (${en.statusRunning})`,
+    );
+    expect(trigger.textContent).not.toContain(en.statusRunning);
 
     const search = await screen.findByTestId(SESS_SWITCHER_SEARCH);
 

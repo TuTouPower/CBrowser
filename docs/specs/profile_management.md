@@ -1,7 +1,7 @@
 ---
 slug: profile_management
 status: active
-tasks: [baseline, t076, t078]
+tasks: [baseline, t076, t078, t079]
 ---
 # 需求规范：Profile 管理与外部标签页
 
@@ -139,3 +139,7 @@ tasks: [baseline, t076, t078]
 ## launch_args 单一严格校验（t069）
 
 - `launch_args` 全系统只有 `validate_launch_args` 一处校验：创建、更新与持久化加载（`ProfileConfig`）共用；删除原加载侧的静默过滤（`filter_launch_args`）。存量行含白名单外参数时，repository 加载即抛指名该 Profile 的错误，要求先修复数据；合法的 locale/timezone None 自动推导与 PATCH 缺省语义不变。
+
+## 状态呈现（t079）
+
+- 环境运行状态的呈现统一走共享语义映射（见 ui_design_system §2.9）：列表、卡片、详情、状态筛选、工作台与自动化使用同一组状态词条；runtime 未加载或状态不在枚举内时显式呈「未知」，不回退为「已停止」。
