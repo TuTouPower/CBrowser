@@ -213,17 +213,17 @@ beforeEach(() => {
 });
 
 describe("SessionHeader", () => {
-  // t073 AC-002/AC-003: 顶栏改为直接可见、带主语的本地化状态文案并接入
-  // success 绿色语义样式。旧用例断言 sr-only 的 "State"/"Transport" 与裸词
-  // "Running"/"Ready"，锁定了隐藏主语缺陷，故整体替换为新语义用例
-  //（禁止就地把旧预期改成当前实现的输出）。
-  it("顶栏状态徽标直接显示带主语的本地化文案，无 sr-only 隐藏主语", () => {
+  // t079 AC-002/AC-003 整体替换 t073 的带主语长文案语义：顶栏环境状态
+  // 改用全站共享短文案（运行中/Running，与列表/卡片同一词条），不再用
+  // 「环境运行中」式长文案；transport 徽标保留带主语文案以便与环境状态
+  // 独立区分。runtime 缺失时环境状态呈显式「未知」，不伪装成已停止。
+  it("顶栏环境徽标显示共享短文案、传输徽标保留带主语文案", () => {
     renderHeader(fixture());
 
     const header = screen.getByTestId(SESS_HEADER);
     expect(
       within(screen.getByTestId(OBSERVED_STATE_ID)).getByText(
-        en.sessHeaderEnvRunning,
+        en.statusRunning,
       ),
     ).toBeInTheDocument();
     expect(
@@ -240,7 +240,7 @@ describe("SessionHeader", () => {
     renderHeader(fixture());
 
     const badge = within(screen.getByTestId(OBSERVED_STATE_ID)).getByText(
-      en.sessHeaderEnvRunning,
+      en.statusRunning,
     );
     expect(badge.className).toContain("bg-success-soft");
     expect(badge.className).toContain("text-success");
@@ -277,13 +277,13 @@ describe("SessionHeader", () => {
     ).toBeNull();
   });
 
-  it("中文界面顶栏显示带主语的中文文案（AC-003）", () => {
+  it("中文界面顶栏环境显示共享短文案、传输保留带主语中文文案（t079 AC-003）", () => {
     localStorage.setItem("cbrowser.locale", "zh");
     renderHeader(fixture());
 
     expect(
       within(screen.getByTestId(OBSERVED_STATE_ID)).getByText(
-        zh.sessHeaderEnvRunning,
+        zh.statusRunning,
       ),
     ).toBeInTheDocument();
     expect(
@@ -291,7 +291,7 @@ describe("SessionHeader", () => {
         zh.sessHeaderTransportReady,
       ),
     ).toBeInTheDocument();
-    expect(zh.sessHeaderEnvRunning).toBe("环境运行中");
+    expect(zh.statusRunning).toBe("运行中");
     expect(zh.sessHeaderTransportReady).toBe("数据传输正常");
   });
 
@@ -341,12 +341,12 @@ describe("SessionHeader", () => {
     expect(within(badge).queryByText("half_open")).toBeNull();
   });
 
-  it("runtime 为空时 observed 回落带主语的 stopped、transport 回落带主语的 unknown，无待应用标记", () => {
+  it("runtime 为空时 observed 呈显式未知、transport 回落带主语的 unknown，无待应用标记", () => {
     renderHeader(fixture({ runtime: null }));
 
     expect(
       within(screen.getByTestId(OBSERVED_STATE_ID)).getByText(
-        en.sessHeaderEnvStopped,
+        en.statusUnknown,
       ),
     ).toBeInTheDocument();
     expect(

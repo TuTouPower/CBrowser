@@ -10,9 +10,9 @@ import type {
 import {
   Popover,
   SearchField,
-  StatusBadge,
   type StatusTone,
 } from "../../shared/ui";
+import { environmentStatusDescriptor } from "../../shared/presentation";
 import {
   useProfileRuntimeQuery,
   useRuntimeSummaryQuery,
@@ -42,18 +42,10 @@ export function currentStatus(
   observed: string | undefined,
   t: ReturnType<typeof useI18n>["t"],
 ): { tone: StatusTone; label: string } {
-  switch (observed) {
-    case "running":
-      return { tone: "running", label: t("sessRunning") };
-    case "starting":
-      return { tone: "transition", label: t("statusStarting") };
-    case "stopping":
-      return { tone: "transition", label: t("statusStopping") };
-    case "error":
-      return { tone: "error", label: t("statusError") };
-    default:
-      return { tone: "stopped", label: t("sessStopped") };
-  }
+  // t079 AC-002/AC-003: one shared status vocabulary; an unloaded or
+  // unknown state reads "unknown", never a disguised "stopped".
+  const descriptor = environmentStatusDescriptor(observed);
+  return { tone: descriptor.tone, label: t(descriptor.label) };
 }
 
 export function statusDotClass(tone: StatusTone): string {
@@ -195,7 +187,8 @@ export function EnvironmentSwitcher({
                           data-testid={sessId("switcher-item", profile.id)}
                           to={`/session/${encodeURIComponent(profile.id)}`}
                           onClick={() => setOpen(false)}
-                          className="flex items-center justify-between gap-sm rounded-sm px-sm py-xs font-ui text-body-md text-on-surface hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                          aria-label={`${profile.name} (${itemStatus.label})`}
+                          className="flex items-center gap-sm rounded-sm px-sm py-xs font-ui text-body-md text-on-surface hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
                         >
                           <span className="flex min-w-none items-center gap-sm truncate">
                             <span
@@ -204,11 +197,11 @@ export function EnvironmentSwitcher({
                               className={statusDotClass(itemStatus.tone)}
                             />
                             <span className="truncate">{profile.name}</span>
+                            {/* t079 AC-003: no duplicate right-side badge;
+                                the status stays available to assistive
+                                tech as text, not color alone. */}
+                            <span className="sr-only">{itemStatus.label}</span>
                           </span>
-                          <StatusBadge
-                            tone={itemStatus.tone}
-                            label={itemStatus.label}
-                          />
                         </Link>
                       </li>
                     );

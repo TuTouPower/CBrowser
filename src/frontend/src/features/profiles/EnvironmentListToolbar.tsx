@@ -47,9 +47,9 @@ export function EnvironmentListToolbar({
 
   const statusOptions: SelectOption[] = [
     { value: "all", label: t("envFilterAll") },
-    { value: "running", label: t("envFilterRunning") },
-    { value: "stopped", label: t("envFilterStopped") },
-    { value: "error", label: t("envFilterError") },
+    { value: "running", label: t("statusRunning") },
+    { value: "stopped", label: t("statusStopped") },
+    { value: "error", label: t("statusError") },
   ];
   const groupOptions: SelectOption[] = [
     { value: "all", label: t("envFilterAllGroups") },

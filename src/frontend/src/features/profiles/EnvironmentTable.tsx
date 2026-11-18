@@ -30,7 +30,6 @@ import {
   TableRow,
   Tooltip,
   type GroupHue,
-  type StatusTone,
 } from "../../shared/ui";
 
 export interface EnvironmentRow {
@@ -51,24 +50,15 @@ export type EnvironmentAction =
   | "duplicate"
   | "delete";
 
-interface StatusDescriptor {
-  tone: StatusTone;
-  label: TranslationKey;
-}
-
-const STATUS_MAP: Record<string, StatusDescriptor> = {
-  starting: { tone: "transition", label: "statusStarting" },
-  stopping: { tone: "transition", label: "statusStopping" },
-  running: { tone: "running", label: "statusRunning" },
-  error: { tone: "error", label: "statusError" },
-  stopped: { tone: "stopped", label: "statusStopped" },
-};
-
-export function statusDescriptor(
-  observed: string | undefined,
-): StatusDescriptor {
-  return STATUS_MAP[observed ?? "stopped"] ?? STATUS_MAP.stopped!;
-}
+/**
+ * t079 AC-002: environment status presentation comes from the single
+ * shared mapping; a missing observed state is an explicit "unknown",
+ * never a disguised "stopped". Re-exported under the historical name
+ * for the card and detail page consumers.
+ */
+import { environmentStatusDescriptor } from "../../shared/presentation";
+export const statusDescriptor = environmentStatusDescriptor;
+export type { StatusDescriptor } from "../../shared/presentation";
 
 export function PlatformIcon({
   platform,
@@ -252,7 +242,7 @@ export function EnvironmentTable({
           {rows.map((row) => {
             const id = row.profile.id;
             const observed = row.runtime?.observed_state ?? "stopped";
-            const status = statusDescriptor(observed);
+            const status = statusDescriptor(row.runtime?.observed_state);
             const errorReason =
               row.runtime?.last_coordinator_error ?? row.profile.name;
             const platformLabel = formatPlatformLabel(

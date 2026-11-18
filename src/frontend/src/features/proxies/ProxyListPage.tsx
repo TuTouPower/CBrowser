@@ -12,10 +12,16 @@ import {
   IconButton,
   MonoValue,
   ProtocolChip,
-  RegionCode,
+  RegionBadge,
   Tooltip,
   useToast,
 } from "../../shared/ui";
+import {
+  proxyProbeErrorLabelKey,
+  regionFlagEmoji,
+  sortCityCandidates,
+  sortCountryCandidates,
+} from "../../shared/presentation";
 import {
   useDeleteProxyMutation,
   useProbeProxyMutation,
@@ -91,8 +97,11 @@ function ProxyStatusText({ proxy }: { proxy: ProxyResponse }) {
   }
   if (proxy.observation_status === "failed") {
     return (
-      <span className="font-ui text-body-sm text-danger">
-        {proxy.observation_error_code ?? t("proxyProbeFailed")}
+      <span
+        className="font-ui text-body-sm text-danger"
+        title={proxy.observation_error_code ?? undefined}
+      >
+        {t(proxyProbeErrorLabelKey(proxy.observation_error_code))}
       </span>
     );
   }
@@ -161,12 +170,21 @@ export function ProxyListPage() {
   // names). City options follow the selected country (t074 AC-005
   // linked filters); the country change still resets the city in one
   // setSearchParams call (see onCountryChange below).
+  // t079 AC-004/AC-005: candidates are sorted by the shared name rule
+  // (countries by canonical English name, cities by the collator rule),
+  // deduped by identity (country code / city name), and country labels
+  // carry flag + name. Identity stays the country code, so interface
+  // order and language switches never change the selection.
   const countryOptions = useMemo(
     () =>
-      ranges.map((range) => ({
-        value: range.country_code,
-        label: range.country_name || range.country_code,
-      })),
+      sortCountryCandidates(ranges).map((range) => {
+        const flag = regionFlagEmoji(range.country_code);
+        const name = range.country_name || range.country_code;
+        return {
+          value: range.country_code,
+          label: flag ? `${flag} ${name}` : name,
+        };
+      }),
     [ranges],
   );
 
@@ -178,7 +196,7 @@ export function ProxyListPage() {
       }
       for (const city of range.cities) cities.add(city);
     }
-    return Array.from(cities).map((value) => ({ value, label: value }));
+    return sortCityCandidates(cities).map((value) => ({ value, label: value }));
   }, [ranges, filters.country]);
 
   // t076 AC-001: search/filter already ran server-side against the full
@@ -421,11 +439,12 @@ export function ProxyListPage() {
                 <MonoValue>{`${proxy.host}:${proxy.port}`}</MonoValue>
                 <div className="flex flex-wrap items-center gap-sm">
                   {proxy.country_code ? (
-                    <RegionCode code={proxy.country_code} />
+                    <RegionBadge
+                      code={proxy.country_code}
+                      name={proxy.country_name}
+                      unknownLabel={t("regionUnknown")}
+                    />
                   ) : null}
-                  <span className="font-ui text-body-sm text-on-surface">
-                    {proxy.country_name ?? proxy.country_code ?? "—"}
-                  </span>
                   <span className="font-ui text-body-sm text-on-surface-muted">
                     {proxy.city ?? "—"}
                   </span>

@@ -96,7 +96,7 @@ export function SessionEntryPage() {
                     className="flex items-center justify-between gap-md rounded-md border border-outline bg-surface px-md py-sm font-ui text-body-md text-on-surface hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
                   >
                     <span className="truncate">{profile.name}</span>
-                    <StatusBadge tone="running" label={t("sessRunning")} />
+                    <StatusBadge tone="running" label={t("statusRunning")} />
                   </Link>
                 </li>
               ))}
