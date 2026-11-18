@@ -26,11 +26,11 @@ t081 既有缺陷（pending p138）：`tests/integration/test_font_sets_api.py` 
 
 <!-- /规范 -->
 
-- [ ] AC-001：`apply_audit_verdict` 的全部写操作在 `write_transaction(session)` 内执行（读码确认 BEGIN IMMEDIATE 路径）。
-- [ ] AC-002：新增并发回归测试：多会话并发调用 `apply_audit_verdict`，全部完成且无 `OperationalError` / `database is locked`，verdict 持久化后可读。
-- [ ] AC-003：全仓扫查产出同类写路径清单：每条缺 `write_transaction` 的写路径或已补齐，或有书面论证说明无并发写暴露（清单写入 progress.md 或 findings）。
-- [ ] AC-004：`test_font_sets_api.py` 全套隔离通过，且连续 3 轮 `-n 4` 并行复跑不再出现 `database is locked`。
-- [ ] AC-005：p138 经 `pending.py close p138 --resolution resolved --fix-ref <task/commit> --write` 关闭。
+- [x] AC-001：`apply_audit_verdict` 的全部写操作在 `write_transaction(session)` 内执行（读码确认 BEGIN IMMEDIATE 路径）。
+- [x] AC-002：新增并发回归测试：多会话并发调用 `apply_audit_verdict`，全部完成且无 `OperationalError` / `database is locked`，verdict 持久化后可读。
+- [x] AC-003：全仓扫查产出同类写路径清单：每条缺 `write_transaction` 的写路径或已补齐，或有书面论证说明无并发写暴露（清单写入 progress.md 或 findings）。
+- [x] AC-004：`test_font_sets_api.py` 全套隔离通过，且连续 3 轮 `-n 4` 并行复跑不再出现 `database is locked`。
+- [x] AC-005：p138 经 `pending.py close p138 --resolution resolved --fix-ref <task/commit> --write` 关闭。
 
 ### 可测试性声明
 
