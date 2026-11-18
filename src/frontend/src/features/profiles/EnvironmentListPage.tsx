@@ -23,6 +23,7 @@ import {
   type EnvironmentRow,
 } from "./EnvironmentTable";
 import { GroupManagerDialog } from "./GroupManagerDialog";
+import { MoveGroupMenu } from "./MoveGroupMenu";
 import { ProfileCreateDialog } from "./ProfileCreateDialog";
 import { ProfileEditDialog } from "./ProfileEditDialog";
 import { useBatchActions } from "./useBatchActions";
@@ -95,7 +96,6 @@ export function EnvironmentListPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<EnvironmentRow | null>(null);
   const [groupsOpen, setGroupsOpen] = useState(false);
-  const [moveMenuOpen, setMoveMenuOpen] = useState(false);
   // t078: single/batch deletion share one centered modal; the target
   // set is frozen here when the dialog opens.
   const [deleteTargets, setDeleteTargets] =
@@ -314,7 +314,6 @@ export function EnvironmentListPage() {
   );
 
   const handleMove = (groupId: string | null) => {
-    setMoveMenuOpen(false);
     void run("moveToGroup", { groupId });
   };
 
@@ -419,44 +418,24 @@ export function EnvironmentListPage() {
       )}
 
       {selected.size > 0 && (
-        <>
-          <BatchActionBar
-            count={selected.size}
-            onStart={() => void run("start")}
-            onStop={() => void run("stop")}
-            onMove={() => setMoveMenuOpen(true)}
-            onDelete={() =>
-              openDeleteDialog(
-                visibleRows.filter((row) => selected.has(row.profile.id)),
-              )
-            }
-            pending={pending}
-          />
-          {moveMenuOpen && (
-            <div
-              data-testid="env-move-menu"
-              className="fixed bottom-2xl left-1/2 z-40 flex -translate-x-1/2 flex-wrap items-center gap-sm rounded-lg border border-outline bg-surface-raised px-md py-sm shadow-lg"
-            >
-              {groups.map((item) => (
-                <Button
-                  key={item.id}
-                  data-testid={`env-move-group-${item.id}`}
-                  size="sm"
-                  onClick={() => handleMove(item.id)}
-                >
-                  {item.name}
-                </Button>
-              ))}
-              <Button
-                data-testid="env-move-ungrouped"
-                size="sm"
-                onClick={() => handleMove(null)}
-              >
-                {t("envFilterUngrouped")}
-              </Button>
-            </div>
-          )}
-        </>
+        <BatchActionBar
+          count={selected.size}
+          onStart={() => void run("start")}
+          onStop={() => void run("stop")}
+          moveControl={
+            <MoveGroupMenu
+              groups={groups}
+              pending={pending}
+              onMove={handleMove}
+            />
+          }
+          onDelete={() =>
+            openDeleteDialog(
+              visibleRows.filter((row) => selected.has(row.profile.id)),
+            )
+          }
+          pending={pending}
+        />
       )}
 
       <ProfileCreateDialog open={createOpen} onOpenChange={setCreateOpen} />

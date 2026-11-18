@@ -102,6 +102,22 @@ describe("Popover", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
+
+  it("bounds the panel to the available viewport height (t077 AC-004)", async () => {
+    render(
+      <Popover ariaLabel="Details" trigger={<Button>Open popover</Button>}>
+        <div>Popover body</div>
+      </Popover>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open popover" }));
+    const panel = await screen.findByRole("dialog");
+    // The Radix popper writes --radix-popper-available-height on the
+    // content element; the max-h-available-height token consumes it, so
+    // the panel can never grow past the viewport. Geometry (a tall
+    // panel really scrolling internally) is proven by the real-browser
+    // harness, not by this class assertion.
+    expect(panel.className).toContain("max-h-available-height");
+  });
 });
 
 describe("Tooltip", () => {

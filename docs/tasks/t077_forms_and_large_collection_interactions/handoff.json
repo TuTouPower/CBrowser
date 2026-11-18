@@ -1,0 +1,15 @@
+{
+  "tid": "t077",
+  "attempt": 1,
+  "execution_id": "e0abb8ab8d6246a4a2ecf15f12234342",
+  "status": "done",
+  "branch": "t077_forms_and_large_collection_interactions",
+  "base_sha": "d66adb623b2899d862756c1e975d5e76b340748d",
+  "spec_source_sha": "d66adb623b2899d862756c1e975d5e76b340748d",
+  "tests": "前端 `npm test`（types + vitest）87 文件 718 测试全过；design_tokens.test.mjs 53/53；SearchableSelect.test.tsx 9/9（含新增 Home/End 用例）；全量门禁第 4 轮（证据模式，`~/workspace/cloud-task-logs/gate-t077-final3/`）：7 套件 exit 0，unit 恰好 14 条已知基线（t063×12、t068×2），integration 1 条 p138 并行抖动（隔离 3/3 通过）",
+  "blackbox": "真实浏览器探针（Electron CDP + 生产组件/CSS，200 代理/100 分组/100 环境）4 个 pass 共 67/67 检查通过（`gate-t077-final2/t077_browser_probe_full19.out`）；探针未覆盖 Home/End 路径，以组件测试为准（第 2 轮审阅已明说）",
+  "review": "第 1 轮 FAIL（f001 important + f002 minor，均已修），第 2 轮 PASS（新发现 f003 minor 为 progress.md 措辞，已修）",
+  "review_scope": "2145fa6551a4492d",
+  "pending": [],
+  "findings": []
+}

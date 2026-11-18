@@ -1,7 +1,7 @@
 ---
 slug: ui_design_system
 status: active
-tasks: [baseline, t075, t078, t079]
+tasks: [baseline, t075, t077, t078, t079]
 ---
 # 需求规范：设计系统与应用外壳 (ui_design_system)
 
@@ -16,7 +16,8 @@ tasks: [baseline, t075, t078, t079]
 - 仓库根 `DESIGN.md`（google-labs-code/design.md alpha 格式，YAML front matter）是唯一颜色 / 字体 / 字号 / 间距 / 圆角 / 组件来源；章节顺序 Overview、Colors（含 `### Modes`）、Typography、Layout、Elevation & Depth、Shapes、Components、Contrast（t059 新增）、Do's and Don'ts。
 - `primary` 为模式无关品牌色（由 `brand-mark` 引用）；其余颜色角色以 `light-*` / `dark-*` 成对出现且两套角色名集合完全相同；涉及颜色的组件以 `<component>-light` / `<component>-dark` 成对定义并只引用同模式 token；字体、间距、圆角与模式无关只定义一次。
 - `npm run design:tokens` 精确调用 `@google/design.md@0.4.0` 的程序化 `lint()`，生成前校验：`light-*` / `dark-*` 角色集合相同、无未解析引用、不存在既非 `primary` 又无模式前缀的颜色 token；确定性生成 `src/frontend/src/styles/design_tokens.css`（Tailwind 4 `@theme` 以亮色为默认值、`.dark` 覆盖全部颜色变量，另含字体 / 字号 / 圆角 / 间距变量）。产物入库，禁止手改。
-- `npm run design:lint`（官方 lint，error 或 warning 任一非零即失败，info 允许）、`npm run design:check`（入库产物与重新生成结果不一致即失败）与 `design:tokens` 三条命令接入 `scripts/run_gates.sh` 前端阶段。生成器失败用例（角色集合不等 / 未解析引用 / 无前缀颜色 / 官方 lint 报错）先红后绿，确定性由测试覆盖。
+- `npm run design:lint`（官方 lint，error 或 warning 任一非零即失败，info 允许）、`npm run design:check`（入库产物与重新生成结果不一致即失败）与 `design:tokens` 三条命令接入 `scripts/run_gates.sh` 前端阶段。生成器失败用例（角色集合不等 / 未解析引用 / 无前缀颜色 / 官方 lint 报错）先红后绿，确定性由测试覆盖。t077：值为 `var()` 表达式的容器 token（如 Radix 可用高度 `available-height`）不经 `var(--container-<name>)` 中转，直接把表达式内联进尺寸规则——中转变量在 `:root` 处因被引变量不存在而 guaranteed-invalid，会经继承毒化全部后代；只有在用它的元素上求值才能解出 Radix 变量（`design_tokens.test.mjs` 覆盖此用例）。
+- `src/frontend/src/shared/ui/` 基础组件：按钮族（primary / secondary / ghost / danger / connect / stop 及 hover / disabled / 小号）、IconButton、Input、Select、SearchField、Checkbox、Switch、StatusBadge、GroupChip、ProtocolChip、RegionCode、Table 原语、EmptyState、Banner、Toast（全局单实例）；Dialog / DropdownMenu / Popover / Tooltip 基于 Radix 原语，具备焦点陷阱、焦点归还、Esc 关闭与正确 ARIA 角色。t077 起新增 `SearchableSelect`（Radix Select + 顶部搜索框 + 完整候选客户端过滤，复用 `SelectTrigger`/`SelectItem` 与 p070/t053 提交判据）；共享 `Select` 内容限高为 Radix 可用高度、触发器值单行截断 + `title` 全名；共享 `Popover` 内容为纵向 flex 列 + 内部滚动区；表单分区按弹窗实际宽度走容器查询（`@container`），不再按外部视口断点切列；`FieldHelp` 为可聚焦的感叹号帮助触发器（Tooltip 在 focus 时打开）。
 
 ### 2.2 Tailwind 4 与字体
 

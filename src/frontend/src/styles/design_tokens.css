@@ -99,6 +99,7 @@
   --container-badge: 3rem;
   --container-table-select: 2.5rem;
   --container-dropdown-list: 16rem;
+  --container-seed: 5rem;
   --container-swatch: 1.5rem;
   --container-details: 18.75rem;
 }
@@ -245,6 +246,12 @@
   .h-dropdown-list { height: var(--container-dropdown-list); }
   .max-h-dropdown-list { max-height: var(--container-dropdown-list); }
   .min-h-dropdown-list { min-height: var(--container-dropdown-list); }
+  .h-seed { height: var(--container-seed); }
+  .max-h-seed { max-height: var(--container-seed); }
+  .min-h-seed { min-height: var(--container-seed); }
+  .h-available-height { height: var(--radix-popper-available-height); }
+  .max-h-available-height { max-height: var(--radix-popper-available-height); }
+  .min-h-available-height { min-height: var(--radix-popper-available-height); }
   .h-swatch { height: var(--container-swatch); }
   .max-h-swatch { max-height: var(--container-swatch); }
   .min-h-swatch { min-height: var(--container-swatch); }

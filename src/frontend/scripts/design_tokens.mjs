@@ -604,7 +604,13 @@ function generateCss(report, { light, containers, shadows, uiFont, monoFont, com
     lines.push(`  --shadow-${name}: ${lightVal};`);
   }
   for (const [name, value] of containers) {
-    lines.push(`  --container-${name}: ${value};`);
+    // A var()-valued token has no :root-resolvable value: emitting
+    // --container-<name> here would make it guaranteed-invalid on
+    // every element (Tailwind exposes @theme variables on :root) and
+    // poison descendants through inheritance. Such tokens live only
+    // in the inlined size rules below, where the var() resolves on
+    // the using element (t077_gen_f002).
+    if (!value.includes("var(")) lines.push(`  --container-${name}: ${value};`);
   }
 
   lines.push("}");
@@ -614,10 +620,19 @@ function generateCss(report, { light, containers, shadows, uiFont, monoFont, com
     lines.push("}");
   }
   lines.push("", "@layer utilities {");
-  for (const [name] of containers) {
-    lines.push(`  .h-${name} { height: var(--container-${name}); }`);
-    lines.push(`  .max-h-${name} { max-height: var(--container-${name}); }`);
-    lines.push(`  .min-h-${name} { min-height: var(--container-${name}); }`);
+  for (const [name, value] of containers) {
+    // A var()-valued token must be inlined into the rule instead of
+    // routed through var(--container-<name>): a custom property
+    // defined where its var() cannot resolve becomes
+    // guaranteed-invalid and poisons descendants through inheritance,
+    // so the rule would compute to nothing on the element that uses
+    // it (t077: available-height stayed max-height:none in a real
+    // browser). Inlining evaluates the var() on the using element,
+    // where Radix defines it. Literal values keep the indirection.
+    const ref = value.includes("var(") ? value : `var(--container-${name})`;
+    lines.push(`  .h-${name} { height: ${ref}; }`);
+    lines.push(`  .max-h-${name} { max-height: ${ref}; }`);
+    lines.push(`  .min-h-${name} { min-height: ${ref}; }`);
   }
   lines.push("}", "", ".dark {");
   for (const name of singles) {

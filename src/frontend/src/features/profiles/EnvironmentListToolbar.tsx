@@ -3,6 +3,7 @@ import { useI18n } from "../../i18n";
 import {
   Button,
   SearchField,
+  SearchableSelect,
   Select,
   type SelectOption,
 } from "../../shared/ui";
@@ -93,7 +94,7 @@ export function EnvironmentListToolbar({
           }
           options={statusOptions}
         />
-        <Select
+        <SearchableSelect
           ariaLabel={t("envFilterAllGroups")}
           value={filters.group}
           onValueChange={(value) => {
@@ -101,6 +102,8 @@ export function EnvironmentListToolbar({
             else setFilter("group", value);
           }}
           options={groupOptions}
+          searchPlaceholder={t("searchGroups")}
+          noResultsLabel={t("noMatchingGroups")}
         />
         <div data-testid="env-platform-filter">
           <Select
@@ -112,11 +115,13 @@ export function EnvironmentListToolbar({
             options={platformOptions}
           />
         </div>
-        <Select
+        <SearchableSelect
           ariaLabel={t("envFilterProxy")}
           value={filters.proxy}
           onValueChange={(value) => setFilter("proxy", value)}
           options={proxyOptions}
+          searchPlaceholder={t("proxySearch")}
+          noResultsLabel={t("noMatchingProxies")}
         />
         <Select
           ariaLabel={t("envSortManual")}

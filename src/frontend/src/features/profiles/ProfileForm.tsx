@@ -11,8 +11,8 @@ import {
   Button,
   Checkbox,
   FieldLabel,
-  IconButton,
   Input,
+  SearchableSelect,
   Select,
   Tooltip,
   type SelectOption,
@@ -135,18 +135,48 @@ function Row({
 
 function BoolRow({
   label,
+  help,
   checked,
   onChange,
 }: {
   label: string;
+  help?: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex items-center gap-sm font-ui text-body-sm text-on-surface">
-      <Checkbox checked={checked} onCheckedChange={onChange} label={label} />
-      <span>{label}</span>
-    </label>
+    <div className="flex items-center gap-sm font-ui text-body-sm text-on-surface">
+      <label className="flex items-center gap-sm">
+        <Checkbox checked={checked} onCheckedChange={onChange} label={label} />
+        <span>{label}</span>
+      </label>
+      {help ? <FieldHelp field={label} text={help} /> : null}
+    </div>
+  );
+}
+
+/**
+ * Accessible help trigger for a field (t077 AC-006): the "!" icon
+ * from DESIGN.md, but a real focusable button so the Tooltip opens on
+ * keyboard focus as well as hover. Radix links the trigger to the
+ * tooltip content via aria-describedby while it is open, so the help
+ * is readable by mouse, keyboard and screen reader alike.
+ */
+function FieldHelp({ field, text }: { field: string; text: string }) {
+  const { t } = useI18n();
+  return (
+    <Tooltip content={text}>
+      <button
+        type="button"
+        aria-label={t("formShowHelp", { field })}
+        className="inline-flex cursor-help items-center text-on-surface-muted hover:text-on-surface focus-visible:outline-2 focus-visible:outline-focus"
+      >
+        <AlertCircle
+          aria-hidden="true"
+          className="size-(--component-icon-sm-size)"
+        />
+      </button>
+    </Tooltip>
   );
 }
 
@@ -160,7 +190,11 @@ function Section({
   return (
     <section className="flex flex-col gap-md rounded-md border border-outline bg-surface p-md">
       <h2 className="font-ui text-headline-md text-on-surface">{title}</h2>
-      <div className="grid grid-cols-1 gap-md md:grid-cols-2 lg:grid-cols-3">
+      {/* t077 AC-001: columns follow the dialog's actual usable width
+          (the form is the @container) instead of the viewport
+          breakpoint, so the same form lays out correctly in a narrow
+          dialog and in a wide one. */}
+      <div className="grid grid-cols-1 gap-md @[24rem]:grid-cols-2 @[36rem]:grid-cols-3">
         {children}
       </div>
     </section>
@@ -170,16 +204,49 @@ function Section({
 const ADVANCED_BOOL_FIELDS: Array<{
   key: keyof ProfileFormValues;
   labelKey: TranslationKey;
+  helpKey: TranslationKey;
 }> = [
-  { key: "humanize", labelKey: "formHumanize" },
-  { key: "clipboard_sync", labelKey: "formClipboardSync" },
-  { key: "auto_launch", labelKey: "formAutoLaunch" },
-  { key: "allow_3p_cookies", labelKey: "formAllow3pCookies" },
-  { key: "set_google_default", labelKey: "formSetGoogleDefault" },
-  { key: "restore_session", labelKey: "formRestoreSession" },
-  { key: "transparent_proxy", labelKey: "formTransparentProxy" },
-  { key: "portable_cookies", labelKey: "formPortableCookies" },
-  { key: "capture_preview", labelKey: "formCapturePreview" },
+  { key: "humanize", labelKey: "formHumanize", helpKey: "formHumanizeHelp" },
+  {
+    key: "clipboard_sync",
+    labelKey: "formClipboardSync",
+    helpKey: "formClipboardSyncHelp",
+  },
+  {
+    key: "auto_launch",
+    labelKey: "formAutoLaunch",
+    helpKey: "formAutoLaunchHelp",
+  },
+  {
+    key: "allow_3p_cookies",
+    labelKey: "formAllow3pCookies",
+    helpKey: "formAllow3pCookiesHelp",
+  },
+  {
+    key: "set_google_default",
+    labelKey: "formSetGoogleDefault",
+    helpKey: "formSetGoogleDefaultHelp",
+  },
+  {
+    key: "restore_session",
+    labelKey: "formRestoreSession",
+    helpKey: "formRestoreSessionHelp",
+  },
+  {
+    key: "transparent_proxy",
+    labelKey: "formTransparentProxy",
+    helpKey: "formTransparentProxyHelp",
+  },
+  {
+    key: "portable_cookies",
+    labelKey: "formPortableCookies",
+    helpKey: "formPortableCookiesHelp",
+  },
+  {
+    key: "capture_preview",
+    labelKey: "formCapturePreview",
+    helpKey: "formCapturePreviewHelp",
+  },
 ];
 
 export function ProfileForm({
@@ -303,7 +370,7 @@ export function ProfileForm({
       id="profile-form"
       data-testid="profile-form"
       onSubmit={handleSubmit}
-      className="flex flex-col gap-md"
+      className="@container flex flex-col gap-md"
     >
       <Section title={t("formSectionBasic")}>
         <Row label={t("formName")}>
@@ -324,7 +391,7 @@ export function ProfileForm({
         </Row>
         <Row label={t("formGroup")}>
           <div data-testid="profile-form-group">
-            <Select
+            <SearchableSelect
               value={values.group_id ?? "__none__"}
               onValueChange={(value) => {
                 if (value === "__create_group__") {
@@ -335,6 +402,9 @@ export function ProfileForm({
               }}
               options={groupOptions}
               ariaLabel={t("formGroup")}
+              searchPlaceholder={t("searchGroups")}
+              noResultsLabel={t("noMatchingGroups")}
+              className="w-full"
             />
           </div>
           {creatingGroup && (
@@ -395,7 +465,7 @@ export function ProfileForm({
       <Section title={t("formSectionNetwork")}>
         <Row label={t("formProxy")}>
           <div data-testid="profile-form-proxy">
-            <Select
+            <SearchableSelect
               value={values.proxy_id ?? "__direct__"}
               onValueChange={(value) => {
                 const nextProxyId = value === "__direct__" ? null : value;
@@ -431,6 +501,9 @@ export function ProfileForm({
               }}
               options={proxyOptions}
               ariaLabel={t("formProxy")}
+              searchPlaceholder={t("proxySearch")}
+              noResultsLabel={t("noMatchingProxies")}
+              className="w-full"
             />
           </div>
         </Row>
@@ -439,60 +512,61 @@ export function ProfileForm({
           checked={values.geoip}
           onChange={(checked) => setField("geoip", checked)}
         />
-        <div className="flex gap-sm">
-          <Row label={t("formTimezone")}>
-            <TimezoneCombobox
-              testId="profile-form-timezone"
-              ariaLabel={t("formTimezone")}
-              value={values.timezone ?? null}
-              onValueChange={(timezone) => {
-                timezoneManualRef.current = true;
-                setManualOverrides((prev) => ({ ...prev, timezone: true }));
+        {/* t077 AC-001: timezone and language are direct grid items,
+            not two half-columns nested inside one flex item. */}
+        <Row label={t("formTimezone")}>
+          <TimezoneCombobox
+            testId="profile-form-timezone"
+            ariaLabel={t("formTimezone")}
+            value={values.timezone ?? null}
+            onValueChange={(timezone) => {
+              timezoneManualRef.current = true;
+              setManualOverrides((prev) => ({ ...prev, timezone: true }));
+              setValues((prev) => {
+                const nextLocale =
+                  !localeManualRef.current && timezone != null
+                    ? localeForTimezone(timezone)
+                    : prev.locale;
+                return {
+                  ...prev,
+                  timezone,
+                  locale: nextLocale,
+                  include_cjk_fonts: cjkUserChosenRef.current
+                    ? prev.include_cjk_fonts
+                    : defaultIncludeCjkForLocale(nextLocale),
+                } as ProfileFormValues;
+              });
+            }}
+          />
+        </Row>
+        <Row label={t("formLocale")}>
+          <div data-testid="profile-form-locale">
+            <Select
+              value={values.locale ?? "en-US"}
+              onValueChange={(value) => {
+                const nextLocale = value === "zh-CN" ? "zh-CN" : "en-US";
+                localeManualRef.current = true;
+                setManualOverrides((prev) => ({ ...prev, locale: true }));
                 setValues((prev) => {
-                  const nextLocale =
-                    !localeManualRef.current && timezone != null
-                      ? localeForTimezone(timezone)
-                      : prev.locale;
+                  const nextTimezone = timezoneManualRef.current
+                    ? prev.timezone
+                    : timezoneForLocale(nextLocale, prev.timezone);
                   return {
                     ...prev,
-                    timezone,
                     locale: nextLocale,
+                    timezone: nextTimezone,
                     include_cjk_fonts: cjkUserChosenRef.current
                       ? prev.include_cjk_fonts
                       : defaultIncludeCjkForLocale(nextLocale),
                   } as ProfileFormValues;
                 });
               }}
+              options={localeOptions}
+              ariaLabel={t("formLocale")}
+              className="w-full"
             />
-          </Row>
-          <Row label={t("formLocale")}>
-            <div data-testid="profile-form-locale">
-              <Select
-                value={values.locale ?? "en-US"}
-                onValueChange={(value) => {
-                  const nextLocale = value === "zh-CN" ? "zh-CN" : "en-US";
-                  localeManualRef.current = true;
-                  setManualOverrides((prev) => ({ ...prev, locale: true }));
-                  setValues((prev) => {
-                    const nextTimezone = timezoneManualRef.current
-                      ? prev.timezone
-                      : timezoneForLocale(nextLocale, prev.timezone);
-                    return {
-                      ...prev,
-                      locale: nextLocale,
-                      timezone: nextTimezone,
-                      include_cjk_fonts: cjkUserChosenRef.current
-                        ? prev.include_cjk_fonts
-                        : defaultIncludeCjkForLocale(nextLocale),
-                    } as ProfileFormValues;
-                  });
-                }}
-                options={localeOptions}
-                ariaLabel={t("formLocale")}
-              />
-            </div>
-          </Row>
-        </div>
+          </div>
+        </Row>
         {(() => {
           const proxyInferredTz = timezoneForProxy(selectedProxy);
           const proxyRegion =
@@ -518,7 +592,7 @@ export function ProfileForm({
           return (
             <div
               data-testid="profile-form-alignment-summary"
-              className="flex flex-wrap items-center justify-between gap-sm rounded-md border border-outline bg-surface-subtle px-sm py-xs font-ui text-label-sm text-on-surface-muted"
+              className="col-span-full flex flex-wrap items-center justify-between gap-sm rounded-md border border-outline bg-surface-subtle px-sm py-xs font-ui text-label-sm text-on-surface-muted"
             >
               <span>
                 {proxyInferredTz
@@ -603,77 +677,88 @@ export function ProfileForm({
               }}
               options={platformOptions}
               ariaLabel={t("formPlatform")}
+              className="w-full"
             />
           </div>
         </Row>
         <Row
           label={t("formSeed")}
           hint={
-            <Tooltip content={t("formSeedRangeHint")}>
-              <span
-                data-testid="profile-form-seed-hint"
-                aria-label={t("formSeedRangeHint")}
-                className="inline-flex cursor-help items-center text-on-surface-muted hover:text-on-surface"
+            <>
+              {/* t077 AC-006: the seed hint is a focusable button now,
+                  so keyboard users can read it too (it was a span). */}
+              <Tooltip content={t("formSeedRangeHint")}>
+                <button
+                  type="button"
+                  data-testid="profile-form-seed-hint"
+                  aria-label={t("formSeedRangeHint")}
+                  className="inline-flex cursor-help items-center text-on-surface-muted hover:text-on-surface focus-visible:outline-2 focus-visible:outline-focus"
+                >
+                  <AlertCircle
+                    aria-hidden="true"
+                    className="size-(--component-icon-sm-size)"
+                  />
+                </button>
+              </Tooltip>
+              {/* t077 AC-002: the reseed button lives on the label row,
+                  next to the hint, instead of beside the input. */}
+              <button
+                type="button"
+                data-testid="profile-form-reseed"
+                aria-label={t("formReseed")}
+                onClick={() => setField("fingerprint_seed", randomValidSeed())}
+                className="inline-flex cursor-pointer items-center text-on-surface-muted hover:text-on-surface focus-visible:outline-2 focus-visible:outline-focus"
               >
-                <AlertCircle
+                <RefreshCw
                   aria-hidden="true"
                   className="size-(--component-icon-sm-size)"
                 />
-              </span>
-            </Tooltip>
+              </button>
+            </>
           }
         >
-          <div className="flex items-center gap-sm">
-            <Input
-              type="number"
-              min={100000}
-              max={999999}
-              aria-label={t("formSeed")}
-              value={values.fingerprint_seed ?? ""}
-              onChange={(event) => {
-                const parsed = Number(event.target.value);
-                if (Number.isFinite(parsed)) {
-                  setField("fingerprint_seed", parsed);
-                }
-              }}
-              className="no-spin font-mono"
-            />
-            <span data-testid="profile-form-seed" className="sr-only">
-              {values.fingerprint_seed ?? ""}
-            </span>
-            <IconButton
-              data-testid="profile-form-reseed"
-              label={t("formReseed")}
-              onClick={() => setField("fingerprint_seed", randomValidSeed())}
-            >
-              <RefreshCw
-                aria-hidden="true"
-                className="size-(--component-icon-md-size)"
-              />
-            </IconButton>
-          </div>
-        </Row>
-        <div className="flex gap-sm">
-          <Row label={t("formColorScheme")}>
-            <Select
-              value={values.color_scheme ?? "light"}
-              onValueChange={(value) =>
-                setField("color_scheme", normalizeColorScheme(value))
+          {/* t077 AC-002: six digits only, so the input is compact
+              (seed token) instead of stretching across the column. */}
+          <Input
+            type="number"
+            min={100000}
+            max={999999}
+            aria-label={t("formSeed")}
+            value={values.fingerprint_seed ?? ""}
+            onChange={(event) => {
+              const parsed = Number(event.target.value);
+              if (Number.isFinite(parsed)) {
+                setField("fingerprint_seed", parsed);
               }
-              options={colorSchemeOptions}
-              ariaLabel={t("formColorScheme")}
-            />
-          </Row>
-          <div data-testid="profile-form-include-cjk">
-            <BoolRow
-              label={t("formIncludeCjk")}
-              checked={values.include_cjk_fonts ?? false}
-              onChange={(checked) => {
-                cjkUserChosenRef.current = true;
-                setField("include_cjk_fonts", checked);
-              }}
-            />
-          </div>
+            }}
+            className="no-spin w-seed font-mono"
+          />
+          <span data-testid="profile-form-seed" className="sr-only">
+            {values.fingerprint_seed ?? ""}
+          </span>
+        </Row>
+        {/* t077 AC-001: color scheme and CJK are direct grid items,
+            not two half-columns nested inside one flex item. */}
+        <Row label={t("formColorScheme")}>
+          <Select
+            value={values.color_scheme ?? "light"}
+            onValueChange={(value) =>
+              setField("color_scheme", normalizeColorScheme(value))
+            }
+            options={colorSchemeOptions}
+            ariaLabel={t("formColorScheme")}
+            className="w-full"
+          />
+        </Row>
+        <div data-testid="profile-form-include-cjk">
+          <BoolRow
+            label={t("formIncludeCjk")}
+            checked={values.include_cjk_fonts ?? false}
+            onChange={(checked) => {
+              cjkUserChosenRef.current = true;
+              setField("include_cjk_fonts", checked);
+            }}
+          />
         </div>
         <Row label={t("formResolution")}>
           <div className="flex items-center gap-sm">
@@ -708,11 +793,13 @@ export function ProfileForm({
           {t("formSectionAdvanced")}
         </summary>
         <div className="mt-md flex flex-col gap-md">
-          <div className="grid grid-cols-2 gap-sm">
-            {ADVANCED_BOOL_FIELDS.map(({ key, labelKey }) => (
+          {/* t077 AC-001: the bool grid follows the dialog width too. */}
+          <div className="grid grid-cols-1 gap-sm @[24rem]:grid-cols-2">
+            {ADVANCED_BOOL_FIELDS.map(({ key, labelKey, helpKey }) => (
               <BoolRow
                 key={key}
                 label={t(labelKey)}
+                help={t(helpKey)}
                 checked={values[key] as boolean}
                 onChange={(checked) =>
                   setField(key, checked as ProfileFormValues[typeof key])
@@ -720,7 +807,10 @@ export function ProfileForm({
               />
             ))}
           </div>
-          <Row label={t("formHumanPreset")}>
+          <Row
+            label={t("formHumanPreset")}
+            hint={<FieldHelp field={t("formHumanPreset")} text={t("formHumanPresetHelp")} />}
+          >
             <Select
               value={values.human_preset}
               onValueChange={(value) =>
@@ -728,9 +818,13 @@ export function ProfileForm({
               }
               options={presetOptions}
               ariaLabel={t("formHumanPreset")}
+              className="w-full"
             />
           </Row>
-          <Row label={t("formLaunchArgs")}>
+          <Row
+            label={t("formLaunchArgs")}
+            hint={<FieldHelp field={t("formLaunchArgs")} text={t("formLaunchArgsHelp")} />}
+          >
             <Input
               aria-label={t("formLaunchArgs")}
               value={(values.launch_args ?? []).join(", ")}
@@ -745,7 +839,10 @@ export function ProfileForm({
               }
             />
           </Row>
-          <Row label={t("formExtensionPaths")}>
+          <Row
+            label={t("formExtensionPaths")}
+            hint={<FieldHelp field={t("formExtensionPaths")} text={t("formExtensionPathsHelp")} />}
+          >
             <Input
               aria-label={t("formExtensionPaths")}
               value={(values.extension_paths ?? []).join(", ")}

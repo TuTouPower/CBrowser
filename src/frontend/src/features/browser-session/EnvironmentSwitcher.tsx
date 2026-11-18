@@ -149,7 +149,7 @@ export function EnvironmentSwitcher({
     >
       <div
         data-testid={SESS_SWITCHER_POPOVER}
-        className="flex flex-col gap-sm"
+        className="flex flex-1 flex-col gap-sm overflow-hidden"
       >
         <SearchField
           data-testid={SESS_SWITCHER_SEARCH}
@@ -158,12 +158,14 @@ export function EnvironmentSwitcher({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
+        {/* t077 AC-004: the list scrolls inside the popover instead
+            of a fixed panel height that can run past the viewport. */}
         {sections.length === 0 ? (
           <p className="px-sm py-md font-ui text-body-sm text-on-surface-muted">
             {t("sessSwitcherEmpty")}
           </p>
         ) : (
-          <div className="flex max-h-panel flex-col gap-sm overflow-y-auto">
+          <div className="flex flex-1 flex-col gap-sm overflow-y-auto">
             {sections.map((section) => (
               <div key={section.key} className="flex flex-col gap-xs">
                 <p

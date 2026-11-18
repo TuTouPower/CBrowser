@@ -5,6 +5,8 @@ export { Input, SearchField, FieldLabel } from "./Input";
 export type { InputProps, SearchFieldProps } from "./Input";
 export { Select } from "./Select";
 export type { SelectOption, SelectProps } from "./Select";
+export { SearchableSelect } from "./SearchableSelect";
+export type { SearchableSelectProps } from "./SearchableSelect";
 export { Checkbox } from "./Checkbox";
 export type { CheckboxProps } from "./Checkbox";
 export { Switch } from "./Switch";
