@@ -28,7 +28,7 @@ bash scripts/deploy.sh            # 等同于 bash scripts/deploy.sh deploy
 ## 3. Release 模型
 
 - 每次发布生成 `config/deploy/releases/<release_id>.json`（manifest：六个镜像的不可变 ID、compose/渲染后 Caddyfile/前端产物指纹、数据库迁移版本、readiness 能力）与同名 `.env`（compose 用的固定变量）。
-- `config/deploy/current_release` 与 `config/deploy/previous_release` 是指针文件，只在发布/回退通过 readiness 验收后才原子更新；失败发布不覆盖上一份有效 release，上一 release 的镜像仍在 daemon 中。
+- `config/deploy/release_pointer.json` 是唯一指针文件（`{"current": …, "previous": …}`），只在发布/回退通过 readiness 验收后才原子更新；失败发布不覆盖上一份有效 release，上一 release 的镜像仍在 daemon 中。旧版两个独立指针文件 `config/deploy/current_release` / `config/deploy/previous_release` 已退役并删除，不再使用。
 - `bash scripts/deploy.sh status` 查看当前/上一 release。
 - compose.yaml 的服务镜像全部来自 release env 且没有 build 块，手工 `docker compose --env-file config/deploy/releases/<id>.env -f compose.yaml up -d` 也不会触发构建。
 
@@ -46,7 +46,7 @@ bash scripts/deploy.sh
 回退到上一 release（恢复其全部镜像与配置，不删除 Browser、Profile 数据或数据库）：
 
 ```bash
-bash scripts/deploy.sh rollback              # 回到 previous_release
+bash scripts/deploy.sh rollback              # 回到 release_pointer.json 的 previous
 bash scripts/deploy.sh rollback <release_id> # 回到指定 release
 ```
 
@@ -84,7 +84,7 @@ bash scripts/deploy.sh
 4. 回退拒绝：构造迁移版本更高的一次发布后回退到低迁移 release（或使用无 readiness 能力的旧 manifest），断言变更前拒绝、指针不动。
 5. 双实例并存：按第 6 节起第二实例（不同 prefix/项目/端口/数据根），断言两边 Profile 互不扫描清理；再以相同 prefix 起第三实例，断言启动前拒绝。
 
-现场保存规则：任一演练失败时保留失败 release 的 `.env`/`.json`、`current_release`/`previous_release` 指针、脚本完整输出与 `docker compose ps` 快照，不要删除 releases 目录或手工改指针；先按第 8 节定位，再决定修复重发或回退。
+现场保存规则：任一演练失败时保留失败 release 的 `.env`/`.json`、`release_pointer.json` 指针、脚本完整输出与 `docker compose ps` 快照，不要删除 releases 目录或手工改指针；先按第 8 节定位，再决定修复重发或回退。
 
 ## 8. 备份与恢复
 

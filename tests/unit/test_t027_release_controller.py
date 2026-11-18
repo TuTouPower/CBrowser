@@ -1643,3 +1643,103 @@ def test_db_volume_inspectable_after_deploy(tmp_path: Path) -> None:
         text=True,
     )
     assert missing.returncode != 0
+
+
+def test_default_deploy_reuses_deployed_data_root_spelling(
+    tmp_path: Path,
+) -> None:
+    """2026-11-18 local verification regression.
+
+    A case-only checkout rename changed the casing of ``pwd``, so a
+    default deploy derived a differently-spelled CBROWSER_DATA_ROOT while
+    already-running Profile containers still mounted the spelling
+    recorded by the deployed release. The Supervisor then rejected those
+    mounts with PathSecurityError and readiness failed. A default
+    (non-explicit) redeploy must reuse the deployed spelling; an operator
+    who explicitly sets CBROWSER_DATA_ROOT is still honoured verbatim
+    (see test_redeploy_same_data_directory_preserves_identity).
+    """
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    (repo / "data" / "instance").mkdir(parents=True, exist_ok=True)
+    alias = repo / "same_data"
+    alias.symlink_to(repo / "data" / "instance", target_is_directory=True)
+
+    first = _deploy(repo, bin_dir, "rel-001", CBROWSER_DATA_ROOT=str(alias))
+    assert first.returncode == 0, first.stderr
+    original = _manifest(repo, "rel-001")["instance"]
+    assert f"CBROWSER_DATA_ROOT={alias}" in (
+        repo / "config" / "deploy" / "releases" / "rel-001.env"
+    ).read_text(encoding="utf-8")
+
+    # No CBROWSER_DATA_ROOT in the environment: the implicit default is
+    # derived from `pwd` and must be aligned back to the deployed value.
+    second = _deploy(repo, bin_dir, "rel-002")
+    assert second.returncode == 0, second.stderr
+    recorded2 = (repo / "config" / "deploy" / "releases" / "rel-002.env").read_text(
+        encoding="utf-8"
+    )
+    line2 = next(
+        l for l in recorded2.splitlines() if l.startswith("CBROWSER_DATA_ROOT=")
+    )
+    assert line2 == f"CBROWSER_DATA_ROOT={alias}"
+    assert _manifest(repo, "rel-002")["instance"] == original
+
+    # An explicit value is never overridden by the alignment.
+    alias2 = repo / "same_data_2"
+    alias2.symlink_to(repo / "data" / "instance", target_is_directory=True)
+    third = _deploy(repo, bin_dir, "rel-003", CBROWSER_DATA_ROOT=str(alias2))
+    assert third.returncode == 0, third.stderr
+    recorded3 = (repo / "config" / "deploy" / "releases" / "rel-003.env").read_text(
+        encoding="utf-8"
+    )
+    line3 = next(
+        l for l in recorded3.splitlines() if l.startswith("CBROWSER_DATA_ROOT=")
+    )
+    assert line3 == f"CBROWSER_DATA_ROOT={alias2}"
+
+
+def test_default_deploy_reuses_deployed_checkout_root_spelling(
+    tmp_path: Path,
+) -> None:
+    """2026-11-18 local verification regression (part 2).
+
+    DATA_ROOT alignment alone was not enough: SECRETS_DIR, FONTS_DIR and
+    the backup path are also derived from `pwd`, so a default deploy could
+    still write a differently-cased checkout root into the new release.
+    Simulate the deployed spelling with a symlink alias of the checkout
+    root and assert every derived host path keeps that spelling.
+    """
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    alias_root = repo / "alias_root"
+    alias_root.symlink_to(repo, target_is_directory=True)
+    alias_secrets = alias_root / "config" / "deploy" / "secrets"
+
+    first = _deploy(
+        repo, bin_dir, "rel-001", CBROWSER_SECRETS_DIR=str(alias_secrets)
+    )
+    assert first.returncode == 0, first.stderr
+    env1 = (repo / "config" / "deploy" / "releases" / "rel-001.env").read_text(
+        encoding="utf-8"
+    )
+    assert f"CBROWSER_SECRETS_DIR={alias_secrets}" in env1
+
+    second = _deploy(repo, bin_dir, "rel-002")
+    assert second.returncode == 0, second.stderr
+    env2 = (repo / "config" / "deploy" / "releases" / "rel-002.env").read_text(
+        encoding="utf-8"
+    )
+
+    def line(text: str, key: str) -> str:
+        return next(l for l in text.splitlines() if l.startswith(key + "="))
+
+    assert line(env2, "CBROWSER_DATA_ROOT") == (
+        f"CBROWSER_DATA_ROOT={alias_root / 'data' / 'instance'}"
+    )
+    assert line(env2, "CBROWSER_SECRETS_DIR") == (
+        f"CBROWSER_SECRETS_DIR={alias_secrets}"
+    )
+    assert line(env2, "CBROWSER_FONTS_DIR") == (
+        f"CBROWSER_FONTS_DIR={alias_root / 'data' / 'fonts'}"
+    )

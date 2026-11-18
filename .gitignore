@@ -67,8 +67,6 @@ docs/archive/spikes/**/*.secret
 
 config/deploy/secrets/
 config/deploy/releases/
-config/deploy/current_release
-config/deploy/previous_release
 config/deploy/release_pointer.json
 config/deploy/backups/
 data/instance/

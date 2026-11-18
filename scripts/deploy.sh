@@ -98,6 +98,27 @@ fi
 DEFAULT_HTTPS_PORT="$(PYTHONPATH="$ROOT/src/backend${PYTHONPATH:+:$PYTHONPATH}" \
   "$NET_CONFIG_PY" -c 'from cbrowser.network_config import DEFAULT_HTTPS_PORT; print(DEFAULT_HTTPS_PORT)')"
 HTTPS_PORT="${CBROWSER_HTTPS_PORT:-$DEFAULT_HTTPS_PORT}"
+# Remember whether the operator named the data root explicitly. The
+# implicit default comes from `pwd`, whose casing can change after a
+# case-only checkout rename on macOS; only that implicit default may be
+# aligned to the already-deployed spelling (see derive_instance_identity).
+# An explicitly provided value is always honoured verbatim.
+USER_SET_DATA_ROOT=0
+USER_SET_SECRETS_DIR=0
+USER_SET_FONTS_DIR=0
+USER_SET_DEPLOY_DIR=0
+if [ -n "${CBROWSER_DATA_ROOT:-}" ]; then
+  USER_SET_DATA_ROOT=1
+fi
+if [ -n "${CBROWSER_SECRETS_DIR:-}" ]; then
+  USER_SET_SECRETS_DIR=1
+fi
+if [ -n "${CBROWSER_FONTS_DIR:-}" ]; then
+  USER_SET_FONTS_DIR=1
+fi
+if [ -n "${CBROWSER_DEPLOY_DIR:-}" ]; then
+  USER_SET_DEPLOY_DIR=1
+fi
 DATA_ROOT="${CBROWSER_DATA_ROOT:-$ROOT/data/instance}"
 SECRETS_DIR="${CBROWSER_SECRETS_DIR:-$ROOT/config/deploy/secrets}"
 DEPLOY_DIR="${CBROWSER_DEPLOY_DIR:-$ROOT/config/deploy}"
@@ -185,8 +206,11 @@ import sys
 
 prefix, data_root, pointer_file, releases_dir = sys.argv[1:]
 # A case-only checkout rename on macOS still refers to the same data
-# directory. Keep its deployed identity and subnet assignments so the
-# Supervisor continues to own existing Profile containers and networks.
+# directory. Keep its deployed identity, subnet assignments AND the exact
+# data-root spelling: already-running Profile containers mount the string
+# recorded in the deployed release env, and the Supervisor compares mount
+# sources against its own root. Introducing a second spelling of the same
+# directory makes reconcile fail closed with PathSecurityError.
 pointer = Path(pointer_file)
 if pointer.is_file():
     try:
@@ -206,12 +230,14 @@ if pointer.is_file():
             print(deployed["CBROWSER_INSTANCE_ID"])
             print(deployed["CBROWSER_MEDIA_SUBNET_POOL"])
             print(deployed["CBROWSER_EDGE_SUBNET"])
+            print(deployed["CBROWSER_DATA_ROOT"])
             sys.exit(0)
 material = ("cbrowser-instance-v1\0" + prefix + "\0" + data_root).encode()
 digest = hashlib.sha256(material).hexdigest()
 print(digest[:32])
 print("10.%d.0.0/16" % (192 + int(digest, 16) % 64))
 print("172.%d.0.0/16" % (18 + int(digest, 16) % 14))
+print(data_root)
 PY
 )"
   CBROWSER_INSTANCE_ID="$(printf '%s' "$out" | sed -n '1p')"
@@ -225,7 +251,78 @@ PY
   if [ -z "${CBROWSER_EDGE_SUBNET:-}" ]; then
     CBROWSER_EDGE_SUBNET="$(printf '%s' "$out" | sed -n '3p')"
   fi
+  # Only the implicit default (derived from `pwd`) is aligned to the
+  # spelling already recorded by the deployed release. An operator who
+  # explicitly set CBROWSER_DATA_ROOT keeps their value unchanged; the
+  # Supervisor's PathValidator handles that case by filesystem identity.
+  ALIGNED_DATA_ROOT="$(printf '%s' "$out" | sed -n '4p')"
+  if [ "$USER_SET_DATA_ROOT" -eq 0 ] && [ -n "$ALIGNED_DATA_ROOT" ]; then
+    DATA_ROOT="$ALIGNED_DATA_ROOT"
+    export CBROWSER_DATA_ROOT="$DATA_ROOT"
+  fi
   export CBROWSER_INSTANCE_ID CBROWSER_MEDIA_SUBNET_POOL CBROWSER_EDGE_SUBNET
+}
+
+align_checkout_root() {
+  # 2026-11-18: `pwd` returns the on-disk casing of the checkout, which
+  # can differ from the spelling recorded by the deployed release after a
+  # case-only rename. Every host path derived from $ROOT (secrets, fonts,
+  # releases, backups) must keep the deployed spelling: otherwise the
+  # release env/manifest mixes spellings and the Supervisor compares
+  # container mount sources against a differently-cased data root.
+  # Only implicit defaults are aligned; explicit operator overrides win.
+  if [ "$USER_SET_DATA_ROOT" -ne 0 ] || [ ! -s "$POINTER_FILE" ]; then
+    return 0
+  fi
+  local current env_file aligned
+  current="$(read_pointer "$POINTER_FILE")"
+  if [ -z "$current" ]; then
+    return 0
+  fi
+  env_file="$RELEASES_DIR/$current.env"
+  if [ ! -f "$env_file" ]; then
+    return 0
+  fi
+  aligned="$(python3 - "$env_file" "$ROOT" <<'PY'
+import os
+import sys
+from pathlib import Path
+
+env_file, current_root = sys.argv[1:]
+deployed = dict(
+    line.split("=", 1)
+    for line in Path(env_file).read_text().splitlines()
+    if "=" in line and not line.startswith("#")
+)
+result = current_root
+secrets = deployed.get("CBROWSER_SECRETS_DIR")
+if secrets:
+    candidate = str(Path(secrets).parent.parent.parent)
+    if os.path.isdir(candidate) and os.path.samefile(candidate, current_root):
+        result = candidate
+print(result)
+PY
+)"
+  if [ -z "$aligned" ] || [ "$aligned" = "$ROOT" ]; then
+    return 0
+  fi
+  ROOT="$aligned"
+  DATA_ROOT="$ROOT/data/instance"
+  if [ "$USER_SET_SECRETS_DIR" -eq 0 ]; then
+    SECRETS_DIR="$ROOT/config/deploy/secrets"
+  fi
+  if [ "$USER_SET_DEPLOY_DIR" -eq 0 ]; then
+    DEPLOY_DIR="$ROOT/config/deploy"
+    RELEASES_DIR="$DEPLOY_DIR/releases"
+    BACKUP_DIR="$DEPLOY_DIR/backups"
+    POINTER_FILE="$DEPLOY_DIR/release_pointer.json"
+  fi
+  if [ "$USER_SET_FONTS_DIR" -eq 0 ]; then
+    FONTS_DIR="$ROOT/data/fonts"
+  fi
+  export CBROWSER_DATA_ROOT="$DATA_ROOT" \
+    CBROWSER_SECRETS_DIR="$SECRETS_DIR" \
+    CBROWSER_FONTS_DIR="$FONTS_DIR"
 }
 
 pools_overlap() {
@@ -932,6 +1029,7 @@ cmd_deploy() {
   check_prerequisites
   check_engine_artifact_preflight
   derive_instance_identity
+  align_checkout_root
   # t080: the host data root remains the instance-identity anchor (its
   # existence is what derive_instance_identity's same-directory reuse
   # checks); only the empty root is created here — all data lives in

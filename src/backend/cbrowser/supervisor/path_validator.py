@@ -67,6 +67,35 @@ class PathValidator:
     def get_agent_socket_path(self, profile_id: str, instance_id: str) -> Path:
         return agent_socket_path(self.socket_root, profile_id, instance_id)
 
+    def _within(self, candidate: Path, root: Path) -> bool:
+        """Containment by path spelling OR by filesystem identity.
+
+        ``Path.resolve()`` does not canonicalise the casing of path
+        segments, so on a case-insensitive filesystem the same directory
+        can be spelled differently (a case-only checkout rename, or an
+        alias). A pure string ``relative_to`` check then rejects a
+        legitimate in-root path as an escape. Fall back to filesystem
+        identity: if the candidate or any of its ancestors is the same
+        file as ``root``, the candidate really is inside that root. On a
+        case-sensitive filesystem a differently-cased path is a different
+        file (or does not exist), so it stays refused — no bypass.
+        """
+        try:
+            candidate.relative_to(root)
+            return True
+        except ValueError:
+            pass
+        for ancestor in (candidate, *candidate.parents):
+            try:
+                if os.path.samefile(ancestor, root):
+                    return True
+            except OSError:
+                continue
+        return False
+
+    def _within_root(self, candidate: Path) -> bool:
+        return self._within(candidate, self.data_root)
+
     def validate_safe_path(
         self, target_path: Path | str, allow_create: bool = False
     ) -> Path:
@@ -85,9 +114,7 @@ class PathValidator:
             raise PathSecurityError(f"Failed to resolve path {target_path}: {e}") from e
 
         # Check if resolved is strictly inside or equal to data_root
-        try:
-            resolved.relative_to(self.data_root)
-        except ValueError:
+        if not self._within_root(resolved):
             raise PathSecurityError(
                 f"Path traversal / escape detected: {target_path} -> {resolved} "
                 f"is not within root {self.data_root}"
@@ -98,9 +125,7 @@ class PathValidator:
         while current != current.parent:
             if current.is_symlink():
                 target = current.resolve()
-                try:
-                    target.relative_to(self.data_root)
-                except ValueError:
+                if not self._within_root(target):
                     raise PathSecurityError(
                         f"Symlink escape detected: {current} points to {target} "
                         f"outside {self.data_root}"
@@ -127,7 +152,7 @@ class PathValidator:
     ) -> Path:
         runtime = self.get_runtime_dir(profile_id)
         resolved = self.validate_safe_path(path, allow_create=allow_create)
-        if not resolved.is_relative_to(runtime):
+        if not self._within(resolved, runtime):
             raise PathSecurityError("Runtime mount source escapes its Profile")
         return resolved
 
@@ -136,7 +161,7 @@ class PathValidator:
     ) -> Path:
         secret_dir = self.get_secret_dir(profile_id)
         resolved = self.validate_safe_path(path, allow_create=allow_create)
-        if not resolved.is_relative_to(secret_dir):
+        if not self._within(resolved, secret_dir):
             raise PathSecurityError("Secret source escapes its Profile")
         return resolved
 
