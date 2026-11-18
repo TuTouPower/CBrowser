@@ -106,7 +106,7 @@ reviewed_scope: 60ba63b53a5a49b6
 
 ### 评审范围说明
 
-本轮以工作区完整内容为准（`git diff 12e3ac2c3066fb732c98ba9cc0bde5fd3abef133` + 磁盘上的未跟踪新交付文件）。注意：新交付文件（`tests/unit/test_t083_service_readiness_probe.py`、`tests/unit/test_t083_runner_state_wakeup.py`、`scripts/service_readiness_probe.py` 等）至今仍为未跟踪状态（`git status --short` 显示 `??`），未执行 `git add -N`，故不出现在 `git diff` 输出里；本轮对它们的核查以磁盘文件原文 + 独立复跑为准，不以 diff 有无为准。落点校验：`git rev-parse --show-toplevel` 输出精确等于工作仓库。独立复跑：门禁 venv + `PYTHONPATH=src/backend` + `TMPDIR=/home/hatch/workspace/cloud-task-logs/tmp-t083`，三批串行实跑 194 个测试全部通过（新 t083 五文件：31 passed；f002/f005/f006/f007 相关九文件：88 passed；t054/t056/t027/集成 supervisor 两文件：75 passed）。危险模式全量扫描：新/改测试中无恒真断言、无删/反转/注释断言、无 `.skip`/`.only`/xfail、无 `type: ignore`；无删除的测试（删除的断言行均为第 1 轮已裁决的旧路由/旧契约断言，见改测方向复核）。
+本轮以工作区完整内容为准（`git diff 12e3ac2c3066fb732c98ba9cc0bde5fd3abef133` + 磁盘上的未跟踪新交付文件）。注意：新交付文件（`tests/unit/test_t083_service_readiness_probe.py`、`tests/unit/test_t083_runner_state_wakeup.py`、`scripts/service_readiness_probe.py` 等）至今仍为未跟踪状态（`git status --short` 显示 `??`），未执行 `git add -N`，故不出现在 `git diff` 输出里；本轮对它们的核查以磁盘文件原文 + 独立复跑为准，不以 diff 有无为准。落点校验：`git rev-parse --show-toplevel` 输出精确等于工作仓库。独立复跑：门禁 venv + `PYTHONPATH=src/backend` + `TMPDIR=~/workspace/cloud-task-logs/tmp-t083`，三批串行实跑 194 个测试全部通过（新 t083 五文件：31 passed；f002/f005/f006/f007 相关九文件：88 passed；t054/t056/t027/集成 supervisor 两文件：75 passed）。危险模式全量扫描：新/改测试中无恒真断言、无删/反转/注释断言、无 `.skip`/`.only`/xfail、无 `type: ignore`；无删除的测试（删除的断言行均为第 1 轮已裁决的旧路由/旧契约断言，见改测方向复核）。
 
 ## Findings
 
