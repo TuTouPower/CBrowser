@@ -85,7 +85,32 @@ def _agent_key(tmp_path: Path) -> Path:
     return key
 
 
-def _running_handler(_req: httpx.Request) -> httpx.Response:
+def _running_handler(req: httpx.Request) -> httpx.Response:
+    # t083: start intent is read through the minimal batch snapshot.
+    if req.url.path.endswith("/state/snapshot"):
+        state = {
+            "profile_id": "p1",
+            "display_number": 1,
+            "desired_state": "running",
+            "observed_state": "stopped",
+            "runtime_instance_id": None,
+            "config_version": 1,
+            "failure_count": 0,
+            "restart_blocked": False,
+            "last_exit_event_id": None,
+            "backoff_started_at": None,
+            "next_retry_at": None,
+            "updated_at": "2026-01-01T00:00:00+00:00",
+            "state_revision": 1,
+        }
+        return httpx.Response(
+            200,
+            json={
+                "api_epoch": "t041-test-epoch",
+                "profiles": [state],
+                "next_cursor": None,
+            },
+        )
     return httpx.Response(
         200,
         json={"status": "ok", "desired_state": "running", "restart_blocked": False},
@@ -184,18 +209,17 @@ async def test_start_profile_fail_closed_when_font_set_tampered(
     adapter.start_browser_container.assert_not_awaited()  # type: ignore[attr-defined]
 
 
-@pytest.mark.parametrize("bind_font_set", [False, True])
-async def test_start_profile_starts_with_bound_or_absent_fonts(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bind_font_set: bool
+async def test_start_profile_starts_with_bound_fonts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """t075: the absent-fonts half of the old parametrized test asserted
+    the abolished "platform fonts not configured" start; an unbound
+    profile now fails closed (see test_t075_supervisor_fonts)."""
     from cbrowser.supervisor.core import SupervisorCore
     from cbrowser.supervisor.path_validator import PathValidator
     from cbrowser.supervisor.port_allocator import PortAllocator
 
-    fonts_root = tmp_path / "fonts"
-    font_set_id = None
-    if bind_font_set:
-        fonts_root, font_set_id = _make_font_set(tmp_path, fonts_root=fonts_root)
+    fonts_root, font_set_id = _make_font_set(tmp_path, fonts_root=tmp_path / "fonts")
     monkeypatch.setenv("CBROWSER_FONTS_DIR", str(fonts_root))
 
     root = (tmp_path / "data").resolve()
@@ -285,25 +309,26 @@ async def test_start_profile_starts_with_bound_or_absent_fonts(
 
 
 def _write_agent_files(
-    tmp_path: Path, config: dict
+    tmp_path: Path, config: dict, font_verification: dict | None = None
 ) -> tuple[Path, Path]:
     run_dir = tmp_path / "runtime"
     run_dir.mkdir(parents=True, exist_ok=True)
+    runner_info: dict = {
+        "profile_id": "test_profile",
+        "runtime_instance_id": "test_instance",
+        "config_version": 1,
+        "cdp_port": 9222,
+        "browser_ws_url": "ws://127.0.0.1:9222/cdp",
+        "display": ":99",
+        "pulse_sock": str(run_dir / "pulse.sock"),
+        "pulse_cookie": str(run_dir / "pulse.cookie"),
+        "browser_pid": 1234,
+        "runner_pid": 5678,
+    }
+    if font_verification is not None:
+        runner_info["font_verification"] = font_verification
     (run_dir / "runner_info.json").write_text(
-        json.dumps(
-            {
-                "profile_id": "test_profile",
-                "runtime_instance_id": "test_instance",
-                "config_version": 1,
-                "cdp_port": 9222,
-                "browser_ws_url": "ws://127.0.0.1:9222/cdp",
-                "display": ":99",
-                "pulse_sock": str(run_dir / "pulse.sock"),
-                "pulse_cookie": str(run_dir / "pulse.cookie"),
-                "browser_pid": 1234,
-                "runner_pid": 5678,
-            }
-        ),
+        json.dumps(runner_info),
         encoding="utf-8",
     )
     (run_dir / "snapshot.json").write_text(
@@ -312,14 +337,23 @@ def _write_agent_files(
     return run_dir, tmp_path / "downloads"
 
 
-async def _health_details(run_dir: Path, download_dir: Path, font_root: Path) -> dict:
+def _verdict(set_id: str, *, missing_optional=(), status: str = "verified") -> dict:
+    return {
+        "status": status,
+        "failure": None if status == "verified" else "font_mount_missing",
+        "font_set_id": set_id,
+        "missing_optional": list(missing_optional),
+        "effective_fonts": 12,
+    }
+
+
+async def _health_details(run_dir: Path, download_dir: Path) -> dict:
     from cbrowser.runtime_agent.agent import create_agent_app
 
     app = create_agent_app(
         run_dir=run_dir,
         default_download_dir=download_dir,
         cdp_proxy=None,
-        font_set_root=font_root,
     )
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -329,41 +363,108 @@ async def _health_details(run_dir: Path, download_dir: Path, font_root: Path) ->
 
 
 async def test_health_details_report_bound_font_set(tmp_path: Path) -> None:
-    fonts_root, set_id = _make_font_set(tmp_path)
+    """t075: health carries the Runner's per-instance verdict — the
+    bound set id and its optional-coverage gaps — without re-scanning
+    font bytes in the Agent."""
+    _fonts_root, set_id = _make_font_set(tmp_path)
     run_dir, download_dir = _write_agent_files(
         tmp_path,
         {"fingerprint_platform": "windows", "font_set_id": set_id},
+        font_verification=_verdict(set_id),
     )
-    details = await _health_details(run_dir, download_dir, fonts_root)
+    details = await _health_details(run_dir, download_dir)
     assert details["font_set_id"] == set_id
     assert details["missing_fonts"] == []
+    assert details["font_verification"]["status"] == "verified"
 
 
 async def test_health_details_when_font_set_absent(tmp_path: Path) -> None:
-    """AC-006: null font_set_id reports platform fonts unconfigured and marks
-    that Linux base fonts are currently exposed so the runtime status is not
-    silently indistinguishable from a healthy bound set."""
+    """t075 rewrite: the abolished "platform fonts unconfigured / Linux
+    base fonts exposed" marker is gone.  An instance with no recorded
+    verdict reports no binding and no verdict (and is never ready —
+    see test_health_ready_is_gated_by_font_verdict)."""
     run_dir, download_dir = _write_agent_files(
         tmp_path,
         {"fingerprint_platform": "windows", "font_set_id": None},
     )
-    details = await _health_details(run_dir, download_dir, tmp_path / "fonts")
+    details = await _health_details(run_dir, download_dir)
     assert details["font_set_id"] is None
-    assert any(
-        "linux base fonts" in str(item).lower() for item in details["missing_fonts"]
-    ), details["missing_fonts"]
+    assert details["missing_fonts"] == []
+    assert details["font_verification"] is None
 
 
 async def test_health_details_report_missing_detection_fonts(tmp_path: Path) -> None:
-    fonts_root, set_id = _make_font_set(tmp_path, names=("arial.ttf",))
+    _fonts_root, set_id = _make_font_set(tmp_path, names=("arial.ttf",))
     run_dir, download_dir = _write_agent_files(
         tmp_path,
         {"fingerprint_platform": "windows", "font_set_id": set_id},
+        font_verification=_verdict(set_id, missing_optional=["verdana.ttf"]),
     )
-    details = await _health_details(run_dir, download_dir, fonts_root)
+    details = await _health_details(run_dir, download_dir)
     assert details["font_set_id"] == set_id
     assert "verdana.ttf" in details["missing_fonts"]
     assert "arial.ttf" not in details["missing_fonts"]
+
+
+async def test_health_ready_is_gated_by_font_verdict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC-006: with every other subsystem healthy, a failed (or
+    missing) font verdict alone keeps ready=False; a verified verdict
+    lets ready become True."""
+    from types import SimpleNamespace
+
+    from cbrowser.runtime_agent import agent as agent_module
+    from cbrowser.runtime_agent.agent import create_agent_app
+
+    monkeypatch.setattr(
+        agent_module, "check_display", lambda *a, **k: (True, "ok")
+    )
+    monkeypatch.setattr(
+        agent_module, "check_audio", lambda *a, **k: (True, "ok")
+    )
+    monkeypatch.setattr(
+        agent_module, "check_browser", lambda *a, **k: (True, "ok")
+    )
+    _fonts_root, set_id = _make_font_set(tmp_path)
+
+    async def _ready(verdict: dict | None) -> bool:
+        run_dir = tmp_path / ("run-" + (verdict["status"] if verdict else "none"))
+        run_dir.mkdir(parents=True, exist_ok=True)
+        download_dir = tmp_path / "downloads"
+        info: dict = {
+            "profile_id": "test_profile",
+            "runtime_instance_id": "test_instance",
+            "config_version": 1,
+            "cdp_port": 9222,
+            "browser_ws_url": "ws://127.0.0.1:9222/cdp",
+            "display": ":99",
+            "pulse_sock": str(run_dir / "pulse.sock"),
+            "pulse_cookie": str(run_dir / "pulse.cookie"),
+            "browser_pid": 1234,
+            "runner_pid": 5678,
+        }
+        if verdict is not None:
+            info["font_verification"] = verdict
+        (run_dir / "runner_info.json").write_text(
+            json.dumps(info), encoding="utf-8"
+        )
+        app = create_agent_app(
+            run_dir=run_dir,
+            default_download_dir=download_dir,
+            cdp_proxy=SimpleNamespace(capture_alive=True, rearm_count=0),
+        )
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            resp = await client.get("/health")
+        assert resp.status_code == 200
+        return resp.json()["ready"]
+
+    assert await _ready(_verdict(set_id)) is True
+    assert await _ready(_verdict(set_id, status="failed")) is False
+    assert await _ready(None) is False
 
 
 async def test_runtime_response_and_sse_carry_font_fields(
@@ -398,11 +499,14 @@ async def test_runtime_response_and_sse_carry_font_fields(
     assert event_data.missing_fonts == []
 
 
-async def test_runtime_response_marks_linux_base_fonts_when_unset(
+async def test_runtime_response_when_unset_has_no_base_fonts_marker(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """AC-006: null font_set_id must reach runtime response/SSE as an explicit
-    platform-fonts-unconfigured marker, not an empty missing-fonts list."""
+    """t075 rewrite of the AC-006 marker test: the "platform fonts
+    unconfigured / Linux base fonts" marker is abolished along with the
+    fallback it described.  An unbound profile (only reachable with a
+    pre-migration snapshot) reports no binding and an empty
+    missing-fonts list."""
     from cbrowser.api.runtime_coordinator import RuntimeCoordinator
     from cbrowser.api.v1.runtime_views import make_runtime_response
 
@@ -422,16 +526,12 @@ async def test_runtime_response_marks_linux_base_fonts_when_unset(
     )
     response = await make_runtime_response(_runtime(), coordinator)
     assert response.font_set_id is None
-    assert any(
-        "linux base fonts" in item.lower() for item in response.missing_fonts
-    ), response.missing_fonts
+    assert response.missing_fonts == []
 
     await coordinator.publish_profile_change("p1")
     event_data = broadcaster.publish.call_args.args[0]  # type: ignore[attr-defined]
     assert event_data.font_set_id is None
-    assert any(
-        "linux base fonts" in item.lower() for item in event_data.missing_fonts
-    ), event_data.missing_fonts
+    assert event_data.missing_fonts == []
 
 
 # NOTE (t080): _start_browser and the two font-mount tests were removed

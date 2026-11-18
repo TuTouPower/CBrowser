@@ -62,12 +62,11 @@ services:
       - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}/viewer_grant_key:/run/secrets/viewer_grant_key:ro
     networks: [edge]
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3)"]
-      interval: 5s
-      timeout: 4s
-      retries: 12
-      start_period: 10s
+    # t083: no Docker healthcheck — periodic health observation lives
+    # in the services' own control components (API coordinator observes
+    # the Supervisor, the Supervisor observes API/Gateway), and deploy
+    # confirms readiness with deadline-bounded probes.  A 5s in-container
+    # python healthcheck was a top source of steady-state Docker execs.
 
   gateway:
     image: ${CBROWSER_GATEWAY_IMAGE:?run scripts/deploy.sh first}
@@ -105,14 +104,8 @@ services:
     networks: [edge]
     depends_on:
       api:
-        condition: service_healthy
+        condition: service_started
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18080/gateway/v1/health', timeout=3)"]
-      interval: 5s
-      timeout: 4s
-      retries: 12
-      start_period: 5s
 
   supervisor:
     image: ${CBROWSER_SUPERVISOR_IMAGE:?run scripts/deploy.sh first}
@@ -184,20 +177,10 @@ services:
     networks: [edge]
     depends_on:
       api:
-        condition: service_healthy
+        condition: service_started
       gateway:
-        condition: service_healthy
+        condition: service_started
     restart: unless-stopped
-    healthcheck:
-      # Runs inside the supervisor container, reading the token from the
-      # already-mounted secret file: the host never needs the secret, and
-      # the control plane starts before the initial scan (t027), so this
-      # liveness probe is not blocked by reconciliation.
-      test: ["CMD", "python3", "-c", "import os, urllib.request; token = open(os.environ['CBROWSER_SUPERVISOR_TOKEN_FILE']).read().strip(); req = urllib.request.Request('http://127.0.0.1:8005/supervisor/v1/health', headers={'Authorization': 'Bearer ' + token}); urllib.request.urlopen(req, timeout=3)"]
-      interval: 5s
-      timeout: 4s
-      retries: 12
-      start_period: 5s
 
   caddy:
     image: ${CBROWSER_CADDY_IMAGE:?run scripts/deploy.sh first}
@@ -235,9 +218,9 @@ services:
     networks: [edge]
     depends_on:
       api:
-        condition: service_healthy
+        condition: service_started
       gateway:
-        condition: service_healthy
+        condition: service_started
     restart: unless-stopped
 
 networks:

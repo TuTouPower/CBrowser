@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SupervisorStateProtocol",
+  "description": "Minimal batch state contract between the cbrowser API and the Supervisor (snapshot + change notices)",
+  "version": "1.0.0",
+  "messages": {
+    "SupervisorProfileState": {
+      "$id": "#/$defs/SupervisorProfileState",
+      "$ref": "#/$defs/SupervisorProfileState"
+    },
+    "StateSnapshot": {
+      "$id": "#/$defs/StateSnapshot",
+      "$ref": "#/$defs/StateSnapshot"
+    },
+    "StateChangeNotice": {
+      "$id": "#/$defs/StateChangeNotice",
+      "$ref": "#/$defs/StateChangeNotice"
+    }
+  },
+  "$defs": {
+    "StateChangeNotice": {
+      "additionalProperties": false,
+      "description": "Pushed change notification over the Supervisor control channel.\n\nCarries the full minimal state of each changed Profile (fenced by\n``state_revision``) plus the ids of Profiles removed since the\nprevious notice.  Delivery is best-effort: the 30-second snapshot\nfallback realigns anything a lost notice missed.",
+      "properties": {
+        "api_epoch": {
+          "title": "Api Epoch",
+          "type": "string"
+        },
+        "states": {
+          "items": {
+            "$ref": "#/$defs/SupervisorProfileState"
+          },
+          "title": "States",
+          "type": "array"
+        },
+        "removed": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Removed",
+          "type": "array"
+        }
+      },
+      "required": [
+        "api_epoch"
+      ],
+      "title": "StateChangeNotice",
+      "type": "object"
+    },
+    "StateSnapshot": {
+      "additionalProperties": false,
+      "description": "One batch of a full state alignment snapshot.",
+      "properties": {
+        "api_epoch": {
+          "title": "Api Epoch",
+          "type": "string"
+        },
+        "profiles": {
+          "items": {
+            "$ref": "#/$defs/SupervisorProfileState"
+          },
+          "title": "Profiles",
+          "type": "array"
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Next Cursor"
+        }
+      },
+      "required": [
+        "api_epoch",
+        "profiles"
+      ],
+      "title": "StateSnapshot",
+      "type": "object"
+    },
+    "SupervisorProfileState": {
+      "additionalProperties": false,
+      "description": "One Profile's minimal coordination state.",
+      "properties": {
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "display_number": {
+          "minimum": 0,
+          "title": "Display Number",
+          "type": "integer"
+        },
+        "desired_state": {
+          "title": "Desired State",
+          "type": "string"
+        },
+        "observed_state": {
+          "title": "Observed State",
+          "type": "string"
+        },
+        "runtime_instance_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Runtime Instance Id"
+        },
+        "config_version": {
+          "minimum": 1,
+          "title": "Config Version",
+          "type": "integer"
+        },
+        "failure_count": {
+          "minimum": 0,
+          "title": "Failure Count",
+          "type": "integer"
+        },
+        "restart_blocked": {
+          "default": false,
+          "title": "Restart Blocked",
+          "type": "boolean"
+        },
+        "last_exit_event_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Exit Event Id"
+        },
+        "backoff_started_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Backoff Started At"
+        },
+        "next_retry_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Next Retry At"
+        },
+        "updated_at": {
+          "title": "Updated At",
+          "type": "string"
+        },
+        "state_revision": {
+          "minimum": 0,
+          "title": "State Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "profile_id",
+        "display_number",
+        "desired_state",
+        "observed_state",
+        "config_version",
+        "failure_count",
+        "updated_at",
+        "state_revision"
+      ],
+      "title": "SupervisorProfileState",
+      "type": "object"
+    }
+  }
+}

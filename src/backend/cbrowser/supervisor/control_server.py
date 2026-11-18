@@ -17,6 +17,7 @@ import asyncio
 import hmac
 import inspect
 import logging
+from types import SimpleNamespace
 from pathlib import Path
 from typing import Annotated, Any
 from urllib.parse import quote
@@ -25,8 +26,8 @@ import websockets
 from cbrowser.domain.models import (
     PreviewPolicySyncRequest,
     ProfileConfig,
-    ProfileRuntimeResponse,
 )
+from cbrowser.shared.state_protocol import StateChangeNotice
 from cbrowser.secret_files import read_secret_file
 from cbrowser.services.tunnel_registry import AutomationTunnelRegistry
 from cbrowser.supervisor.core import (
@@ -200,6 +201,18 @@ def create_control_app(
         return {"status": "ok", "role": "supervisor"}
 
     @app.post(
+        "/supervisor/v1/state-changes",
+        dependencies=[Depends(verify_token)],
+    )
+    async def state_changes(notice: StateChangeNotice):
+        # t083: pushed minimal state from the API.  Applying it marks
+        # the Profiles dirty; the runner's loop drains the dirty set
+        # into a targeted scan/recovery pass within the same tick
+        # cadence, so intent changes enter coordination in seconds.
+        core.state_cache.apply_notice(notice)
+        return {"status": "ok"}
+
+    @app.post(
         "/supervisor/v1/profiles/start",
         response_model=StartProfileResponse,
         dependencies=[Depends(verify_token)],
@@ -320,15 +333,18 @@ def create_control_app(
     )
     async def get_status(profile_id: str):
         session = core._sessions.get(profile_id)
-        try:
-            response = await core.api.get(
-                f"/api/v1/internal/supervisor/profiles/{quote(profile_id, safe='')}/runtime",
-                headers=core._auth_headers(),
-            )
-            response.raise_for_status()
-            runtime = ProfileRuntimeResponse.model_validate(response.json())
-        except Exception:  # noqa: BLE001 - runtime state query failure mapped to 503 Service Unavailable
-            raise HTTPException(503, "Persisted runtime state is unavailable") from None
+        # t083: persisted state comes from the minimal state cache;
+        # an unknown/unauthoritative state is the former query failure.
+        cached = await core._state_entry(profile_id)
+        if cached is None:
+            raise HTTPException(503, "Persisted runtime state is unavailable")
+        runtime = SimpleNamespace(
+            runtime_instance_id=cached.get("runtime_instance_id"),
+            observed_state=cached.get("observed_state"),
+            desired_state=cached.get("desired_state"),
+            restart_blocked=cached.get("restart_blocked", False),
+            failure_count=cached.get("failure_count", 0),
+        )
         if session and session.runtime_instance_id == runtime.runtime_instance_id:
             return ProfileRuntimeStatus(
                 profile_id=profile_id,

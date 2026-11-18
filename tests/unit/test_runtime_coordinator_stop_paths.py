@@ -73,7 +73,12 @@ async def test_unreachable_supervisor_status_records_error_and_retries(
         error = coordinator.get_last_error(profile.id)
         assert error is not None
         assert "Supervisor unreachable" in error
-        assert all(path.endswith("/status") for path in requests)
+        # t083: state-change notices ride the same channel; the
+        # retryable round itself only ever calls the status RPC.
+        assert all(
+            path.endswith("/status") or path.endswith("/state-changes")
+            for path in requests
+        )
         runtime = await service.get_runtime(profile.id)
         assert runtime.desired_state == "stopped"
     finally:
@@ -322,7 +327,14 @@ async def test_restart_blocked_terminates_round_without_retry(tmp_path: Path) ->
         finally:
             await coordinator.stop()
 
-        assert supervisor_calls == []
+        # t083: the round makes no lifecycle/status RPC; the only
+        # permitted traffic is the fire-and-forget state-change notice
+        # published with the state snapshot.
+        assert [
+            path
+            for path in supervisor_calls
+            if not path.endswith("/state-changes")
+        ] == []
         error = coordinator.get_last_error(profile.id)
         assert error is not None and "Restart blocked" in error
     finally:

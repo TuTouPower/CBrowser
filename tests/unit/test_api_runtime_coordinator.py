@@ -153,9 +153,15 @@ async def test_coordinator_start_rpc_success(profile_service):
     try:
         success = await coord.reconcile_profile_now(p.id)
         assert success is ReconcileOutcome.CONVERGED
-        assert len(recorded_requests) == 1
-        assert recorded_requests[0].url.path == "/supervisor/v1/profiles/start"
-        payload = json.loads(recorded_requests[0].content)
+        # t083: the state-change notice also travels this channel; the
+        # reconcile itself issues exactly one start RPC.
+        start_requests = [
+            r
+            for r in recorded_requests
+            if r.url.path == "/supervisor/v1/profiles/start"
+        ]
+        assert len(start_requests) == 1
+        payload = json.loads(start_requests[0].content)
         assert payload["profile_number"] == p.display_number
         assert coord.get_last_error(p.id) is None
     finally:
@@ -259,8 +265,13 @@ async def test_coordinator_stop_rpc_success(profile_service):
     try:
         success = await coord.reconcile_profile_now(p.id)
         assert success is ReconcileOutcome.CONVERGED
-        assert len(recorded_requests) == 1
-        assert recorded_requests[0].url.path == "/supervisor/v1/profiles/stop"
+        # t083: see the start-RPC test — exactly one stop RPC.
+        stop_requests = [
+            r
+            for r in recorded_requests
+            if r.url.path == "/supervisor/v1/profiles/stop"
+        ]
+        assert len(stop_requests) == 1
         assert coord.get_last_error(p.id) is None
     finally:
         await coord.stop()
@@ -372,7 +383,10 @@ async def test_reconcile_loop_respects_explicit_retry_cap(
 
     async def mock_handler(request: httpx.Request) -> httpx.Response:
         nonlocal attempts
-        attempts += 1
+        # t083: fire-and-forget state-change notices are not reconcile
+        # attempts and stay outside the retry-cap accounting.
+        if not request.url.path.endswith("/state-changes"):
+            attempts += 1
         raise httpx.ConnectError("supervisor down")
 
     coord = RuntimeCoordinator(

@@ -36,6 +36,7 @@ GOLDEN_SCHEMA = Path(__file__).resolve().parent / "data" / "t056_fresh_schema_be
 REVISION_0002 = "c41f0a2b7d93"
 REVISION_0003 = "a35c0f1e7b42"
 REVISION_0008 = "3751fed02a4a"
+REVISION_0012 = "c81f0a11b001"
 VERSIONS_DIR = (
     Path(__file__).resolve().parents[2]
     / "src" / "backend" / "migrations" / "versions"
@@ -333,10 +334,16 @@ def test_fresh_db_schema_matches_golden_except_intended_changes(
     named indexes, primary-key autoindex and the partial unique index
     that enforces one open intent per profile); t081 0012 extends the
     allowed deltas by exactly one more new table, ``font_set_assets``
-    (the font asset catalog); p130/p136 0013 adds exactly one more
-    table, ``profile_deletion_batch_members`` (membership rows plus its
-    named and primary-key autoindex); nothing else may appear and
-    nothing pre-existing may vanish."""
+    (the font asset catalog); t083 0013 extends them by one new column,
+    ``profile_runtimes.state_revision``; t075 (rechained after t083)
+    extends the registered deltas on ``profiles`` only: ``gpu_family``
+    is dropped (GPU identity is engine-derived, ADR 040),
+    ``color_scheme`` tightens to ``DEFAULT 'light' NOT NULL`` and
+    ``include_cjk_fonts`` is added — the first registered column drop,
+    deliberate and listed below; p130/p136 (rechained after t075) adds
+    one more table, ``profile_deletion_batch_members`` (membership rows
+    plus its named and primary-key autoindex). Nothing else may appear
+    and nothing pre-existing may vanish beyond these registered deltas."""
     db = tmp_path / "fresh.db"
     run_database_migrations(db)
     before = {}
@@ -373,6 +380,7 @@ def test_fresh_db_schema_matches_golden_except_intended_changes(
         if key in (
             ("table", "profiles"),
             ("table", "proxy_egress_observations"),
+            ("table", "profile_runtimes"),
         ):
             continue
         assert after[key] == before[key], key
@@ -389,13 +397,22 @@ def test_fresh_db_schema_matches_golden_except_intended_changes(
         "updated_at VARCHAR(64) NOT NULL",
     ):
         assert column in deletions_sql, column
+    runtime_sql = after[("table", "profile_runtimes")]
+    assert "state_revision INTEGER DEFAULT '0' NOT NULL" in runtime_sql
+    assert runtime_sql.replace(
+        ", state_revision INTEGER DEFAULT '0' NOT NULL", ""
+    ) == before[("table", "profile_runtimes")]
     before_lines = _normalized_sql_lines(before[("table", "profiles")])
     after_lines = _normalized_sql_lines(after[("table", "profiles")])
     assert sorted(set(after_lines) - set(before_lines)) == [
-        "display_number INTEGER NOT NULL"
+        "color_scheme VARCHAR(32) DEFAULT 'light' NOT NULL",
+        "display_number INTEGER NOT NULL",
+        "include_cjk_fonts BOOLEAN DEFAULT '1' NOT NULL",
     ]
     assert sorted(set(before_lines) - set(after_lines)) == [
-        "display_number INTEGER"
+        "color_scheme VARCHAR(32)",
+        "display_number INTEGER",
+        "gpu_family VARCHAR(32) DEFAULT 'auto' NOT NULL",
     ]
     obs_sql = after[("table", "proxy_egress_observations")]
     for column in (
@@ -471,6 +488,31 @@ def test_0009_backfill_skips_existing_numbers_with_gaps(
                     f"2026-01-{day}T00:00:00+00:00",
                 ),
             )
+        conn.commit()
+    finally:
+        conn.close()
+    # t075: the full chain now ends at 0013, whose guard refuses to
+    # rewrite profiles that have no font binding and no verified set to
+    # bind. Give the fixture profiles a verified windows set at the
+    # 0012 stage so the chain can complete; the 0009 backfill assertion
+    # below is unaffected.
+    command.upgrade(cfg, REVISION_0012)
+    conn = sqlite3.connect(db)
+    try:
+        set_id = "a" * 64
+        conn.execute(
+            "INSERT INTO font_set_assets (platform, set_id, source,"
+            " source_version, file_count, total_bytes, integrity, state,"
+            " revision, state_seq, verified_at, audited_at, created_at,"
+            " updated_at) VALUES ('windows', ?, 'fixture', 'v1', 1, 1,"
+            " '{}', 'verified', 1, 1, '2026-01-01T00:00:00+00:00', NULL,"
+            " '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')",
+            (set_id,),
+        )
+        conn.execute(
+            "UPDATE profiles SET font_set_id = ? WHERE font_set_id IS NULL",
+            (set_id,),
+        )
         conn.commit()
     finally:
         conn.close()

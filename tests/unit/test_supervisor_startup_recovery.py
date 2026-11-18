@@ -57,7 +57,29 @@ def mock_core():
     core.is_profile_locked = lambda pid: get_lock(pid).locked()
     core._native_exits = set()
     core.has_native_exit = lambda pid, inst, ver: (pid, inst, ver) in core._native_exits
+    # t083: recovery reads the core's minimal state cache view.
+    core._state_entries = AsyncMock(return_value=None)
+    core._state_entry = AsyncMock(return_value=None)
     return core
+
+
+def _install_state(mock_core, profiles, states):
+    """Install cached state (t083): ``states`` is one runtime dict or
+    a list of successive ones returned by ``_state_entry`` (the last
+    one repeats).  The batch view merges each profile with the first
+    state."""
+    if isinstance(states, dict):
+        states = [states]
+    entries = [{**p, **states[0]} for p in profiles]
+    calls = {"i": 0}
+
+    async def _entry(profile_id):
+        idx = min(calls["i"], len(states) - 1)
+        calls["i"] += 1
+        return states[idx]
+
+    mock_core._state_entries = AsyncMock(return_value=entries)
+    mock_core._state_entry = AsyncMock(side_effect=_entry)
 
 
 @pytest.mark.asyncio
@@ -67,13 +89,11 @@ async def test_missing_runtime_reports_error_observation_once(mock_core):
     inst = "inst_killed_before_create"
     mock_core.docker.scan_active_containers.return_value = []
 
-    mock_core.api.get.side_effect = [
-        DummyResponse(
-            200, [{"id": pid, "name": "Profile 1", "current_config_version": 1}]
-        ),
-        # 1st get in tick() profile loop
-        DummyResponse(
-            200,
+    _install_state(
+        mock_core,
+        [{"id": pid, "name": "Profile 1", "current_config_version": 1}],
+        [
+            # 1st read in tick() profile loop
             {
                 "profile_id": pid,
                 "desired_state": "running",
@@ -85,10 +105,7 @@ async def test_missing_runtime_reports_error_observation_once(mock_core):
                 "last_exit_event_id": None,
                 "updated_at": datetime.now(UTC).isoformat(),
             },
-        ),
-        # 2nd get after the observation report
-        DummyResponse(
-            200,
+            # 2nd read after the observation report
             {
                 "profile_id": pid,
                 "desired_state": "running",
@@ -100,8 +117,8 @@ async def test_missing_runtime_reports_error_observation_once(mock_core):
                 "last_exit_event_id": f"observed_error:{inst}",
                 "updated_at": datetime.now(UTC).isoformat(),
             },
-        ),
-    ]
+        ],
+    )
 
     coordinator = RecoveryCoordinator(mock_core)
     await coordinator.tick()
@@ -134,12 +151,11 @@ async def test_core_profile_lock_held_skips_exit_synthesis(mock_core):
                 "config_version": 1,
             }
         ]
-        mock_core.api.get.side_effect = [
-            DummyResponse(
-                200,
-                [{"id": pid, "name": "Profile Locked", "current_config_version": 1}],
-            ),
-        ]
+        _install_state(
+            mock_core,
+            [{"id": pid, "name": "Profile Locked", "current_config_version": 1}],
+            {"profile_id": pid, "desired_state": "running"},
+        )
         coordinator = RecoveryCoordinator(mock_core)
         await coordinator.tick()
 
@@ -168,22 +184,16 @@ async def test_native_exit_priority_prevents_synthetic_docker_exit(mock_core):
             "config_version": cfg_ver,
         }
     ]
-    mock_core.api.get.side_effect = [
-        DummyResponse(
-            200,
-            [{"id": pid, "name": "Profile Native", "current_config_version": cfg_ver}],
-        ),
-        DummyResponse(
-            200,
+    _install_state(
+        mock_core,
+        [{"id": pid, "name": "Profile Native", "current_config_version": cfg_ver}],
+        [
             {
                 "profile_id": pid,
                 "desired_state": "running",
                 "runtime_instance_id": inst,
                 "config_version": cfg_ver,
             },
-        ),
-        DummyResponse(
-            200,
             {
                 "profile_id": pid,
                 "desired_state": "running",
@@ -195,8 +205,8 @@ async def test_native_exit_priority_prevents_synthetic_docker_exit(mock_core):
                 "last_exit_event_id": None,
                 "updated_at": datetime.now(UTC).isoformat(),
             },
-        ),
-    ]
+        ],
+    )
 
     coordinator = RecoveryCoordinator(mock_core)
     await coordinator.tick()
@@ -214,32 +224,27 @@ async def test_native_exit_priority_prevents_synthetic_missing_exit(mock_core):
     mock_core._native_exits.add((pid, inst, cfg_ver))
 
     mock_core.docker.scan_active_containers.return_value = []
-    mock_core.api.get.side_effect = [
-        DummyResponse(
-            200,
-            [
-                {
-                    "id": pid,
-                    "name": "Profile Missing Native",
-                    "current_config_version": cfg_ver,
-                }
-            ],
-        ),
-        DummyResponse(
-            200,
+    _install_state(
+        mock_core,
+        [
             {
-                "profile_id": pid,
-                "desired_state": "running",
-                "observed_state": "running",
-                "runtime_instance_id": inst,
-                "config_version": cfg_ver,
-                "failure_count": 0,
-                "restart_blocked": False,
-                "last_exit_event_id": None,
-                "updated_at": datetime.now(UTC).isoformat(),
-            },
-        ),
-    ]
+                "id": pid,
+                "name": "Profile Missing Native",
+                "current_config_version": cfg_ver,
+            }
+        ],
+        {
+            "profile_id": pid,
+            "desired_state": "running",
+            "observed_state": "running",
+            "runtime_instance_id": inst,
+            "config_version": cfg_ver,
+            "failure_count": 0,
+            "restart_blocked": False,
+            "last_exit_event_id": None,
+            "updated_at": datetime.now(UTC).isoformat(),
+        },
+    )
 
     coordinator = RecoveryCoordinator(mock_core)
     await coordinator.tick()
@@ -264,25 +269,21 @@ async def test_docker_created_status_does_not_synthesize_exit(mock_core):
             "config_version": 1,
         }
     ]
-    mock_core.api.get.side_effect = [
-        DummyResponse(
-            200, [{"id": pid, "name": "Profile Creating", "current_config_version": 1}]
-        ),
-        DummyResponse(
-            200,
-            {
-                "profile_id": pid,
-                "desired_state": "running",
-                "observed_state": "starting",
-                "runtime_instance_id": inst,
-                "config_version": 1,
-                "failure_count": 0,
-                "restart_blocked": False,
-                "last_exit_event_id": None,
-                "updated_at": datetime.now(UTC).isoformat(),
-            },
-        ),
-    ]
+    _install_state(
+        mock_core,
+        [{"id": pid, "name": "Profile Creating", "current_config_version": 1}],
+        {
+            "profile_id": pid,
+            "desired_state": "running",
+            "observed_state": "starting",
+            "runtime_instance_id": inst,
+            "config_version": 1,
+            "failure_count": 0,
+            "restart_blocked": False,
+            "last_exit_event_id": None,
+            "updated_at": datetime.now(UTC).isoformat(),
+        },
+    )
 
     coordinator = RecoveryCoordinator(mock_core)
     await coordinator.tick()

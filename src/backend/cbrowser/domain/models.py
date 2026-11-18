@@ -251,15 +251,22 @@ class ProfileConfig(BaseModel):
     locale: ProfileLocale | None = Field(default=None, max_length=64)
     screen_width: int = Field(default=1920, ge=100, le=10000)
     screen_height: int = Field(default=1080, ge=100, le=10000)
-    gpu_family: Literal["auto", "nvidia", "intel"] = "auto"
     humanize: bool = True
     human_preset: Literal["default", "careful"] = "default"
     geoip: bool = True
     clipboard_sync: bool = True
     auto_launch: bool = False
-    color_scheme: Literal["light", "dark", "no-preference"] | None = None
+    # t075: the web color preference is exactly light or dark.  The old
+    # null / "no-preference" states both rendered light on the fixed
+    # engine (p124 measurement) and are abolished, not carried over.
+    color_scheme: Literal["light", "dark"] = "light"
     fingerprint_platform: FingerprintPlatform = "windows"
+    # Backend-managed binding (t075): resolved from the font catalog by
+    # platform at create / platform-switch time; never user-selected.
     font_set_id: str | None = None
+    # Independent of locale (t075): whether the platform font set's
+    # Chinese fonts are exposed to this Profile.
+    include_cjk_fonts: bool = True
     launch_args: list[str] = Field(default_factory=list)
     extension_paths: list[str] = Field(default_factory=list)
     allow_3p_cookies: bool = True
@@ -301,13 +308,6 @@ class ProfileConfig(BaseModel):
         # never silently filtered or rewritten; an out-of-whitelist
         # stored value fails validation and names the argument.
         return validate_launch_args(v)
-
-    @field_validator("gpu_family", mode="before")
-    @classmethod
-    def validate_gpu_family(cls, v: Any) -> Any:
-        if v is None:
-            raise ValueError("gpu_family cannot be null")
-        return v
 
 
 class Profile(BaseModel):
@@ -355,6 +355,8 @@ class ProfileRuntime(BaseModel):
     backoff_started_at: str | None = None
     next_retry_at: str | None = None
     preview_captured_at: str | None = None
+    # t083: monotonic per-Profile revision fencing state sync.
+    state_revision: int = 0
     updated_at: str
 
 
@@ -490,15 +492,15 @@ class ProfileCreateRequest(BaseModel):
     locale: ProfileLocale | None = Field(default="en-US", max_length=64)
     screen_width: int = Field(default=1920, ge=100, le=10000)
     screen_height: int = Field(default=1080, ge=100, le=10000)
-    gpu_family: Literal["auto", "nvidia", "intel"] = "auto"
     humanize: bool = True
     human_preset: Literal["default", "careful"] = "default"
     geoip: bool = True
     clipboard_sync: bool = True
     auto_launch: bool = False
-    color_scheme: Literal["light", "dark", "no-preference"] | None = None
+    color_scheme: Literal["light", "dark"] = "light"
     fingerprint_platform: FingerprintPlatform = "windows"
-    font_set_id: str | None = None
+    # None = derive from locale at creation (zh-CN on, otherwise off).
+    include_cjk_fonts: bool | None = None
     launch_args: list[str] = Field(default_factory=list)
     extension_paths: list[str] = Field(default_factory=list)
     allow_3p_cookies: bool = True
@@ -554,15 +556,14 @@ class ProfileUpdateRequest(BaseModel):
     locale: ProfileLocale | None = Field(default=None, max_length=64)
     screen_width: int | None = Field(default=None, ge=100, le=10000)
     screen_height: int | None = Field(default=None, ge=100, le=10000)
-    gpu_family: Literal["auto", "nvidia", "intel"] | None = None
     humanize: bool | None = None
     human_preset: Literal["default", "careful"] | None = None
     geoip: bool | None = None
     clipboard_sync: bool | None = None
     auto_launch: bool | None = None
-    color_scheme: Literal["light", "dark", "no-preference"] | None = None
+    color_scheme: Literal["light", "dark"] | None = None
     fingerprint_platform: FingerprintPlatform | None = None
-    font_set_id: str | None = None
+    include_cjk_fonts: bool | None = None
     launch_args: list[str] | None = None
     extension_paths: list[str] | None = None
     allow_3p_cookies: bool | None = None
@@ -587,13 +588,6 @@ class ProfileUpdateRequest(BaseModel):
         if v is not None and (not v or not v.strip()):
             raise ValueError("name cannot be blank")
         return v.strip() if v is not None else None
-
-    @field_validator("gpu_family", mode="before")
-    @classmethod
-    def reject_null_gpu_family(cls, value: object) -> object:
-        if value is None:
-            raise ValueError("gpu_family cannot be null")
-        return value
 
     @field_validator("screen_width", "screen_height", mode="before")
     @classmethod
@@ -627,15 +621,15 @@ class ProfileResponse(BaseModel):
     locale: ProfileLocale | None = None
     screen_width: int = 1920
     screen_height: int = 1080
-    gpu_family: str = "auto"
     humanize: bool = True
     human_preset: str = "default"
     geoip: bool = True
     clipboard_sync: bool = True
     auto_launch: bool = False
-    color_scheme: str | None = None
+    color_scheme: str = "light"
     fingerprint_platform: str = "windows"
     font_set_id: str | None = None
+    include_cjk_fonts: bool = True
     launch_args: list[str] = Field(default_factory=list)
     extension_paths: list[str] = Field(default_factory=list)
     allow_3p_cookies: bool = True
@@ -668,7 +662,6 @@ class ProfileResponse(BaseModel):
             locale=cfg.locale,
             screen_width=cfg.screen_width,
             screen_height=cfg.screen_height,
-            gpu_family=cfg.gpu_family,
             humanize=cfg.humanize,
             human_preset=cfg.human_preset,
             geoip=cfg.geoip,
@@ -677,6 +670,7 @@ class ProfileResponse(BaseModel):
             color_scheme=cfg.color_scheme,
             fingerprint_platform=cfg.fingerprint_platform,
             font_set_id=cfg.font_set_id,
+            include_cjk_fonts=cfg.include_cjk_fonts,
             launch_args=cfg.launch_args,
             extension_paths=cfg.extension_paths,
             allow_3p_cookies=cfg.allow_3p_cookies,

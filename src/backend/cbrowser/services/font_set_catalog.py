@@ -129,6 +129,16 @@ class FontSetCatalogService:
             return self._fonts_root
         return font_sets.manifest._resolve_root(None)
 
+    def root_configured(self) -> bool:
+        """Whether a font root is configured for this process at all.
+
+        Deployments always configure one (deploy.sh exports
+        CBROWSER_FONTS_DIR into the release env); a process without one
+        has the font subsystem out of scope, which Profile creation
+        treats differently from "configured but the platform has no
+        verified set" (t075, AC-005)."""
+        return self._root() is not None
+
     # -- reads (never verify) -------------------------------------------------
 
     async def list_assets(self) -> list[FontAssetRecord]:

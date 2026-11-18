@@ -1,6 +1,8 @@
 """Unit tests for the font-set API layer: default binding, binding
 validation, usage counting, and config-version generation (t041
-AC-002/AC-003)."""
+AC-002/AC-003; binding semantics revised by t075: the binding is
+backend-managed, creation without an available set fails, and the
+binding can no longer be cleared through an update)."""
 
 from __future__ import annotations
 
@@ -62,16 +64,20 @@ async def test_create_binds_default_font_set(db_context, fonts) -> None:
 
 
 @pytest.mark.asyncio
-async def test_create_without_font_sets_leaves_binding_null(
+async def test_create_without_font_sets_fails(
     db_context, tmp_path, monkeypatch
 ) -> None:
+    """t075 rewrite of ``test_create_without_font_sets_leaves_binding_null``:
+    an unbound profile is no longer a legal outcome — with no verified
+    set for the platform, creation fails before anything is written."""
     monkeypatch.setenv("CBROWSER_FONTS_DIR", str(tmp_path / "empty"))
-    service, _ = await _adopted_services(db_context)
-    profile = await service.create_profile(
-        config=ProfileConfig(name="NoSets"),
-        req_payload={"name": "NoSets"},
-    )
-    assert profile.config.font_set_id is None
+    service, repo = await _adopted_services(db_context)
+    with pytest.raises(InvalidFontSetBindingError):
+        await service.create_profile(
+            config=ProfileConfig(name="NoSets"),
+            req_payload={"name": "NoSets"},
+        )
+    assert await repo.list_profiles() == []
 
 
 @pytest.mark.asyncio
@@ -111,6 +117,11 @@ async def test_create_rejects_tampered_font_set(db_context, fonts) -> None:
 
 @pytest.mark.asyncio
 async def test_patch_binding_validation(db_context, fonts) -> None:
+    """t075: the binding can no longer be cleared — a null font_set_id
+    patch is rejected and the managed binding survives; a patch naming
+    the platform's verified set is accepted, an unknown one rejected.
+    (The HTTP layer forbids the field outright via ProfileUpdateRequest;
+    the service keeps validating direct patches as a second fence.)"""
     service, _ = await _adopted_services(db_context)
     profile = await service.create_profile(
         config=ProfileConfig(name="P"),
@@ -118,8 +129,10 @@ async def test_patch_binding_validation(db_context, fonts) -> None:
     )
     assert profile.config.font_set_id == fonts["set_id"]
 
-    cleared = await service.update_profile(profile.id, {"font_set_id": None})
-    assert cleared.config.font_set_id is None
+    with pytest.raises(InvalidFontSetBindingError):
+        await service.update_profile(profile.id, {"font_set_id": None})
+    unchanged = await service.get_profile(profile.id)
+    assert unchanged.config.font_set_id == fonts["set_id"]
 
     rebound = await service.update_profile(
         profile.id, {"font_set_id": fonts["set_id"]}
@@ -131,9 +144,14 @@ async def test_patch_binding_validation(db_context, fonts) -> None:
 
 
 @pytest.mark.asyncio
-async def test_changing_font_fields_generates_config_versions(
+async def test_changing_identity_fields_generates_config_versions(
     db_context, fonts
 ) -> None:
+    """t075 rewrite of ``test_changing_font_fields_generates_config_versions``:
+    clearing the binding and switching to a set-less platform are no
+    longer legal moves, so version generation is proven on the fields
+    that remain runtime identity inputs — the CJK switch and the color
+    scheme."""
     service, repo = await _adopted_services(db_context)
     profile = await service.create_profile(
         config=ProfileConfig(
@@ -146,14 +164,17 @@ async def test_changing_font_fields_generates_config_versions(
     assert profile.current_config_version == 1
     assert [v.version for v in await repo.list_config_versions(profile.id)] == [1]
 
-    cleared = await service.update_profile(profile.id, {"font_set_id": None})
-    assert cleared.current_config_version == 2
-
-    switched = await service.update_profile(
-        profile.id, {"fingerprint_platform": "macos"}
+    toggled = await service.update_profile(
+        profile.id, {"include_cjk_fonts": False}
     )
-    assert switched.current_config_version == 3
-    assert switched.config.fingerprint_platform == "macos"
+    assert toggled.current_config_version == 2
+    assert toggled.config.include_cjk_fonts is False
+
+    recolored = await service.update_profile(
+        profile.id, {"color_scheme": "dark"}
+    )
+    assert recolored.current_config_version == 3
+    assert recolored.config.color_scheme == "dark"
     assert [
         v.version for v in await repo.list_config_versions(profile.id)
     ] == [1, 2, 3]

@@ -26,17 +26,21 @@ from cbrowser.domain.models import (
     SearchDefaultsStatusData,
     TransportObservationData,
 )
+from cbrowser.font_sets.manifest import PLATFORM_DETECTION_LABELS
 from cbrowser.services.profile_service import ProfileNotFoundError, ProfileService
 from cbrowser.shared.error_response import parse_error_response
 from cbrowser.shared.fencing import fence_by_instance
+from cbrowser.api.state_projection import profile_state_from_runtime
+from cbrowser.shared.state_protocol import (
+    API_EPOCH,
+    MAX_STATE_BATCH,
+    StateChangeNotice,
+)
 from pydantic import SecretStr
 
 logger = logging.getLogger("cbrowser.api.runtime_coordinator")
 
-_PLATFORM_DETECTION_LABELS: dict[str, tuple[str, ...]] = {
-    "windows": ("windows", "office"),
-    "macos": ("macos",),
-}
+_PLATFORM_DETECTION_LABELS = PLATFORM_DETECTION_LABELS
 
 
 class ReconcileOutcome(Enum):
@@ -300,6 +304,7 @@ class RuntimeCoordinator:
         self._client: httpx.AsyncClient | None = None
         self._pending_preview_policy: dict[str, PreviewPolicySyncRequest] = {}
         self._running: bool = False
+        self._observation_task: asyncio.Task | None = None
         # t031: set by app lifespan after the control service is built.
         # None in tests that construct the coordinator standalone.
         self.control_service = None
@@ -468,10 +473,12 @@ class RuntimeCoordinator:
         self, font_set_id, platform
     ) -> tuple[str | None, list[str]]:
         from cbrowser.font_sets import DETECTION_FONTS
-        from cbrowser.runtime_agent.fontconfig import PLATFORM_FONTS_UNCONFIGURED
 
         if not font_set_id:
-            return None, [PLATFORM_FONTS_UNCONFIGURED]
+            # t075: bindings are guaranteed by creation/migration; a
+            # missing one is reported as "no binding known", never as
+            # the abolished base-fonts "unconfigured" state.
+            return None, []
         if platform not in _PLATFORM_DETECTION_LABELS:
             return str(font_set_id), []
         labels = _PLATFORM_DETECTION_LABELS[platform]
@@ -804,6 +811,54 @@ class RuntimeCoordinator:
         await self.publish_profile_change(profile_id)
         return status
 
+    # t083: transport/search-defaults observations are maintained by
+    # this bounded background loop; runtime GETs never refresh them
+    # synchronously.  The bound caps concurrent downstream reads no
+    # matter how many Profiles are running.
+    OBSERVATION_REFRESH_INTERVAL_SEC = 15.0
+    OBSERVATION_REFRESH_CONCURRENCY = 4
+
+    async def _observation_refresh_loop(self) -> None:
+        semaphore = asyncio.Semaphore(self.OBSERVATION_REFRESH_CONCURRENCY)
+
+        async def refresh_one(profile_id: str) -> None:
+            async with semaphore:
+                await self.refresh_transport(profile_id)
+                await self.refresh_search_defaults(profile_id)
+
+        while self._running:
+            try:
+                targets: list[str] = []
+                # t083: select targets one batch at a time (one SELECT
+                # per batch) instead of one runtime read per Profile.
+                after: str | None = None
+                while True:
+                    batch = await self.profile_service.list_runtime_batch(
+                        after_profile_id=after, limit=MAX_STATE_BATCH
+                    )
+                    if not batch:
+                        break
+                    for rt in batch:
+                        if (
+                            rt.desired_state == "running"
+                            and rt.runtime_instance_id is not None
+                        ):
+                            targets.append(rt.profile_id)
+                    after = batch[-1].profile_id
+                    if len(batch) < MAX_STATE_BATCH:
+                        break
+                if targets:
+                    await asyncio.gather(
+                        *(refresh_one(pid) for pid in targets),
+                        return_exceptions=True,
+                    )
+            except Exception as exc:  # noqa: BLE001 - the sweep must survive any single failure
+                logger.warning(
+                    "Observation refresh sweep failed: error_type=%s",
+                    type(exc).__name__,
+                )
+            await asyncio.sleep(self.OBSERVATION_REFRESH_INTERVAL_SEC)
+
     async def start(self) -> None:
         import httpx
 
@@ -816,6 +871,9 @@ class RuntimeCoordinator:
         if not self.is_enabled():
             logger.warning("Runtime Coordinator is disabled: supervisor not configured")
             return
+        self._observation_task = asyncio.create_task(
+            self._observation_refresh_loop()
+        )
 
         # Startup reconciliation: converge any running desired state
         # without an active instance
@@ -859,6 +917,11 @@ class RuntimeCoordinator:
 
     async def stop(self) -> None:
         self._running = False
+        observation_task = getattr(self, "_observation_task", None)
+        if observation_task is not None and not observation_task.done():
+            observation_task.cancel()
+            await asyncio.gather(observation_task, return_exceptions=True)
+        self._observation_task = None
         tasks = list(self._active_tasks.values())
         for task in tasks:
             if not task.done():
@@ -908,9 +971,58 @@ class RuntimeCoordinator:
         self._publish_tasks.add(task)
         task.add_done_callback(self._on_publish_task_done)
 
+    async def _notify_supervisor_state(
+        self,
+        *,
+        runtime: ProfileRuntime | None = None,
+        removed_profile_id: str | None = None,
+    ) -> None:
+        """Push one minimal state notice to the Supervisor (t083).
+
+        Best-effort by design: a lost notice is realigned by the
+        Supervisor's 30-second snapshot fallback, so failures —
+        including DTO projection failures — are logged and never
+        propagated into the publish path.
+        """
+        if not self.is_enabled():
+            return
+        import httpx
+
+        if not self._client:
+            self._client = httpx.AsyncClient(
+                transport=self.transport, timeout=10.0, trust_env=False
+            )
+        url = f"{self.supervisor_url}/supervisor/v1/state-changes"
+        headers = {"Authorization": f"Bearer {self._token_str}"}
+        try:
+            if runtime is not None:
+                notice = StateChangeNotice(
+                    api_epoch=API_EPOCH,
+                    states=[profile_state_from_runtime(runtime)],
+                )
+            else:
+                notice = StateChangeNotice(
+                    api_epoch=API_EPOCH,
+                    removed=[removed_profile_id] if removed_profile_id else [],
+                )
+            resp = await self._client.post(
+                url, headers=headers, json=notice.model_dump()
+            )
+            if resp.status_code != 200:
+                logger.warning(
+                    "Supervisor state notice rejected: status=%s",
+                    resp.status_code,
+                )
+        except Exception as exc:  # noqa: BLE001 - notice delivery is best-effort
+            logger.warning(
+                "Supervisor state notice failed: error_type=%s",
+                type(exc).__name__,
+            )
+
     async def publish_profile_change(self, profile_id: str) -> None:
         try:
             rt = await self.profile_service.get_runtime(profile_id)
+            await self._notify_supervisor_state(runtime=rt)
             err = self.get_last_error(profile_id, runtime=rt)
             control = None
             if self.control_service is not None:
@@ -947,7 +1059,11 @@ class RuntimeCoordinator:
             )
             await self.broadcaster.publish(data)
         except ProfileNotFoundError:
-            pass
+            # The Profile is gone: tell the Supervisor to drop its
+            # cached state so no lifecycle action targets it (t083).
+            await self._notify_supervisor_state(
+                removed_profile_id=profile_id
+            )
         except Exception as e:  # noqa: BLE001 - event broadcaster boundary protects coordinator loop
             logger.warning("Error publishing profile runtime change: %s", e)
 

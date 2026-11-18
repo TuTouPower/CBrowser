@@ -91,7 +91,9 @@ from cbrowser.supervisor.recovery_rules import (
     is_error_exit_health,
     is_normal_exit_health,
 )
+from cbrowser.shared.state_protocol import StateSnapshot
 from cbrowser.supervisor.resource_monitor import ProfileResourceTarget, ResourceMonitor
+from cbrowser.supervisor.state_cache import SupervisorStateCache
 from cbrowser.supervisor.selkies_tokens import SelkiesTokens
 from docker.errors import APIError, DockerException
 from pydantic import ValidationError
@@ -259,6 +261,10 @@ class SupervisorCore:
         self.ports = port_allocator
         self.events = event_forwarder
         self.api = api_client
+        # t083: the minimal batch state protocol is the only view of
+        # API intent for recovery, reconcile, readiness and control
+        # operations; see supervisor/state_cache.py.
+        self.state_cache = SupervisorStateCache(self._fetch_state_snapshot)
         configured_port = (
             gateway_port if gateway_port is not None else DEFAULT_GATEWAY_PORT
         )
@@ -329,6 +335,56 @@ class SupervisorCore:
                 self._token_file, label="Supervisor service token"
             )
         return None
+
+    async def _fetch_state_snapshot(
+        self, cursor: str | None, limit: int
+    ) -> StateSnapshot:
+        """One batch of the API state snapshot (state_cache fetcher)."""
+        params: dict[str, Any] = {"limit": limit}
+        if cursor is not None:
+            params["cursor"] = cursor
+        resp = await self.api.get(
+            "/api/v1/internal/supervisor/state/snapshot",
+            headers=self._auth_headers(),
+            params=params,
+        )
+        resp.raise_for_status()
+        return StateSnapshot.model_validate(resp.json())
+
+    async def _ensure_authoritative(self) -> bool:
+        """Drive the snapshot schedule; True only when the cache holds
+        a complete, current view of API state.
+
+        When a snapshot is already in flight the caller awaits it
+        (bounded by the HTTP client's timeout, exactly like the former
+        list request), while steady-state calls return from memory with
+        no HTTP at all.
+        """
+        await self.state_cache.maintain()
+        if (
+            not self.state_cache.authoritative()
+            or self.state_cache.resync_pending
+        ) and self.state_cache.has_inflight:
+            await self.state_cache.sync_now()
+        return self.state_cache.authoritative()
+
+    async def _state_entries(self) -> list[dict[str, Any]] | None:
+        """Cached minimal states, or None while not authoritative.
+
+        A None result carries the same meaning as the former per-tick
+        API failure: coordination pauses and nothing is torn down.
+        """
+        if not await self._ensure_authoritative():
+            return None
+        return self.state_cache.entries()
+
+    async def _state_entry(
+        self, profile_id: str
+    ) -> dict[str, Any] | None:
+        """One cached minimal state; None when unknown/unauthoritative."""
+        if not await self._ensure_authoritative():
+            return None
+        return self.state_cache.get(profile_id)
 
     def _auth_headers(self) -> dict[str, str]:
         token = self._get_bearer_token()
@@ -1203,40 +1259,21 @@ class SupervisorCore:
         registration) makes the result not ready; the response carries
         per-Profile redacted diagnostics instead of a bare boolean.
         """
-        try:
-            list_resp = await self.api.get(
-                "/api/v1/internal/supervisor/profiles",
-                headers=self._auth_headers(),
-            )
-            list_resp.raise_for_status()
-            profiles = list_resp.json()
-        except Exception as exc:  # noqa: BLE001 - readiness must degrade to unknown, never crash
+        # t083: readiness reads the maintained state cache — never a
+        # live per-Profile probe.  An unauthoritative cache (API state
+        # unknown) is an explicit not-ready, never a guessed ready.
+        profiles = await self._state_entries()
+        if profiles is None:
             return ReadinessResponse(
                 ready=False,
-                reason=f"api_unavailable:{type(exc).__name__}",
+                reason="api_state_unknown",
             )
         results: list[ProfileReadiness] = []
         for entry in profiles:
             profile_id = entry.get("id") or entry.get("profile_id")
             if not profile_id:
                 continue
-            try:
-                rt_resp = await self.api.get(
-                    f"/api/v1/internal/supervisor/profiles/{quote(profile_id, safe='')}/runtime",
-                    headers=self._auth_headers(),
-                )
-                rt_resp.raise_for_status()
-                runtime = rt_resp.json()
-            except Exception as exc:  # noqa: BLE001 - per-profile unknown
-                results.append(
-                    ProfileReadiness(
-                        profile_id=profile_id,
-                        ready=False,
-                        checks={"runtime": None},
-                        diagnostics=[f"runtime_unavailable:{type(exc).__name__}"],
-                    )
-                )
-                continue
+            runtime = entry
             if runtime.get("desired_state") != "running":
                 continue
             try:
@@ -1498,27 +1535,44 @@ class SupervisorCore:
             )
             return
 
-        # Query API desired state with network/HTTP failure protection
-        try:
-            resp = await self.api.get(
-                f"/api/v1/internal/supervisor/profiles/{quote(pid, safe='')}/runtime",
-                headers=self._auth_headers(),
-            )
-        except Exception as e:  # noqa: BLE001 - API query transport failure safely retains profile without teardown
-            logger.warning(
-                "API unavailable; retaining profile=%s error_type=%s",
-                pid,
-                type(e).__name__,
-            )
-            # t026 AC-006: while the API is unreachable, only the media
-            # attachment may be recovered; lifecycle is never touched.
-            # The pair's labels/instance consistency was verified above,
-            # so recovery does not depend on an in-memory session.
-            await self._recover_attachment_offline(pid, b_inst)
+        # t083: desired state comes from the minimal state cache, not
+        # a per-Profile HTTP read.  An unauthoritative cache keeps the
+        # former API-unreachable posture (attachment recovery only,
+        # lifecycle never touched); a Profile absent from an
+        # authoritative snapshot is retained, never torn down on
+        # unknown state.
+        rt = await self._state_entry(pid)
+        if rt is None:
+            if self.state_cache.authoritative():
+                # Absent from an authoritative snapshot: the Profile
+                # was deleted from the API (the former 404 branch).
+                logger.info(
+                    "Cleaning orphan sandbox after API state absence: "
+                    "profile=%s",
+                    pid,
+                )
+                self._forget_preview_state(pid)
+                await self.docker.teardown_profile(pid)
+                if await self._confirm_sandbox_gone(pid):
+                    await self.ports.release(pid)
+                    self._sessions.pop(pid, None)
+                else:
+                    logger.warning(
+                        "Orphan sandbox removal unverified; port retained "
+                        "pending cleanup: profile=%s",
+                        pid,
+                    )
+            else:
+                logger.warning("API unavailable; retaining profile=%s", pid)
+                # t026 AC-006: while the API is unreachable, only the
+                # media attachment may be recovered; lifecycle is never
+                # touched.  The pair's labels/instance consistency was
+                # verified above, so recovery does not depend on an
+                # in-memory session.
+                await self._recover_attachment_offline(pid, b_inst)
             return
 
-        if resp.status_code == 200:
-            rt = resp.json()
+        if rt is not None:
             if self._profile_locks.is_locked(pid):
                 return
             desired = rt.get("desired_state", "stopped")
@@ -1880,30 +1934,6 @@ class SupervisorCore:
                     self._policy_paused[(pid, b_inst)] = time.monotonic()
                 session = self._sessions[pid]
                 await self._converge_session(pid, session, roles)
-        elif resp.status_code == 404:
-            # Only 404 means Profile was deleted permanently from API
-            logger.info(
-                "Cleaning orphan sandbox after API 404: profile=%s",
-                pid,
-            )
-            self._forget_preview_state(pid)
-            await self.docker.teardown_profile(pid)
-            if await self._confirm_sandbox_gone(pid):
-                await self.ports.release(pid)
-                self._sessions.pop(pid, None)
-            else:
-                logger.warning(
-                    "Orphan sandbox removal unverified; port retained pending "
-                    "cleanup: profile=%s",
-                    pid,
-                )
-        else:
-            # 401, 403, 429, 5xx, 503: Keep healthy containers, do NOT teardown
-            logger.warning(
-                "Retaining sandbox: profile=%s api_status=%s",
-                pid,
-                resp.status_code,
-            )
 
     def _quarantine_event_file(
         self, event_file: Path, profile_id: str, instance_id: str, reason: str
@@ -2964,13 +2994,16 @@ class SupervisorCore:
         profile_id: str | None = None,
         config_version: int | None = None,
     ) -> None:
-        """Fail closed when a bound font set cannot be trusted (AC-006).
+        """Fail closed when the font binding cannot be trusted (AC-006).
 
-        A null ``font_set_id`` is a supported configuration ("platform fonts
-        not configured"): the Profile launches with base fonts only. A bound
-        set must exist, declare the matching platform, and pass its integrity
-        check; anything else refuses the launch with one fixed, non-sensitive
-        reason so the Browser container is never started on unusable fonts.
+        t075: every Profile must be bound — the backend resolves the
+        binding from the catalog at creation and the migration binds
+        legacy rows — so a null ``font_set_id`` refuses the launch
+        like any other unusable binding. A bound set must exist,
+        declare the matching platform, and pass its integrity check;
+        anything else refuses the launch with one fixed, non-sensitive
+        reason so the Browser container is never started on unusable
+        fonts.
 
         t081: the full verification runs against the set this instance
         will actually mount, once per (profile_id, runtime_instance_id,
@@ -2979,13 +3012,12 @@ class SupervisorCore:
         health/status reads never re-run it.
         """
         if not config.font_set_id:
-            logger.info(
-                "Profile starts without platform fonts configured: "
-                "platform=%s; runtime status reports platform fonts "
-                "unconfigured and Linux base fonts exposed",
+            logger.warning(
+                "Profile has no font set bound; refusing to start: "
+                "platform=%s",
                 config.fingerprint_platform,
             )
-            return
+            raise FontSetUnavailableError()
         fence = (
             profile_id,
             runtime_instance_id,
@@ -3048,12 +3080,14 @@ class SupervisorCore:
                 if not operation_id:
                     raise ValueError("Manual retry requires an idempotent operation ID")
                 await self.reset_blocked(profile_id, operation_id)
-            state_response = await self.api.get(
-                f"/api/v1/internal/supervisor/profiles/{quote(profile_id, safe='')}/runtime",
-                headers=self._auth_headers(),
-            )
-            state_response.raise_for_status()
-            runtime = state_response.json()
+            # t083: intent comes from the minimal state cache; an
+            # unknown/unauthoritative state refuses the start instead
+            # of acting on a guess (the former HTTP failure posture).
+            runtime = await self._state_entry(profile_id)
+            if runtime is None:
+                raise LifecycleConflictError(
+                    "API runtime state is unavailable"
+                )
             if runtime["desired_state"] != "running":
                 raise LifecycleConflictError(
                     "API running intent is required before starting a runtime"
@@ -3104,6 +3138,8 @@ class SupervisorCore:
                     raise RuntimeError(
                         f"API instance binding failed: status={bind_resp.status_code}"
                     )
+                # t083: the bind changed the mirrored state.
+                self.state_cache.note_local_write()
             except Exception as e:
                 logger.error("Instance binding failed: error_type=%s", type(e).__name__)
                 raise
@@ -3519,6 +3555,8 @@ class SupervisorCore:
             json={"desired_state": "running"},
         )
         response.raise_for_status()
+        # t083: the intent change is ours; realign the mirrored state.
+        self.state_cache.note_local_write()
 
     async def apply_profile_quota(self, profile_id: str, quota: dict[str, Any]) -> None:
         session = self._sessions.get(profile_id)
@@ -3638,7 +3676,11 @@ class SupervisorCore:
             # (t069): the payload is never resent with fields dropped
             # to appease an older request model, so a failed report
             # cannot masquerade as convergence.
-            return resp.status_code == 200
+            delivered = resp.status_code == 200
+            if delivered:
+                # t083: our own write changed the mirrored state.
+                self.state_cache.note_local_write()
+            return delivered
         except Exception as e:  # noqa: BLE001 - API state report network failure logged and returns False
             logger.warning(
                 "Observed state report failed: state=%s error_type=%s",

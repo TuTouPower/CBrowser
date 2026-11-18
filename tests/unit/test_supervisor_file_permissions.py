@@ -163,7 +163,13 @@ def test_cache_ownership_failure_is_fail_closed(
         adapter._apply_cache_permissions()
 
 
-def _make_start_core(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, manage_ownership: bool):
+def _make_start_core(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    manage_ownership: bool,
+    font_set_id: str | None = None,
+):
     from contextlib import asynccontextmanager
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
@@ -221,6 +227,31 @@ def _make_start_core(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, manage_
     )
 
     def api_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/state/snapshot"):
+            return httpx.Response(
+                200,
+                json={
+                    "api_epoch": "perm-test-epoch",
+                    "profiles": [
+                        {
+                            "profile_id": "p1",
+                            "display_number": 1,
+                            "desired_state": "running",
+                            "observed_state": "stopped",
+                            "runtime_instance_id": None,
+                            "config_version": 1,
+                            "failure_count": 0,
+                            "restart_blocked": False,
+                            "last_exit_event_id": None,
+                            "backoff_started_at": None,
+                            "next_retry_at": None,
+                            "updated_at": "2026-01-01T00:00:00+00:00",
+                            "state_revision": 1,
+                        }
+                    ],
+                    "next_cursor": None,
+                },
+            )
         if request.url.path.endswith("/runtime"):
             return httpx.Response(
                 200,
@@ -253,12 +284,12 @@ def _make_start_core(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, manage_
         "cbrowser.supervisor.core.browser_runtime_ready",
         lambda *_a, **_kw: True,
     )
-    return core, api, validator, ProfileConfig()
+    return core, api, validator, ProfileConfig(font_set_id=font_set_id)
 
 
 @pytest.mark.asyncio
 async def test_stream_secrets_are_chowned_on_start_and_replace(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fixture_font_set: str
 ) -> None:
     chown_calls: list[tuple[Path, int, int]] = []
     monkeypatch.setattr(
@@ -267,7 +298,10 @@ async def test_stream_secrets_are_chowned_on_start_and_replace(
         lambda path, uid, gid: chown_calls.append((Path(path), uid, gid)),
     )
     core, api, validator, cfg = _make_start_core(
-        tmp_path, monkeypatch, manage_ownership=True
+        tmp_path,
+        monkeypatch,
+        manage_ownership=True,
+        font_set_id=fixture_font_set,
     )
     try:
         session = await core.start_profile("p1", cfg, 1, profile_number=1)

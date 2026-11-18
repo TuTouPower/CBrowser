@@ -1,4 +1,8 @@
-"""0012: separate deletion batch membership from the intent (p130/p136).
+"""0012 (branch numbering): separate deletion batch membership from the intent (p130/p136).
+
+Rechained on main after t083 ``0013_runtime_state_revision``
+(``d83a2c12b083``) and t075 ``0013_profile_identity`` (``d75a0013f001``);
+logically 0015. The revision id is unchanged.
 
 A durable deletion intent can be confirmed from more than one client at
 once. Membership used to be a single ``batch_id`` column on the intent,
@@ -17,7 +21,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "d7e3a91f4c62"
-down_revision: str | None = "c81f0a11b001"
+down_revision: str | None = "d75a0013f001"
 branch_labels: str | None = None
 depends_on: str | None = None
 

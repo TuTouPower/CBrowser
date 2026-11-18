@@ -33,7 +33,6 @@ from cbrowser.engine_artifacts import (
 from cbrowser.shared.endpoints import DEFAULT_GATEWAY_PORT, GatewayEndpoint
 from cbrowser.shared.egress import ECHO_URLS
 from cbrowser.redact import docker_error_detail, redact
-from cbrowser.runtime_agent.fontconfig import FONT_SET_MOUNT_ROOT
 from cbrowser.runtime_agent.socket_root import (
     AGENT_SOCKET_PATH_ENV,
     agent_socket_path,
@@ -101,6 +100,7 @@ from cbrowser.supervisor.volume_spec import (
     SINGLETON_LOCK_NAMES,
     browser_volumes,
     cache_init_volumes,
+    font_set_mount,
     stream_volumes,
 )
 from cbrowser.udp_mux import udp_mux_bounds
@@ -2482,20 +2482,18 @@ with path.open('w') as output:
         cfg = snapshot.get("config")
         if isinstance(cfg, dict):
             font_set_id = cfg.get("font_set_id")
-            platform = cfg.get("fingerprint_platform", "windows")
-            fonts_root = os.environ.get("CBROWSER_FONTS_DIR")
-            if (
-                isinstance(font_set_id, str)
-                and re.fullmatch(r"[a-f0-9]{32,64}", font_set_id)
-                and platform in ("windows", "macos")
-                and fonts_root
-            ):
-                font_dir = Path(fonts_root) / platform / font_set_id
+            if isinstance(font_set_id, str) and font_set_id:
+                # t075: the mount is built at the volume_spec boundary
+                # from the planner's configured fonts root.  A bound
+                # set that is missing or malformed fails container
+                # creation here — it is never silently skipped (the
+                # old deep env read could drop the mount entirely and
+                # start the Browser with zero fonts, p125).
                 mounts.append(
-                    self.mount_planner.mount(
-                        font_dir,
-                        str(FONT_SET_MOUNT_ROOT / platform / font_set_id),
-                        "ro",
+                    font_set_mount(
+                        planner=self.mount_planner,
+                        platform=cfg.get("fingerprint_platform", "windows"),
+                        font_set_id=font_set_id,
                     )
                 )
         # The Browser connects directly to the upstream proxy via SDK ``proxy=``:

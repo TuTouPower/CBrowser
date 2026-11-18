@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider, en } from "../../i18n";
@@ -9,8 +9,6 @@ import { ToastProvider } from "../../shared/ui";
 import { ApiClientContext } from "../../shared/api/client_context";
 import type { ApiClient } from "../../shared/api/client";
 import type {
-  FontSetInfo,
-  FontSetListResponse,
   GroupResponse,
   ProfileCreateRequest,
   ProfileResponse,
@@ -57,32 +55,6 @@ beforeAll(() => {
   }
 });
 
-function fontSet(overrides: Partial<FontSetInfo> = {}): FontSetInfo {
-  return {
-    platform: "windows",
-    set_id: "fs-1",
-    source: "t044",
-    source_version: "v1",
-    created_at: "2026-01-01T00:00:00Z",
-    integrity: {
-      ok: true,
-      problems: [],
-      missing_fonts: [],
-      hash_mismatches: [],
-      unregistered_fonts: [],
-      file_count: 10,
-      detection: {},
-    },
-    file_count: 10,
-    used_by_count: 0,
-    state: "verified",
-    revision: 1,
-    verified_at: "2026-11-18T00:00:00+00:00",
-    audited_at: null,
-    ...overrides,
-  };
-}
-
 function group(): GroupResponse {
   return {
     id: "g1",
@@ -116,19 +88,9 @@ function proxy(): ProxyResponse {
 }
 
 function makeStub(opts: {
-  fontSets?: FontSetInfo[];
-  defaultFontSetId?: Record<string, string | null>;
   groups?: GroupResponse[];
   proxies?: ProxyResponse[];
-  /** Override the font-sets query (e.g. a deferred promise). */
-  fontSetsList?: () => Promise<FontSetListResponse>;
 } = {}) {
-  const items = opts.fontSets ?? [];
-  const defaultFontSetId = opts.defaultFontSetId ?? {
-    windows:
-      items.find((item) => item.platform === "windows")?.set_id ?? null,
-    macos: items.find((item) => item.platform === "macos")?.set_id ?? null,
-  };
   return {
     groups: {
       list: vi.fn(async () => opts.groups ?? []),
@@ -136,10 +98,7 @@ function makeStub(opts: {
     },
     proxies: { list: vi.fn(async () => opts.proxies ?? []) },
     fontSets: {
-      list: vi.fn(
-        opts.fontSetsList ??
-          (async () => ({ items, default_font_set_id: defaultFontSetId })),
-      ),
+      list: vi.fn(async () => ({ items: [], default_font_set_id: {} })),
     },
   } as unknown as ApiClient;
 }
@@ -209,284 +168,9 @@ describe("ProfileForm", () => {
     );
   });
 
-  it("preselects the backend default font set instead of deriving one", async () => {
-    const winOld = fontSet({
-      set_id: "win-old",
-      platform: "windows",
-      created_at: "2026-01-01T00:00:00Z",
-      source_version: "v1",
-    });
-    const winNew = fontSet({
-      set_id: "win-new",
-      platform: "windows",
-      created_at: "2026-06-01T00:00:00Z",
-      source_version: "v2",
-    });
-    const mac = fontSet({
-      set_id: "mac-1",
-      platform: "macos",
-      created_at: "2026-12-01T00:00:00Z",
-      source_version: "v9",
-    });
-    renderForm({
-      mode: "create",
-      stub: makeStub({
-        fontSets: [winOld, winNew, mac],
-        defaultFontSetId: { windows: "win-old", macos: "mac-1" },
-      }),
-    });
 
-    const list = await screen.findByTestId("profile-form-fontset-list");
-    await waitFor(() => expect(list.textContent).toContain("win-old"));
-    expect(list.textContent).toContain("win-new");
-    expect(list.textContent).not.toContain("mac-1");
 
-    // The backend default (win-old) wins over the newest set (win-new).
-    await waitFor(() =>
-      expect(
-        screen.getByTestId("profile-form-fontset-selected").textContent,
-      ).toBe("win-old"),
-    );
-    expect(screen.getByTestId("profile-form-fontset-meta").textContent).toContain(
-      "v1",
-    );
-    expect(screen.getByTestId("profile-form-fontset-meta").textContent).toContain(
-      en.fontSetIntegrityOk,
-    );
-  });
 
-  it("keeps an explicit none font set instead of re-applying the default", async () => {
-    const win = fontSet({
-      set_id: "win-1",
-      platform: "windows",
-      created_at: "2026-01-01T00:00:00Z",
-      source_version: "v1",
-    });
-    // The font-sets query stays pending until the test releases it, so
-    // the user can pick "none" while the backend default is still in
-    // flight — the race the old 200ms wall-clock wait could not pin down.
-    let resolveList!: (value: FontSetListResponse) => void;
-    const listPromise = new Promise<FontSetListResponse>((resolve) => {
-      resolveList = resolve;
-    });
-    renderForm({
-      mode: "create",
-      stub: makeStub({
-        fontSets: [win],
-        defaultFontSetId: { windows: "win-1", macos: null },
-        fontSetsList: () => listPromise,
-      }),
-    });
-
-    // Faithful mouse sequence (t053_code_f005): a real browser dispatches
-    // pointerdown → pointerup → click, and Radix commits on pointerup and
-    // unmounts the menu synchronously — the click that follows is
-    // dispatched to an already-detached item and never reaches React.
-    // A bare fireEvent.click on the still-open option never exercises
-    // that path, so it passed while the guard was unreachable for real
-    // mouse users.
-    const trigger = within(
-      screen.getByTestId("profile-form-fontset"),
-    ).getByRole("combobox");
-    fireEvent.pointerDown(trigger, {
-      pointerType: "mouse",
-      button: 0,
-      pointerId: 1,
-    });
-    fireEvent.pointerUp(trigger, {
-      pointerType: "mouse",
-      button: 0,
-      pointerId: 1,
-    });
-    const noneOption = await screen.findByRole("option", {
-      name: en.formFontSetNone,
-    });
-    fireEvent.pointerDown(noneOption, {
-      pointerType: "mouse",
-      button: 0,
-      pointerId: 1,
-    });
-    fireEvent.pointerUp(noneOption, {
-      pointerType: "mouse",
-      button: 0,
-      pointerId: 1,
-    });
-    // Radix committed on pointerup and closed the menu: the option is
-    // already out of the tree when the browser dispatches the click.
-    expect(noneOption.isConnected).toBe(false);
-    fireEvent.click(noneOption, { button: 0 });
-    expect(
-      screen.getByTestId("profile-form-fontset-selected").textContent,
-    ).toBe(en.formFontSetNone);
-
-    // The backend default arrives after the explicit choice; the
-    // default-apply effect runs now and must not overwrite the pick.
-    await act(async () => {
-      resolveList({
-        items: [win],
-        default_font_set_id: { windows: "win-1", macos: null },
-      });
-      await listPromise;
-    });
-    // The default is now available (win-1 is offered) but must not be applied.
-    fireEvent.pointerDown(trigger, {
-      pointerType: "mouse",
-      button: 0,
-      pointerId: 1,
-    });
-    fireEvent.pointerUp(trigger, {
-      pointerType: "mouse",
-      button: 0,
-      pointerId: 1,
-    });
-    expect(
-      await screen.findByRole("option", { name: /win-1/ }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByTestId("profile-form-fontset-selected").textContent,
-    ).toBe(en.formFontSetNone);
-  });
-
-  it("keeps an explicit none font set when picked by keyboard instead of re-applying the default", async () => {
-    const win = fontSet({
-      set_id: "win-1",
-      platform: "windows",
-      created_at: "2026-01-01T00:00:00Z",
-      source_version: "v1",
-    });
-    // Same deferred-query race as the mouse test, but the pick is made
-    // by keyboard: Radix fires no click event for an Enter/Space pick,
-    // so the guard must be fed by the keyboard path as well (t053_code_f004).
-    let resolveList!: (value: FontSetListResponse) => void;
-    const listPromise = new Promise<FontSetListResponse>((resolve) => {
-      resolveList = resolve;
-    });
-    renderForm({
-      mode: "create",
-      stub: makeStub({
-        fontSets: [win],
-        defaultFontSetId: { windows: "win-1", macos: null },
-        fontSetsList: () => listPromise,
-      }),
-    });
-
-    // Keyboard-open the dropdown and pick "none" with Enter while the
-    // backend default is still in flight.
-    const trigger = within(screen.getByTestId("profile-form-fontset")).getByRole(
-      "combobox",
-    );
-    fireEvent.keyDown(trigger, { key: "ArrowDown" });
-    const noneOption = await screen.findByRole("option", {
-      name: en.formFontSetNone,
-    });
-    fireEvent.keyDown(noneOption, { key: "Enter" });
-    expect(
-      screen.getByTestId("profile-form-fontset-selected").textContent,
-    ).toBe(en.formFontSetNone);
-
-    // The backend default arrives after the explicit choice; the
-    // default-apply effect runs now and must not overwrite the pick.
-    await act(async () => {
-      resolveList({
-        items: [win],
-        default_font_set_id: { windows: "win-1", macos: null },
-      });
-      await listPromise;
-    });
-    // The default is now available (win-1 is offered) but must not be applied.
-    fireEvent.click(
-      within(screen.getByTestId("profile-form-fontset")).getByRole("combobox"),
-    );
-    expect(
-      await screen.findByRole("option", { name: /win-1/ }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByTestId("profile-form-fontset-selected").textContent,
-    ).toBe(en.formFontSetNone);
-  });
-
-  it("keeps an explicit none font set when picked by touch instead of re-applying the default", async () => {
-    const win = fontSet({
-      set_id: "win-1",
-      platform: "windows",
-      created_at: "2026-01-01T00:00:00Z",
-      source_version: "v1",
-    });
-    // Same deferred-query race as the mouse/keyboard tests, but the
-    // pick is made by touch: Radix commits touch picks on click, not
-    // on pointerup (t053_test_f007), so the guard must be fed by the
-    // click path as well.
-    let resolveList!: (value: FontSetListResponse) => void;
-    const listPromise = new Promise<FontSetListResponse>((resolve) => {
-      resolveList = resolve;
-    });
-    renderForm({
-      mode: "create",
-      stub: makeStub({
-        fontSets: [win],
-        defaultFontSetId: { windows: "win-1", macos: null },
-        fontSetsList: () => listPromise,
-      }),
-    });
-
-    // Touch-open the dropdown and pick "none" while the backend
-    // default is still in flight. Radix opens the menu on pointerdown
-    // only for mouse; a touch press opens it on the click that
-    // follows (dist :293-296 vs :303-305).
-    const trigger = within(
-      screen.getByTestId("profile-form-fontset"),
-    ).getByRole("combobox");
-    fireEvent.pointerDown(trigger, {
-      pointerType: "touch",
-      button: 0,
-      pointerId: 1,
-    });
-    fireEvent.pointerUp(trigger, {
-      pointerType: "touch",
-      button: 0,
-      pointerId: 1,
-    });
-    fireEvent.click(trigger, { button: 0 });
-    const noneOption = await screen.findByRole("option", {
-      name: en.formFontSetNone,
-    });
-    fireEvent.pointerDown(noneOption, {
-      pointerType: "touch",
-      button: 0,
-      pointerId: 1,
-    });
-    fireEvent.pointerUp(noneOption, {
-      pointerType: "touch",
-      button: 0,
-      pointerId: 1,
-    });
-    // Touch pointerup is a no-op for both Radix and the guard.
-    expect(noneOption.isConnected).toBe(true);
-    fireEvent.click(noneOption, { button: 0 });
-    expect(
-      screen.getByTestId("profile-form-fontset-selected").textContent,
-    ).toBe(en.formFontSetNone);
-
-    // The backend default arrives after the explicit choice; the
-    // default-apply effect runs now and must not overwrite the pick.
-    await act(async () => {
-      resolveList({
-        items: [win],
-        default_font_set_id: { windows: "win-1", macos: null },
-      });
-      await listPromise;
-    });
-    // The default is now available (win-1 is offered) but must not be applied.
-    fireEvent.click(
-      within(screen.getByTestId("profile-form-fontset")).getByRole("combobox"),
-    );
-    expect(
-      await screen.findByRole("option", { name: /win-1/ }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByTestId("profile-form-fontset-selected").textContent,
-    ).toBe(en.formFontSetNone);
-  });
 
   it("submits the new advanced-option defaults in the create form", async () => {
     const onSubmit = vi.fn(async () => undefined);
@@ -575,22 +259,6 @@ describe("ProfileForm", () => {
     );
   });
 
-  it("warns when the selected font set fails its integrity check", async () => {
-    const bad = fontSet({
-      set_id: "bad",
-      platform: "windows",
-      created_at: "2026-01-01T00:00:00Z",
-      integrity: {
-        ...fontSet().integrity,
-        ok: false,
-        problems: ["hash mismatch"],
-      },
-    });
-    renderForm({ mode: "create", stub: makeStub({ fontSets: [bad] }) });
-
-    const warning = await screen.findByTestId("profile-form-fontset-warning");
-    expect(warning.textContent).toContain(en.formFontSetInconsistent);
-  });
 
   it("reseeds the fingerprint seed", async () => {
     renderForm({ mode: "create", stub: makeStub() });
@@ -603,19 +271,7 @@ describe("ProfileForm", () => {
     );
   });
 
-  it("aligns timezone, language, and non-CJK font pack when selecting a proxy, keeps manual overrides, and resets alignment on request", async () => {
-    const winCore = fontSet({
-      set_id: "win-core-01",
-      platform: "windows",
-      source: "windows",
-      created_at: "2026-01-01T00:00:00Z",
-    });
-    const winCjk = fontSet({
-      set_id: "win-cjk-02",
-      platform: "windows",
-      source: "office-cjk",
-      created_at: "2026-02-01T00:00:00Z",
-    });
+  it("aligns timezone, language, and CJK inclusion when selecting a proxy, keeps manual overrides, and resets alignment on request", async () => {
     const usProxy: ProxyResponse = {
       ...proxy(),
       id: "px-us",
@@ -633,17 +289,18 @@ describe("ProfileForm", () => {
     const onSubmit = vi.fn(async () => undefined);
     renderForm({
       mode: "create",
-      stub: makeStub({
-        proxies: [usProxy, hkProxy],
-        fontSets: [winCjk, winCore],
-        defaultFontSetId: { windows: "win-core-01", macos: null },
-      }),
+      stub: makeStub({ proxies: [usProxy, hkProxy] }),
       onSubmit,
     });
 
-    await screen.findByTestId("profile-form-fontset-option-win-core-01");
+    const cjkCheckbox = () =>
+      within(screen.getByTestId("profile-form-include-cjk")).getByRole(
+        "checkbox",
+      );
 
-    // 1. Pick US proxy -> US timezone, en-US locale, core English font pack (CJK excluded)
+    await screen.findByTestId("profile-form-name");
+
+    // 1. Pick US proxy -> US timezone, en-US locale, CJK fonts excluded
     fireEvent.click(
       within(screen.getByTestId("profile-form-proxy")).getByRole("combobox"),
     );
@@ -657,14 +314,12 @@ describe("ProfileForm", () => {
       within(screen.getByTestId("profile-form-locale")).getByRole("combobox")
         .textContent,
     ).toContain(en.formLocaleEnglish);
-    expect(
-      screen.getByTestId("profile-form-fontset-selected").textContent,
-    ).toBe("win-core-01");
+    expect(cjkCheckbox()).toHaveAttribute("aria-checked", "false");
     expect(
       screen.getByTestId("profile-form-alignment-summary").textContent,
     ).toContain(en.formAlignFontsEn);
 
-    // 2. Switch to HK proxy -> Hong Kong timezone, zh-CN locale, CJK font pack
+    // 2. Switch to HK proxy -> Hong Kong timezone, zh-CN locale, CJK included
     fireEvent.click(
       within(screen.getByTestId("profile-form-proxy")).getByRole("combobox"),
     );
@@ -676,9 +331,7 @@ describe("ProfileForm", () => {
       within(screen.getByTestId("profile-form-locale")).getByRole("combobox")
         .textContent,
     ).toContain(en.formLocaleChinese);
-    expect(
-      screen.getByTestId("profile-form-fontset-selected").textContent,
-    ).toBe("win-cjk-02");
+    expect(cjkCheckbox()).toHaveAttribute("aria-checked", "true");
     expect(
       screen.getByTestId("profile-form-alignment-summary").textContent,
     ).toContain(en.formAlignFontsZh);
@@ -699,8 +352,9 @@ describe("ProfileForm", () => {
     expect(
       screen.getByTestId("profile-form-alignment-summary").textContent,
     ).toContain(en.formAlignManualNote);
+    expect(cjkCheckbox()).toHaveAttribute("aria-checked", "true");
 
-    // 4. Reset alignment restores proxy defaults (US timezone + en-US + win-core-01)
+    // 4. Reset alignment restores proxy defaults (US timezone + en-US + CJK off)
     fireEvent.click(screen.getByTestId("profile-form-reset-alignment"));
     expect(screen.getByTestId("profile-form-timezone")).toHaveValue(
       "America/Los_Angeles",
@@ -709,9 +363,7 @@ describe("ProfileForm", () => {
       within(screen.getByTestId("profile-form-locale")).getByRole("combobox")
         .textContent,
     ).toContain(en.formLocaleEnglish);
-    expect(
-      screen.getByTestId("profile-form-fontset-selected").textContent,
-    ).toBe("win-core-01");
+    expect(cjkCheckbox()).toHaveAttribute("aria-checked", "false");
 
     fireEvent.change(screen.getByTestId("profile-form-name"), {
       target: { value: "US Env" },
@@ -723,9 +375,43 @@ describe("ProfileForm", () => {
         proxy_id: "px-us",
         timezone: "America/Los_Angeles",
         locale: "en-US",
-        font_set_id: "win-core-01",
+        include_cjk_fonts: false,
       }),
     );
+    // The font set binding is backend-managed (t075): the create
+    // payload no longer carries a font_set_id at all.
+    expect(onSubmit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ font_set_id: expect.anything() }),
+    );
+  });
+
+  it("keeps a manually toggled CJK switch across later language changes", async () => {
+    renderForm({ mode: "create", stub: makeStub() });
+    const cjkCheckbox = () =>
+      within(screen.getByTestId("profile-form-include-cjk")).getByRole(
+        "checkbox",
+      );
+    await screen.findByTestId("profile-form-name");
+    expect(cjkCheckbox()).toHaveAttribute("aria-checked", "false");
+
+    // User turns CJK on for an English profile; switching the language
+    // afterwards must not silently revert the explicit choice.
+    fireEvent.click(cjkCheckbox());
+    expect(cjkCheckbox()).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(
+      within(screen.getByTestId("profile-form-locale")).getByRole("combobox"),
+    );
+    fireEvent.click(
+      await screen.findByRole("option", { name: en.formLocaleChinese }),
+    );
+    expect(cjkCheckbox()).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(
+      within(screen.getByTestId("profile-form-locale")).getByRole("combobox"),
+    );
+    fireEvent.click(
+      await screen.findByRole("option", { name: en.formLocaleEnglish }),
+    );
+    expect(cjkCheckbox()).toHaveAttribute("aria-checked", "true");
   });
 
   it("aligns timezone to Asia/Shanghai when locale is switched on an unassigned form", async () => {
@@ -750,4 +436,10 @@ describe("ProfileForm", () => {
   // profile_field_diff.test.ts. The "submits the full values in edit
   // mode" case was deleted because edit now submits only the diff; see
   // ProfileForm.t058.test.tsx (AC-001/AC-002).
+  //
+  // t075: the five font-set selection cases (backend-default preselect,
+  // explicit-none via mouse/keyboard/touch, integrity warning) were
+  // deleted wholesale — the form no longer selects font sets at all;
+  // the binding is backend-managed and the form carries only the CJK
+  // inclusion switch (covered by the alignment cases above).
 });

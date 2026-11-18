@@ -1,7 +1,7 @@
 ---
 slug: runtime_lifecycle
 status: active
-tasks: [baseline, t076, t078, t082]
+tasks: [baseline, t075, t076, t078, t082, t083]
 ---
 # 需求规范：Runtime 生命周期协调
 
@@ -36,6 +36,7 @@ tasks: [baseline, t076, t078, t082]
 - API 已记录 running 意愿后，Supervisor 读取指定不可变版本启动实例；配置失败不能猜默认值。Profile 锁串行生命周期请求，相同已运行实例启动返回现有会话。
 - UDP mux 端口池为 30000–30991，Profile 独立分配且内外一致。耗尽返回明确错误；已绑定但尚未获得端口的实例通过稳定启动失败事件收敛，不释放其他 Profile 端口。
 - Browser 就绪要求 Profile、实例、配置版本、真实 PID 和运行通道均匹配；Stream 必须完成 Gateway 注册后才报告 running。旧就绪文件不能让新实例提前成功。
+- 字体就绪是 Browser 就绪的组成部分（t075）：Runner 在启动浏览器前对实际挂载的字体集做一次真实验证（manifest/平台/逐文件哈希 + 以实例 fontconfig 跑 `fc-list` 枚举有效字体），结论写入 `runner_info`；Agent 健康 `ready` 要求字体结论为 verified，结论缺失或失败一律不就绪。Supervisor 在构造挂载时先确认字体源目录真实存在，缺失即启动失败，不允许容器运行时把缺失源建成空目录后零字体运行。普通配置修改只生成新配置版本，不触碰 Cookie 与登录会话存储。
 - 停止携带 operation_id 和 runtime_instance_id。相同请求可重放，相同操作 ID 配不同请求冲突；旧代停止不终止新代。依次标记不可用、等待 Viewer 断开确认、停止 Stream、停止 Browser、删除所属网络，确认释放后回收端口。
 - 重建 Browser 前先移除旧自有容器，再清理 Chromium singleton 锁链接。只移除已终止实例的临时入口，不跟随链接修改用户文件。
 

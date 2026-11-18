@@ -997,7 +997,7 @@ async def test_agent_health_missing_state_does_not_manufacture_stopped() -> None
 
 @pytest.mark.asyncio
 async def test_normal_exit_session_allows_immediate_start_without_409_conflict(
-    tmp_path: Path,
+    tmp_path: Path, fixture_font_set: str
 ) -> None:
     """When a cleanly stopped normal-exit session still sits in _sessions awaiting
     scan cleanup, starting a new running intent tears down the old stopped sandbox
@@ -1060,6 +1060,31 @@ async def test_normal_exit_session_allows_immediate_start_without_409_conflict(
     docker.start_stream_container = AsyncMock(side_effect=_start_stream)
 
     def _handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/state/snapshot"):
+            return httpx.Response(
+                200,
+                json={
+                    "api_epoch": "normal-exit-test-epoch",
+                    "profiles": [
+                        {
+                            "profile_id": "p1",
+                            "display_number": 1,
+                            "desired_state": "running",
+                            "observed_state": "stopped",
+                            "runtime_instance_id": None,
+                            "config_version": 1,
+                            "failure_count": 0,
+                            "restart_blocked": False,
+                            "last_exit_event_id": None,
+                            "backoff_started_at": None,
+                            "next_retry_at": None,
+                            "updated_at": "2026-01-01T00:00:00+00:00",
+                            "state_revision": 1,
+                        }
+                    ],
+                    "next_cursor": None,
+                },
+            )
         if request.url.path.endswith("/runtime"):
             return httpx.Response(
                 200,
@@ -1107,7 +1132,12 @@ async def test_normal_exit_session_allows_immediate_start_without_409_conflict(
     orig_ready = sup_core.browser_runtime_ready
     sup_core.browser_runtime_ready = lambda *_a, **_kw: True
     try:
-        new_session = await core.start_profile("p1", ProfileConfig(name="p1"), 1, profile_number=1)
+        new_session = await core.start_profile(
+            "p1",
+            ProfileConfig(name="p1", font_set_id=fixture_font_set),
+            1,
+            profile_number=1,
+        )
         assert torn_down == ["p1"]
         assert new_session.runtime_instance_id != "inst_old"
         assert new_session.observed_state == "running"
@@ -1158,18 +1188,44 @@ async def test_scan_cleans_up_normal_exit_residual_when_desired_running_and_api_
         else []
     )
 
-    api = httpx.AsyncClient(
-        transport=httpx.MockTransport(
-            lambda _r: httpx.Response(
+    def _scan_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/state/snapshot"):
+            return httpx.Response(
                 200,
                 json={
-                    "desired_state": "running",
-                    "observed_state": "stopped",
-                    "runtime_instance_id": None,
-                    "config_version": 1,
+                    "api_epoch": "scan-normal-exit-epoch",
+                    "profiles": [
+                        {
+                            "profile_id": "p1",
+                            "display_number": 1,
+                            "desired_state": "running",
+                            "observed_state": "stopped",
+                            "runtime_instance_id": None,
+                            "config_version": 1,
+                            "failure_count": 0,
+                            "restart_blocked": False,
+                            "last_exit_event_id": None,
+                            "backoff_started_at": None,
+                            "next_retry_at": None,
+                            "updated_at": "2026-01-01T00:00:00+00:00",
+                            "state_revision": 1,
+                        }
+                    ],
+                    "next_cursor": None,
                 },
             )
-        ),
+        return httpx.Response(
+            200,
+            json={
+                "desired_state": "running",
+                "observed_state": "stopped",
+                "runtime_instance_id": None,
+                "config_version": 1,
+            },
+        )
+
+    api = httpx.AsyncClient(
+        transport=httpx.MockTransport(_scan_handler),
         base_url="http://api",
     )
     gw = MagicMock()

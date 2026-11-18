@@ -11,6 +11,7 @@ import asyncio
 import json
 import secrets
 import socket
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -44,7 +45,7 @@ from supervisor_recovery_probe.gateway_service import (
 
 
 @pytest.fixture
-def supervisor_setup(tmp_path: Path):
+def supervisor_setup(tmp_path: Path, fixture_font_set: str):
     token = secrets.token_urlsafe(32)
     token_file = tmp_path / "sup_token"
     token_file.write_text(token)
@@ -84,7 +85,28 @@ def supervisor_setup(tmp_path: Path):
                 json={
                     "profile_id": "p_test",
                     "version": 1,
-                    "config": ProfileConfig(name="Test").model_dump(),
+                    # t075: the served config carries a fixture font
+                    # binding; an unbound config now refuses to start.
+                    "config": ProfileConfig(
+                        name="Test", font_set_id=fixture_font_set
+                    ).model_dump(),
+                },
+            )
+        if p.endswith("/state/snapshot"):
+            # t083: coordination state arrives via the batch snapshot.
+            return httpx.Response(
+                200,
+                json={
+                    "api_epoch": "test-epoch",
+                    "profiles": [
+                        {
+                            **runtime_state,
+                            "backoff_started_at": None,
+                            "next_retry_at": None,
+                            "state_revision": 1,
+                        }
+                    ],
+                    "next_cursor": None,
                 },
             )
         if p.endswith("/runtime"):
@@ -363,6 +385,22 @@ async def test_offline_reconciliation_preserves_containers_on_api_error(
 
     core.docker.teardown_profile = mock_teardown
 
+    # t083_test_f006: give the state cache an advancable clock so the
+    # test can let the production maintain() path — not a forced
+    # sync_now() — realign once the failure backoff lapses.
+    class _AdvancingClock:
+        def __init__(self) -> None:
+            self.now = time.monotonic()
+
+        def __call__(self) -> float:
+            return self.now
+
+        def advance(self, seconds: float) -> None:
+            self.now += seconds
+
+    clock = _AdvancingClock()
+    core.state_cache._clock = clock
+
     # Force API 503
     def err_handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(503, json={"error": "busy"})
@@ -377,27 +415,47 @@ async def test_offline_reconciliation_preserves_containers_on_api_error(
     assert teardown_called is False, "503 must NOT tear down healthy containers"
 
     # 2. API returns 200 running: session reconstructed and port 30005 occupied
+    ok_runtime = {
+        "profile_id": "p_err",
+        "display_number": 1,
+        "desired_state": "running",
+        "observed_state": "running",
+        "runtime_instance_id": "inst_1",
+        "config_version": 1,
+        "failure_count": 0,
+        "restart_blocked": False,
+        "last_exit_event_id": None,
+        "backoff_started_at": None,
+        "next_retry_at": None,
+        "updated_at": "2026-10-29T00:00:00Z",
+        "state_revision": 1,
+    }
+
     def ok_handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            200,
-            json={
-                "profile_id": "p_err",
-                "desired_state": "running",
-                "observed_state": "running",
-                "runtime_instance_id": "inst_1",
-                "config_version": 1,
-                "failure_count": 0,
-                "restart_blocked": False,
-                "last_exit_event_id": None,
-                "updated_at": "2026-10-29T00:00:00Z",
-            },
-        )
+        if request.url.path.endswith("/state/snapshot"):
+            return httpx.Response(
+                200,
+                json={
+                    "api_epoch": "test-epoch",
+                    "profiles": [ok_runtime],
+                    "next_cursor": None,
+                },
+            )
+        return httpx.Response(200, json=ok_runtime)
 
     core.api = httpx.AsyncClient(
         transport=httpx.MockTransport(ok_handler),
         base_url="http://api.internal",
         trust_env=False,
     )
+    # The failed sync above armed the cache's backoff (2 s after the
+    # first failure).  Advance past it and let maintain() — the
+    # production scheduling path — start the realignment itself; the
+    # sync_now() only awaits the in-flight realignment to finish.
+    clock.advance(3.0)
+    await core.state_cache.maintain()
+    assert core.state_cache.has_inflight
+    await core.state_cache.sync_now()
 
     await core.scan_and_reconcile_existing()
     assert core.get_session("p_err") is not None

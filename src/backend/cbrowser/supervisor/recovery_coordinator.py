@@ -14,7 +14,6 @@ import time
 from typing import Any
 
 import docker.errors
-import httpx
 from cbrowser.domain.models import ProfileConfig
 from cbrowser.domain.runtime_policy import (
     AUTO_RETRY_DELAYS,
@@ -110,24 +109,14 @@ class RecoveryCoordinator:
         self._prune_recovery_state(live_instances, known_profiles)
 
     async def _observe_profiles(self) -> list[dict[str, Any]] | None:
-        try:
-            resp = await self.core.api.get(
-                "/api/v1/internal/supervisor/profiles",
-                headers=self.core._auth_headers(),
-            )
-            if resp.status_code != 200:
-                logger.warning(
-                    "Recovery paused: API profiles status=%s",
-                    resp.status_code,
-                )
-                return None
-            return resp.json()
-        except Exception as exc:  # noqa: BLE001 - API availability probe error pauses recovery iteration
-            logger.warning(
-                "Recovery paused: API error_type=%s",
-                type(exc).__name__,
-            )
+        # t083: profiles come from the core's minimal state cache; a
+        # steady tick performs no HTTP.  An unauthoritative cache
+        # pauses recovery exactly like the former API failure did.
+        entries = await self.core._state_entries()
+        if entries is None:
+            logger.warning("Recovery paused: API state not authoritative")
             return None
+        return entries
 
     async def _scan_containers(self) -> list[dict[str, Any]] | None:
         try:
@@ -191,21 +180,9 @@ class RecoveryCoordinator:
     async def _report_browser_exit(
         self, profile_id: str, browser: dict[str, Any], instance_id: str
     ) -> None:
-        try:
-            rt_resp = await self.core.api.get(
-                f"/api/v1/internal/supervisor/profiles/{quote(profile_id, safe='')}/runtime",
-                headers=self.core._auth_headers(),
-            )
-        except (httpx.HTTPError, OSError) as exc:
-            logger.debug(
-                "Failed to query runtime before exit synthesis: error_type=%s",
-                type(exc).__name__,
-            )
+        runtime = await self.core._state_entry(profile_id)
+        if runtime is None:
             return
-
-        if rt_resp.status_code != 200:
-            return
-        runtime = rt_resp.json()
         if exit_event_superseded(runtime, instance_id):
             return
 
@@ -289,21 +266,7 @@ class RecoveryCoordinator:
         return known_profiles
 
     async def _fetch_runtime(self, profile_id: str) -> dict[str, Any] | None:
-        try:
-            rt_resp = await self.core.api.get(
-                f"/api/v1/internal/supervisor/profiles/{quote(profile_id, safe='')}/runtime",
-                headers=self.core._auth_headers(),
-            )
-            if rt_resp.status_code != 200:
-                return None
-            return rt_resp.json()
-        except (httpx.HTTPError, OSError, ValueError) as exc:
-            logger.debug(
-                "Failed to fetch runtime for profile %s: error_type=%s",
-                profile_id,
-                type(exc).__name__,
-            )
-            return None
+        return await self.core._state_entry(profile_id)
 
     async def _schedule_profile_retry(
         self,
@@ -427,16 +390,8 @@ class RecoveryCoordinator:
         )
         if reported:
             self._reported_dead_instances.add(instance_id)
-        try:
-            rt_resp = await self.core.api.get(
-                f"/api/v1/internal/supervisor/profiles/{quote(profile_id, safe='')}/runtime",
-                headers=self.core._auth_headers(),
-            )
-            if rt_resp.status_code == 200:
-                return rt_resp.json()
-        except (httpx.HTTPError, OSError):
-            pass
-        return runtime
+        refreshed = await self.core._state_entry(profile_id)
+        return refreshed if refreshed is not None else runtime
 
     def _prune_recovery_state(
         self, live_instances: set[str], known_profiles: set[str]
@@ -474,26 +429,15 @@ class RecoveryCoordinator:
             if self._closing:
                 return
 
-            # Re-read authoritative API state to prevent stale retry overriding new user
-            # intent
-            try:
-                rt_resp = await self.core.api.get(
-                    f"/api/v1/internal/supervisor/profiles/{quote(profile_id, safe='')}/runtime",
-                    headers=self.core._auth_headers(),
-                )
-                if rt_resp.status_code != 200:
-                    logger.warning(
-                        "Retry for %s aborted: API runtime query failed (%s).",
-                        profile_id,
-                        rt_resp.status_code,
-                    )
-                    return
-                current_rt = rt_resp.json()
-            except (httpx.HTTPError, OSError) as exc:
+            # Re-read authoritative API state to prevent stale retry
+            # overriding new user intent.  t083: the state cache is
+            # that authority (push-fenced, snapshot-backed); losing
+            # authority aborts the retry like the former API failure.
+            current_rt = await self.core._state_entry(profile_id)
+            if current_rt is None:
                 logger.warning(
-                    "Retry for %s aborted: API error: error_type=%s.",
+                    "Retry for %s aborted: API state not authoritative.",
                     profile_id,
-                    type(exc).__name__,
                 )
                 return
 

@@ -51,26 +51,26 @@ Runner 接收 SIGTERM/SIGINT 后正常关闭 SDK context 与子系统；Supervis
 
 ## 指纹平台、平台字体集与 fontconfig 白名单（t041）
 
-Profile 运行配置含 `fingerprint_platform`（`windows` 默认 / `macos`）与 `font_set_id`（引用同平台的不可变字体集，可为 null），经增量迁移 `0002_fingerprint_platform.py` 加入；两者都属运行配置，修改任一都生成新 `ProfileConfigVersion`。CloakBrowser 只支持这两种指纹平台，没有 Linux 指纹平台。Runner 按绑定快照选择平台，代码中不再写死 `--fingerprint-platform=windows`。
+Profile 运行配置含 `fingerprint_platform`（`windows` 默认 / `macos`）与 `font_set_id`（引用同平台的不可变字体集），经增量迁移 `0002_fingerprint_platform.py` 加入；两者都属运行配置，修改任一都生成新 `ProfileConfigVersion`。CloakBrowser 只支持这两种指纹平台，没有 Linux 指纹平台。Runner 按绑定快照选择平台，代码中不再写死 `--fingerprint-platform=windows`。t075 起 `font_set_id` 为后端托管绑定（创建/克隆/切平台由服务按目录默认规则解析，请求不再接受该字段；字体根已配置时无可用集在写入前失败，未配置字体根的进程可暂无绑定但启动失败封闭）；新增运行配置 `include_cjk_fonts`（CJK 暴露开关，迁移 `0013_profile_identity.py`），`color_scheme` 收敛为 `light`/`dark`，`gpu_family` 删除——GPU 身份由引擎按指纹种子+平台自动派生（s026 / d051 / ADR 040）。
 
 字体分两层，均放在 fontconfig 默认扫描路径之外：
 
 - 基础开源字体六项（`fonts-noto-color-emoji` / `fonts-freefont-ttf` / `fonts-unifont` / `fonts-ipafont-gothic` / `fonts-wqy-zenhei` / `fonts-tlwg-loma-otf`）进入 Browser 镜像 `/opt/cbrowser-base-fonts`，仅满足 CloakBrowser 文档的最低安装要求；它们是 Linux 特征字体，**不进入**指纹 Profile 的 fontconfig 白名单。
 - 平台专有字体集在宿主 `CBROWSER_FONTS_DIR/{platform}/{set_id}/`，按内容寻址的 `set_id` + `manifest.json`（来源、来源系统版本、逐文件 sha256）不可变存放，经 `.worktreeinclude` 供各 worktree 共享；Supervisor 只把 Profile 绑定的集只读挂到容器 `/run/cbrowser/fonts/{platform}/{set_id}`。
 
-Runner 为每个 Profile 生成 `FONTCONFIG_FILE`：绑定平台字体集时只以 `<dir>` 白名单声明该集目录，不 include `/etc/fonts/fonts.conf`，也不声明基础开源字体目录；`font_set_id` 为 null（平台字体未配置）时**回退基础开源字体可见**，保证浏览器有字体、页面可用（AC-006 正常启动），runtime 状态报告「平台字体未配置」并在 `missing_fonts` 标明当前暴露 Linux 基础字体。绑定集场景下 Liberation / Nimbus / 文泉驿 / Unifont / FreeFont / IPAGothic / Loma 等 Linux 专属字体对两种平台都不可见（真实 146 引擎 E2E 与 `fc-list` 实测命中 0，见 d033）；null 回退场景下它们可见并由状态明确标记。
+Runner 为每个 Profile 生成 `FONTCONFIG_FILE`：只以 `<dir>` 白名单声明绑定集目录，不 include `/etc/fonts/fonts.conf`，也不声明基础开源字体目录；Liberation / Nimbus / 文泉驿 / Unifont / FreeFont / IPAGothic / Loma 等 Linux 专属字体对两种平台都不可见（真实 146 引擎 E2E 与 `fc-list` 实测命中 0，见 d033）。t075 起**无基础字体回退**：未绑定时白名单为空且启动前验证失败封闭（旧「回退基础字体可见 + 状态标记」语义废止）。
 
-失败封闭：绑定的字体集缺失，或文件与 manifest 不一致，启动失败并报告 `font_set_unavailable`；`font_set_id` 为 null 时回退基础开源字体可见、正常启动，runtime 状态报告「平台字体未配置」并在 `missing_fonts` 标明当前暴露 Linux 基础字体。`font_bundle`（文泉驿按 Profile 三态）已删除，字段、镜像字体包、代码、文档与测试引用一并清理（AC-009）。字体缓存沿用镜像既有 `XDG_CACHE_HOME=/tmp/.cache`。
+失败封闭：绑定的字体集缺失，或文件与 manifest 不一致，启动失败并报告 `font_set_unavailable`；未绑定同样失败封闭。`font_bundle`（文泉驿按 Profile 三态）已删除，字段、镜像字体包、代码、文档与测试引用一并清理（AC-009）。字体缓存沿用镜像既有 `XDG_CACHE_HOME=/tmp/.cache`。
 
-（t081 补充）运行 Agent 的 `/health` 字体检测以本实例生命周期为围栏按 `(platform, set_id)` 缓存：Agent 进程随实例生灭，缓存结论不跨实例复用；API 侧的字体口径来自资产目录（ADR 030），与 Agent 的实测 detection 应一致，不一致时以实际挂入集的启动验证与显式审计为准。
+（t075 修订，取代 t081 补充的 Agent 复核口径）字体就绪结论由 Runner 在启动浏览器前对实际挂载目录生成一次：`runtime_agent/font_verification.py` 核对 manifest、平台、逐文件 sha256 内容哈希，并以该实例的 fontconfig 跑真实 `fc-list` 枚举有效字体（CJK 开时要求至少一个中文覆盖字体面、关时要求零泄漏）；CJK 开时另以 FreeType 真实光栅化证明至少一个中文面能渲染中文字形（`runtime_agent/glyph_render.py`，只枚举、不成形的字体面在此失败），结论（含失败原因与可选探测覆盖缺口）随 `runner_info.font_verification` 持久化。manifest 不含文件大小字段，故本层不做大小比对；宿主侧 Supervisor 启动前 `check_font_set` 同样做逐文件 sha256 复核。Agent `/health` 只读该结论并以其门禁 `ready`，不逐请求重扫字体字节；API 侧字体口径仍来自资产目录（ADR 030）。Supervisor 构造字体挂载时先校验源目录真实存在（`supervisor/volume_spec.font_set_mount`），缺失即抛错，绝不让 daemon 把缺失源建成空目录。
 
 ## 语言分流与字体集链路收紧（t053）
 
-**按语言生成 fontconfig**：Runner 为每个 Profile 生成的 `FONTCONFIG_FILE` 在白名单目录之外再按语言裁剪。`locale == "en-US"` 时，对每个中文语言标签（`zh`、`zh-cn`、`zh-tw`、`zh-hk`、`zh-mo`、`zh-sg`）追加一条 `<selectfont><rejectfont>`，排除 fontconfig 语言覆盖含任一中文标签的字体；`locale == "zh-CN"` 时不追加，全部白名单字体可见。裁剪只看字体的 fontconfig `lang` 覆盖声明，不看文件名或来源；日文、韩文等非中文 CJK 字体除非其 `lang` 覆盖声明含中文，否则不被裁剪。未绑定字体集时回退 `/opt/cbrowser-base-fonts` 的场景同样遵守该规则。宿主 fontconfig 2.15.0 上以真实字体（NotoSansCJK `.ttc` + DejaVu）实测：英文配置隐藏全部 CJK 面、保留 DejaVu，中文配置两者皆见；Browser 镜像内 fontconfig 版本的实测待用户机补验（t053 环境跳过项）。
+**按 CJK 开关生成 fontconfig（t075 取代按语言裁剪）**：Runner 为每个 Profile 生成的 `FONTCONFIG_FILE` 在白名单目录之外按 `include_cjk_fonts` 开关裁剪。开关关时，对每个中文语言标签（`zh`、`zh-cn`、`zh-tw`、`zh-hk`、`zh-mo`、`zh-sg`）追加一条 `<selectfont><rejectfont>`，排除 fontconfig 语言覆盖含任一中文标签的字体；开关开时不追加，全部白名单字体可见。裁剪只看字体的 fontconfig `lang` 覆盖声明，不看文件名或来源；日文、韩文等非中文 CJK 字体除非其 `lang` 覆盖声明含中文，否则不被裁剪。开关的创建默认由 API 按语言派生（`zh-CN` 开、其余关），与 `locale` 解耦后修改语言不再改写开关。宿主 fontconfig 上以真实字体（NotoSansCJK `.ttc` + DejaVu）实测：关时隐藏全部 CJK 面、保留 DejaVu，开时两者皆见；Browser 镜像内 fontconfig 版本的实测待本地补验（p137）。
 
-**默认字体集只由后端决定（A16）**：`GET /api/v1/font-sets` 返回 `FontSetListResponse{items, default_font_set_id}`，每平台一个默认集——只取验证通过（verified）的集，其中最近一次验证通过时间最新（`verified_at` 最大）的胜出，无可用集时为 null。创建表单以其预选，绝不自行按创建时间推导；「无」为显式选项，提交显式 null，后端只在调用方完全未提供 `font_set_id` 时才套用默认，显式 null 按 null 保存。
+**字体集绑定只由后端决定（t075 取代 A16）**：`GET /api/v1/font-sets` 返回 `FontSetListResponse{items, default_font_set_id}`，每平台一个默认集——只取验证通过（verified）的集，其中最近一次验证通过时间最新（`verified_at` 最大）的胜出，无可用集时为 null。创建、克隆与切换平台时服务把该默认集写为 Profile 的托管绑定；创建/更新请求不接受 `font_set_id`，表单不再提供字体包选择；字体根已配置时平台无可用集则创建/切换在写入前以 `font_set_binding_invalid` 失败（未配置字体根的进程不拦截创建，但无绑定不可启动）。携带既有绑定的内部路径（克隆）校验绑定仍属同平台 verified 集后保留。
 
-**fontconfig 生成失败即启动失败（A18）**：绑定了字体集时 `prepare_profile_fontconfig` 返回 None（生成失败）即启动失败：Runner 先保存终态 error 状态（`exit_reason="font_set_unavailable"`），再抛 `FontConfigUnavailableError`，浏览器不启动、不回落系统配置；Supervisor 观测路径把该原因原样透传为 `FONT_SET_UNAVAILABLE`。未绑定字体集时保持既有基础字体回退。
+**fontconfig 生成或验证失败即启动失败（A18，t075 扩展）**：`prepare_profile_fontconfig` 返回 None（生成失败）或启动前字体验证不合格即启动失败：Runner 先保存终态 error 状态（`exit_reason="font_set_unavailable"`），再抛 `FontConfigUnavailableError`，浏览器不启动、不回落系统配置；Supervisor 观测路径把该原因原样透传为 `FONT_SET_UNAVAILABLE`。未绑定同样失败，不存在回退路径。
 
 **导入修复与实时校验（A19）**：已存在且完整性通过的字体集重复导入不改动；已存在但损坏（文件缺失或篡改）的集，重新导入以新内容原子替换（staging 目录 + rename 换位，失败恢复原状）。Coordinator 不再缓存字体运行时状态：`get_font_runtime` 每次实时调用与 Supervisor 启动时同一校验函数（`get_font_set` + `check_font_set`），字体集缺失或损坏时 REST 与 SSE 立即报告缺失，无需重启 API。检测字体缺失与完整性损坏是两个轴：文件被篡改不计入检测缺失，只记完整性问题。
 

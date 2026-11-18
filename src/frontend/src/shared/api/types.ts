@@ -46,7 +46,6 @@ export type ApiPaths = paths;
 export const DEFAULT_PROFILE_CREATE_VALUES: Omit<ProfileCreateRequest, "name"> = {
   screen_width: 1920,
   screen_height: 1080,
-  gpu_family: "auto",
   humanize: true,
   human_preset: "default",
   geoip: true,
@@ -60,13 +59,13 @@ export const DEFAULT_PROFILE_CREATE_VALUES: Omit<ProfileCreateRequest, "name"> =
   portable_cookies: true,
   sort_order: 0,
   fingerprint_platform: "windows",
-  font_set_id: null,
   group_id: null,
   proxy_id: null,
   notes: null,
   timezone: null,
   locale: "en-US",
-  color_scheme: null,
+  color_scheme: "light",
+  include_cjk_fonts: false,
   launch_args: [],
   extension_paths: [],
 };

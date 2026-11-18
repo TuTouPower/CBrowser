@@ -1438,12 +1438,6 @@ export interface components {
              */
             screen_height: number;
             /**
-             * Gpu Family
-             * @default auto
-             * @enum {string}
-             */
-            gpu_family: "auto" | "nvidia" | "intel";
-            /**
              * Humanize
              * @default true
              */
@@ -1469,15 +1463,19 @@ export interface components {
              * @default false
              */
             auto_launch: boolean;
-            /** Color Scheme */
-            color_scheme?: ("light" | "dark" | "no-preference") | null;
+            /**
+             * Color Scheme
+             * @default light
+             * @enum {string}
+             */
+            color_scheme: "light" | "dark";
             /**
              * Fingerprint Platform
              * @enum {string}
              */
             fingerprint_platform?: "windows" | "macos";
-            /** Font Set Id */
-            font_set_id?: string | null;
+            /** Include Cjk Fonts */
+            include_cjk_fonts?: boolean | null;
             /** Launch Args */
             launch_args?: string[];
             /** Extension Paths */
@@ -1622,11 +1620,6 @@ export interface components {
              */
             screen_height: number;
             /**
-             * Gpu Family
-             * @default auto
-             */
-            gpu_family: string;
-            /**
              * Humanize
              * @default true
              */
@@ -1651,12 +1644,20 @@ export interface components {
              * @default false
              */
             auto_launch: boolean;
-            /** Color Scheme */
-            color_scheme?: string | null;
+            /**
+             * Color Scheme
+             * @default light
+             */
+            color_scheme: string;
             /** Fingerprint Platform */
             fingerprint_platform?: string;
             /** Font Set Id */
             font_set_id?: string | null;
+            /**
+             * Include Cjk Fonts
+             * @default true
+             */
+            include_cjk_fonts: boolean;
             /** Launch Args */
             launch_args?: string[];
             /** Extension Paths */
@@ -1831,8 +1832,6 @@ export interface components {
             screen_width?: number | null;
             /** Screen Height */
             screen_height?: number | null;
-            /** Gpu Family */
-            gpu_family?: ("auto" | "nvidia" | "intel") | null;
             /** Humanize */
             humanize?: boolean | null;
             /** Human Preset */
@@ -1844,11 +1843,11 @@ export interface components {
             /** Auto Launch */
             auto_launch?: boolean | null;
             /** Color Scheme */
-            color_scheme?: ("light" | "dark" | "no-preference") | null;
+            color_scheme?: ("light" | "dark") | null;
             /** Fingerprint Platform */
             fingerprint_platform?: ("windows" | "macos") | null;
-            /** Font Set Id */
-            font_set_id?: string | null;
+            /** Include Cjk Fonts */
+            include_cjk_fonts?: boolean | null;
             /** Launch Args */
             launch_args?: string[] | null;
             /** Extension Paths */

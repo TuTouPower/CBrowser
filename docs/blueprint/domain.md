@@ -22,7 +22,9 @@
 |**文件归档**|`Artifact`|用户上传到浏览器环境或浏览器内下载完成的文件元数据记录，包含 SHA-256、体积与配额信息。|
 |**文件交换区**|`ExchangeDirectory`|宿主机与容器共享的持久化上传/下载暂存目录，按 Profile 严格隔离。|
 |**指纹平台**|`ProfileConfig.fingerprint_platform`|Profile 绑定的反指纹目标平台，取值 `windows`（默认）/ `macos`；CloakBrowser 只支持这两种，无 Linux 平台。属运行配置，变更产生新 `ProfileConfigVersion`（t041）。|
-|**平台字体集**|`ProfileConfig.font_set_id`|对同平台、按内容寻址的不可变字体集的引用；null 表示未配置平台字体。字体集只在运行时只读挂载，不进镜像与仓库；属运行配置，变更产生新 `ProfileConfigVersion`（t041）。|
+|**平台字体集**|`ProfileConfig.font_set_id`|对同平台、按内容寻址的不可变字体集的引用；t075 起为后端托管绑定（创建/克隆/切平台由服务按目录默认规则解析，请求不接受该字段；字体根已配置的部署中恒有绑定，未配置字体根的进程可暂空但不可启动）。字体集只在运行时只读挂载，不进镜像与仓库；属运行配置，变更产生新 `ProfileConfigVersion`（t041 / t075）。|
+|**中文字体开关**|`ProfileConfig.include_cjk_fonts`|中文字体是否对 Browser 可见的显式开关；创建未给出时按语言派生（`zh-CN` 开、其余关），运行时 fontconfig 的中文裁剪只看此开关。属运行配置，变更产生新 `ProfileConfigVersion`（t075）。|
+|**配色方案**|`ProfileConfig.color_scheme`|只允许 `light` / `dark`（默认 `light`）；旧 `null` / `no-preference` 已由迁移 0013 统一映射为 `light`。属运行配置（t075 收敛）。|
 |**语言**|`ProfileConfig.locale`|Profile 的浏览器语言，封闭枚举 `zh-CN` / `en-US`（新建默认 `en-US`）。属运行配置，变更产生新 `ProfileConfigVersion`，重启后生效（t053）。|
 |**时区**|`ProfileConfig.timezone`|Profile 的时区，合法 IANA 时区名或 null（null 表示自动、随出口 IP）；非法时区在写入边界 422 拒绝。时区只决定语言联动的输入，不直接决定浏览器时区以外的行为（t053）。|
 
@@ -108,3 +110,8 @@
 - **时区 → 语言规则**：中文地区时区集合 `{Asia/Shanghai, Asia/Chongqing, Asia/Urumqi, Asia/Harbin, Asia/Hong_Kong, Asia/Macau, Asia/Taipei}` → `zh-CN`，其余合法时区 → `en-US`；时区为空时语言保持当前值。规则由后端 `domain/profile_locale.py` 的 `locale_for_timezone` 定义，前端 `features/profiles/profile_locale.ts` 逐项镜像，两侧单测保证一致（同一规则来源的两种实现，不存在第三份真相）。
 - **新建默认值**：`humanize` 与 `portable_cookies` 默认开启；其余高级选项默认值不变——`transparent_proxy` / `auto_launch` 关闭，`allow_3p_cookies` / `set_google_default` / `clipboard_sync` / `restore_session` / `capture_preview` 开启。三端一致：后端 `ProfileConfig` / `ProfileCreateRequest` / `ProfileResponse`、ORM（Python 默认 + `server_default`）、前端 `DEFAULT_PROFILE_CREATE_VALUES`；由后端单测与前端提交单测固定。迁移 `0007` 只改 server default，不改写既有 Profile 的已存值。
 - **语言属运行配置**：`locale` 变更生成新 `ProfileConfigVersion`，重启后字体可见性与 `navigator.language` 按新语言生效。`geoip` 默认开启，但语言恒为显式值，不被出口 IP 推断覆盖（CloakBrowser 显式 `locale` 是否优先于出口 IP 推断，仍待真实引擎验证，见 t053 未知契约清单）。
+
+## 状态同步围栏与最小协调字段（t083）
+
+- **state_revision**：`profile_runtimes.state_revision` 为每 Profile 单调修订，ORM `before_update` 事件在任意运行时行更新时统一自增（迁移 0013），是 Supervisor 状态同步的版本围栏；与 API 进程 `api_epoch`（进程启动生成、随每份快照与通知携带）共同决定一份状态是否可信：跨 epoch 不比 revision、未完整读完的快照不是权威、迟到通知按 revision 丢弃。
+- **最小协调字段**：跨 API→Supervisor 的协调只允许 `SupervisorProfileState` 的字段集（意愿、绑定实例/配置版本、终态事件、重试/封锁、display_number、修订与更新时间）；字体覆盖、transport、search-defaults、control 与 UI 投影永不进入协调协议，观测新鲜度由缓存权威窗口（40 秒）与「未确认标未知」表达，读取路径不因观测缺失改写意愿。

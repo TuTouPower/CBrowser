@@ -94,3 +94,14 @@ def validate_locale(value: str | None) -> str | None:
             f"{value!r}; expected one of {', '.join(SUPPORTED_LOCALES)}"
         )
     return value
+
+
+def default_include_cjk_fonts(locale: str | None) -> bool:
+    """Creation default for the independent CJK switch (t075).
+
+    Chinese profiles include Chinese fonts by default; every other
+    locale (including an unset one, whose creation default is en-US)
+    starts without them.  The stored value is explicit either way: this
+    helper only resolves the default when the caller did not choose.
+    """
+    return locale == "zh-CN"

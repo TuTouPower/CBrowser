@@ -58,7 +58,7 @@ def _runtime(**overrides) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_unfinished_cleanup_blocks_new_start(tmp_path) -> None:
+async def test_unfinished_cleanup_blocks_new_start(tmp_path, fixture_font_set) -> None:
     core = _core(tmp_path, _runtime())
     core._sessions["profile"] = ActiveSession(
         "profile", "inst_old", 1, 30000, "browser", "stream",
@@ -66,23 +66,29 @@ async def test_unfinished_cleanup_blocks_new_start(tmp_path) -> None:
     )
     with pytest.raises(LifecycleConflictError):
         await core.start_profile(
-            profile_id="profile", config=ProfileConfig(name="P"), config_version=1
+            profile_id="profile",
+            config=ProfileConfig(name="P", font_set_id=fixture_font_set),
+            config_version=1,
         )
 
 
 @pytest.mark.asyncio
-async def test_missing_running_intent_is_a_conflict(tmp_path) -> None:
+async def test_missing_running_intent_is_a_conflict(tmp_path, fixture_font_set) -> None:
     core = _core(tmp_path, _runtime(desired_state="stopped"))
     with pytest.raises(LifecycleConflictError):
         await core.start_profile(
-            profile_id="profile", config=ProfileConfig(name="P"), config_version=1
+            profile_id="profile",
+            config=ProfileConfig(name="P", font_set_id=fixture_font_set),
+            config_version=1,
         )
 
 
 @pytest.mark.asyncio
-async def test_restart_blocked_is_a_conflict(tmp_path) -> None:
+async def test_restart_blocked_is_a_conflict(tmp_path, fixture_font_set) -> None:
     core = _core(tmp_path, _runtime(restart_blocked=True, failure_count=4))
     with pytest.raises(LifecycleConflictError):
         await core.start_profile(
-            profile_id="profile", config=ProfileConfig(name="P"), config_version=1
+            profile_id="profile",
+            config=ProfileConfig(name="P", font_set_id=fixture_font_set),
+            config_version=1,
         )

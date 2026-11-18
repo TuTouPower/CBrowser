@@ -1,7 +1,7 @@
 ---
 slug: browser_isolation
 status: active
-tasks: [baseline, t003, t041, t051, t080]
+tasks: [baseline, t003, t041, t051, t075, t080]
 ---
 # 需求规范：浏览器沙箱与数据隔离 (browser_isolation)
 
@@ -65,10 +65,10 @@ tasks: [baseline, t003, t041, t051, t080]
 
 ### 2.4 指纹平台与平台字体集隔离（t041）
 
-- 每个 Profile 绑定一个指纹平台（`windows` 默认 / `macos`）与可选的同平台不可变字体集（`font_set_id`）；两者属运行配置，修改任一生成新 `ProfileConfigVersion`。
-- 字体可见集合按 Profile 严格隔离：绑定平台字体集时，`FONTCONFIG_FILE` 只以 `<dir>` 白名单声明该集目录（Supervisor 只读挂到 `/run/cbrowser/fonts/{platform}/{set_id}`，不挂整个字体根目录、不挂给 Stream），不 include `/etc/fonts/fonts.conf`；Liberation / Nimbus / 文泉驿等 Linux 专属字体对两平台都不可见，windows 与 macos 的专有字体互不串扰。`font_set_id` 为 null（平台字体未配置）时回退为镜像内基础字体目录 `/opt/cbrowser-base-fonts` 可见，保证页面可用，runtime 状态报告「平台字体未配置」并在 `missing_fonts` 标明当前暴露 Linux 基础字体。
+- 每个 Profile 绑定一个指纹平台（`windows` 默认 / `macos`）与同平台不可变字体集（`font_set_id`，t075 起后端托管、恒有绑定）；两者属运行配置，修改任一生成新 `ProfileConfigVersion`。
+- 字体可见集合按 Profile 严格隔离：`FONTCONFIG_FILE` 只以 `<dir>` 白名单声明绑定集目录（Supervisor 只读挂到 `/run/cbrowser/fonts/{platform}/{set_id}`，不挂整个字体根目录、不挂给 Stream），不 include `/etc/fonts/fonts.conf`；Liberation / Nimbus / 文泉驿等 Linux 专属字体对两平台都不可见，windows 与 macos 的专有字体互不串扰。t075 起无基础字体回退：未绑定时白名单为空且启动失败封闭，镜像内基础字体目录 `/opt/cbrowser-base-fonts` 永不进入 Profile 可见集合。
 - 平台一致性：`navigator.platform`、UA 与 UA-CH `platform` / `platformVersion` 与所选平台一致；CH `architecture=arm` 与 windows UA `x64` 的差异按用户裁决不做半套覆盖（`d032` + `p045`）。
-- 失败封闭：绑定字体集缺失或 manifest / 文件不一致时启动失败并报告 `font_set_unavailable`；`font_set_id` 为 null 正常启动、回退基础字体可见，runtime 状态报告平台字体未配置并在 `missing_fonts` 标明当前暴露 Linux 基础字体。
+- 失败封闭：绑定字体集缺失或 manifest / 文件不一致时启动失败并报告 `font_set_unavailable`；字体源目录在宿主不存在时 Supervisor 挂载构造即失败，绝不由 daemon 建空目录后零字体启动（t075）。Runner 启动前以真实 `fc-list` 枚举验证有效字体集合，结论不合格不启动。
 - 平台字体不进入任何镜像层与 git 仓库；`font_bundle` 已删除（AC-009）。
 
 ## 3. 验收标准
@@ -78,6 +78,6 @@ tasks: [baseline, t003, t041, t051, t080]
 - [x] AC-003：浏览器运行容器中执行 `docker ps` 或探测 Docker Socket 均失败。
 - [x] AC-004：外部网络及宿主网络无法直接连接容器内的 CDP 调试端口。
 - [x] AC-005：获授权的同 Profile Stream 客户端才能接入 X11 与音频，未授权连接被严格拒绝。
-- [x] AC-006（t041）：windows Profile 检出 Windows 检测字体而检不出 Mac 专有字体，macos 反之；两平台都检不出 Liberation 等 Linux 专属字体，可见字体只来自基础字体与绑定集。
-- [x] AC-007（t041）：绑定字体集缺失或 manifest / 文件不一致时启动失败封闭 `font_set_unavailable`；`font_set_id` 为 null 正常启动并报告平台字体未配置。
+- [x] AC-006（t041）：windows Profile 检出 Windows 检测字体而检不出 Mac 专有字体，macos 反之；两平台都检不出 Liberation 等 Linux 专属字体，可见字体只来自绑定集（t075 起不再含基础字体）。
+- [x] AC-007（t041）：绑定字体集缺失或 manifest / 文件不一致时启动失败封闭 `font_set_unavailable`；`font_set_id` 为 null 正常启动为旧语义，t075 起未绑定同样失败封闭。
 - [x] AC-008（t041）：任一镜像层与 git 仓库不含平台字体文件，字体只在运行时只读挂载。

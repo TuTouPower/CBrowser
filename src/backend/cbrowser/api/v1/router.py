@@ -6,6 +6,7 @@ import logging
 from typing import Annotated
 
 from cbrowser.domain.models import AuthenticatedSession
+from cbrowser.domain.profile_locale import default_include_cjk_fonts
 from cbrowser.adapters.database.repository import (
     InstanceConflictError,
     InvalidConfigVersionError,
@@ -291,7 +292,6 @@ async def create_profile(
         locale=payload.locale,
         screen_width=payload.screen_width,
         screen_height=payload.screen_height,
-        gpu_family=payload.gpu_family,
         humanize=payload.humanize,
         human_preset=payload.human_preset,
         geoip=payload.geoip,
@@ -299,7 +299,11 @@ async def create_profile(
         auto_launch=payload.auto_launch,
         color_scheme=payload.color_scheme,
         fingerprint_platform=payload.fingerprint_platform,
-        font_set_id=payload.font_set_id,
+        include_cjk_fonts=(
+            payload.include_cjk_fonts
+            if payload.include_cjk_fonts is not None
+            else default_include_cjk_fonts(payload.locale)
+        ),
         launch_args=payload.launch_args,
         extension_paths=payload.extension_paths,
         allow_3p_cookies=payload.allow_3p_cookies,
@@ -316,7 +320,6 @@ async def create_profile(
             config=config,
             operation_id=op_id,
             req_payload=payload.model_dump(),
-            font_set_id_supplied="font_set_id" in payload.model_fields_set,
         )
     except InvalidFontSetBindingError as exc:
         raise HTTPException(
@@ -869,10 +872,10 @@ async def get_profile_runtime(
     try:
         rt = await service.get_runtime(profile_id)
         coord = getattr(request.app.state, "coordinator", None)
-        if coord is not None and hasattr(coord, "refresh_search_defaults"):
-            await coord.refresh_search_defaults(profile_id)
-        if coord is not None and hasattr(coord, "refresh_transport"):
-            await coord.refresh_transport(profile_id)
+        # t083: this read is pure — it projects maintained observations
+        # only.  Transport/search-defaults refresh happens in the
+        # coordinator's bounded background loop, never synchronously
+        # on a GET (no downstream RPC, font hashing or Docker work).
         return await make_runtime_response(rt, coord)
     except ProfileNotFoundError:
         raise HTTPException(

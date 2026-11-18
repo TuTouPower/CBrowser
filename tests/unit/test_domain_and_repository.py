@@ -87,7 +87,7 @@ async def test_profile_crud_roundtrip_with_refs(db_context):
         locale="en-US",
         screen_width=1920,
         screen_height=1080,
-        gpu_family="nvidia",
+        include_cjk_fonts=False,
         humanize=True,
         human_preset="careful",
         geoip=True,
