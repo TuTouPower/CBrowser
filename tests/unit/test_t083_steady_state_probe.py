@@ -184,3 +184,173 @@ def test_docker_failure_is_loud_not_a_clean_window(monkeypatch):
     assert (
         probe.main(["--prefix", "cbrowser", "--duration", "0"]) == 2
     )
+
+
+
+def test_inspect_stack_discovers_compose_services_without_quiet_flag(monkeypatch):
+    # t083: `docker ps -aq --format "{{json .}}"` is rejected/ignored by the
+    # Docker CLI (which outputs bare IDs instead of JSON), and compose services
+    # like `api` / `supervisor` lack `com.cbrowser.prefix` so discovery must
+    # also match `com.docker.compose.project` / `<prefix>-` names and never call
+    # `docker inspect` with zero container IDs.
+    import json
+
+    probe = _load_probe()
+    seen: list[list[str]] = []
+
+    ps_rows = [
+        {
+            "ID": "cid-api",
+            "Names": "cb134-api",
+            "Labels": "com.docker.compose.project=cb134,com.docker.compose.service=api",
+        },
+        {
+            "ID": "cid-sup",
+            "Names": "cb134-supervisor",
+            "Labels": "com.docker.compose.project=cb134,com.docker.compose.service=supervisor",
+        },
+        {
+            "ID": "cid-gw",
+            "Names": "cb134-gateway",
+            "Labels": "com.cbrowser.prefix=cb134,com.cbrowser.role=gateway",
+        },
+        {
+            "ID": "cid-other",
+            "Names": "other-api",
+            "Labels": "com.docker.compose.project=other,com.docker.compose.service=api",
+        },
+    ]
+    inspect_rows = [
+        {
+            "Id": "cid-api",
+            "Name": "/cb134-api",
+            "RestartCount": 1,
+            "State": {"StartedAt": "2026-11-18T17:00:00Z"},
+            "Config": {"Labels": {"com.docker.compose.service": "api"}},
+        },
+        {
+            "Id": "cid-sup",
+            "Name": "/cb134-supervisor",
+            "RestartCount": 0,
+            "State": {"StartedAt": "2026-11-18T17:00:01Z"},
+            "Config": {"Labels": {"com.docker.compose.service": "supervisor"}},
+        },
+        {
+            "Id": "cid-gw",
+            "Name": "/cb134-gateway",
+            "RestartCount": 0,
+            "State": {"StartedAt": "2026-11-18T17:00:02Z"},
+            "Config": {"Labels": {"com.cbrowser.role": "gateway"}},
+        },
+    ]
+
+    class _Result:
+        def __init__(self, rc: int, stdout: str = "", stderr: str = ""):
+            self.returncode = rc
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def fake_run(argv, **kwargs):
+        seen.append(list(argv))
+        if argv[1] == "ps":
+            if "-q" in argv or "-aq" in argv:
+                # Real Docker CLI prints bare IDs when -q is combined with --format.
+                return _Result(0, "\n".join(r["ID"] for r in ps_rows) + "\n")
+            return _Result(0, "\n".join(json.dumps(r) for r in ps_rows) + "\n")
+        if argv[1] == "inspect":
+            assert len(argv) > 2, "docker inspect called with zero args"
+            if "--format" not in argv:
+                # Without --format, real `docker inspect` prints a multi-line JSON array.
+                return _Result(0, json.dumps(inspect_rows, indent=2))
+            return _Result(0, "\n".join(json.dumps(r) for r in inspect_rows) + "\n")
+        raise AssertionError(f"unexpected docker command: {argv}")
+
+    monkeypatch.setattr(probe.subprocess, "run", fake_run)
+    inspected = probe._inspect_stack("cb134")
+    assert set(inspected) == {"cid-api", "cid-sup", "cid-gw"}
+    assert inspected["cid-api"]["role"] == "api"
+    assert inspected["cid-api"]["restart_count"] == 1
+    assert inspected["cid-sup"]["role"] == "supervisor"
+    inspect_call = next(c for c in seen if c[1] == "inspect")
+    assert "cid-other" not in inspect_call
+
+    # Empty daemon / unmatched prefix must return {} without calling inspect.
+    seen.clear()
+    assert probe._inspect_stack("missing") == {}
+    assert all(call[1] != "inspect" for call in seen)
+
+
+def test_run_probe_with_rchar_excludes_self_exec_from_stack_execs(monkeypatch):
+    import json
+
+    probe = _load_probe()
+    exec_calls = 0
+
+    def fake_run(argv, **kwargs):
+        nonlocal exec_calls
+
+        class _Result:
+            def __init__(self, rc: int = 0, stdout: str = "", stderr: str = ""):
+                self.returncode = rc
+                self.stdout = stdout
+                self.stderr = stderr
+
+        if argv[1] == "ps":
+            return _Result(
+                stdout=json.dumps(
+                    {
+                        "ID": "cid-api-1",
+                        "Names": "cb134-api",
+                        "Labels": "com.docker.compose.project=cb134,com.docker.compose.service=api",
+                    }
+                )
+            )
+        if argv[1] == "inspect":
+            return _Result(
+                stdout=json.dumps(
+                    {
+                        "Id": "cid-api-1",
+                        "Name": "/cb134-api",
+                        "RestartCount": 0,
+                        "State": {"StartedAt": "2026-11-18T17:00:00Z"},
+                        "Config": {"Labels": {"com.docker.compose.service": "api"}},
+                    }
+                )
+            )
+        if argv[1] == "exec":
+            exec_calls += 1
+            val = 100 if exec_calls == 1 else 240
+            return _Result(stdout=f"rchar: {val}\n")
+        if argv[1] == "events":
+            events = [
+                {
+                    "Type": "container",
+                    "Action": "exec_create: cat /proc/1/io",
+                    "Actor": {
+                        "ID": "cid-api-1",
+                        "Attributes": {
+                            "name": "cb134-api",
+                            "com.docker.compose.project": "cb134",
+                        },
+                    },
+                },
+                {
+                    "Type": "container",
+                    "Action": "exec_create: python3 -c 1",
+                    "Actor": {
+                        "ID": "cid-api-1",
+                        "Attributes": {
+                            "name": "cb134-api",
+                            "com.docker.compose.project": "cb134",
+                        },
+                    },
+                },
+            ]
+            return _Result(stdout="\n".join(json.dumps(e) for e in events))
+        raise AssertionError(f"unexpected docker command: {argv}")
+
+    monkeypatch.setattr(probe.subprocess, "run", fake_run)
+    result = probe.run_probe(prefix="cb134", duration=0, with_rchar=True)
+    assert result["rchar_deltas"] == {"cb134-api": 140}
+    assert result["counters"]["measurement_execs"] == 1
+    assert result["counters"]["stack_execs"] == 1

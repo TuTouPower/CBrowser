@@ -167,31 +167,66 @@ def _docker_json_lines(args: list[str]) -> list[dict[str, Any]]:
     return rows
 
 
+def _parse_ps_labels(raw: Any) -> dict[str, str]:
+    if isinstance(raw, dict):
+        return {str(k): str(v) for k, v in raw.items()}
+    if not isinstance(raw, str) or not raw.strip():
+        return {}
+    labels: dict[str, str] = {}
+    for entry in raw.split(","):
+        if "=" in entry:
+            key, value = entry.split("=", 1)
+            labels[key.strip()] = value.strip()
+    return labels
+
+
+def _ps_row_matches_prefix(row: dict[str, Any], prefix: str) -> bool:
+    labels = _parse_ps_labels(row.get("Labels"))
+    if labels.get("com.cbrowser.prefix") == prefix:
+        return True
+    if labels.get("com.docker.compose.project") == prefix:
+        return True
+    names_raw = str(row.get("Names") or row.get("Name") or "")
+    for name in names_raw.split(","):
+        cleaned = name.strip().lstrip("/")
+        if cleaned == prefix or cleaned.startswith(f"{prefix}-"):
+            return True
+    return False
+
+
 def _inspect_stack(prefix: str) -> dict[str, dict[str, Any]]:
+    if not prefix:
+        return {}
+    # Omit `-q`: Docker CLI ignores `--format` when quiet mode is set and
+    # prints bare IDs.  Also filter in Python rather than `com.cbrowser.prefix`
+    # alone because compose services (api/supervisor/caddy) omit that label and
+    # carry `com.docker.compose.project` / `<prefix>-` names instead.
+    ps_rows = _docker_json_lines(
+        ["ps", "-a", "--no-trunc", "--format", "{{json .}}"]
+    )
+    ids: list[str] = []
+    seen_ids: set[str] = set()
+    for row in ps_rows:
+        if not _ps_row_matches_prefix(row, prefix):
+            continue
+        cid = str(row.get("ID") or row.get("Id") or "").strip()
+        if cid and cid not in seen_ids:
+            seen_ids.add(cid)
+            ids.append(cid)
+    if not ids:
+        return {}
     rows = _docker_json_lines(
-        [
-            "inspect",
-            *[
-                row["Id"]
-                for row in _docker_json_lines(
-                    [
-                        "ps",
-                        "-aq",
-                        "--filter",
-                        f"label=com.cbrowser.prefix={prefix}",
-                        "--format",
-                        "{{json .}}",
-                    ]
-                )
-            ],
-        ]
-    ) if prefix else []
+        ["inspect", "--format", "{{json .}}", *ids]
+    )
     result: dict[str, dict[str, Any]] = {}
     for row in rows:
+        labels = row.get("Config", {}).get("Labels") or {}
         result[str(row.get("Id", ""))] = {
             "name": str(row.get("Name", "")).lstrip("/"),
-            "role": (row.get("Config", {}).get("Labels") or {}).get(
-                "com.cbrowser.role", ""
+            "role": str(
+                labels.get("com.cbrowser.role")
+                or labels.get("com.docker.compose.service")
+                or ""
             ),
             "restart_count": int(row.get("RestartCount", 0)),
             "started_at": row.get("State", {}).get("StartedAt"),
@@ -252,7 +287,13 @@ def run_probe(
         for info in after.values():
             if info["name"] in rchar_before:
                 rchar_after[info["name"]] = _read_rchar(info["name"])
-    counters = aggregate_events(events, prefix=prefix)
+    measurement_exec_ids: set[str] = set()
+    if with_rchar:
+        for cid in (*before, *after):
+            measurement_exec_ids.add(f"{cid}:exec_create: cat /proc/1/io")
+    counters = aggregate_events(
+        events, prefix=prefix, measurement_exec_ids=measurement_exec_ids
+    )
     restart_deltas = {}
     for cid, info in after.items():
         prior = before.get(cid)
