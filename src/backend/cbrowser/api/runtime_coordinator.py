@@ -26,6 +26,7 @@ from cbrowser.domain.models import (
     SearchDefaultsStatusData,
     TransportObservationData,
 )
+from cbrowser.font_sets.manifest import PLATFORM_DETECTION_LABELS
 from cbrowser.services.profile_service import ProfileNotFoundError, ProfileService
 from cbrowser.shared.error_response import parse_error_response
 from cbrowser.shared.fencing import fence_by_instance
@@ -39,10 +40,7 @@ from pydantic import SecretStr
 
 logger = logging.getLogger("cbrowser.api.runtime_coordinator")
 
-_PLATFORM_DETECTION_LABELS: dict[str, tuple[str, ...]] = {
-    "windows": ("windows", "office"),
-    "macos": ("macos",),
-}
+_PLATFORM_DETECTION_LABELS = PLATFORM_DETECTION_LABELS
 
 
 class ReconcileOutcome(Enum):
@@ -475,10 +473,12 @@ class RuntimeCoordinator:
         self, font_set_id, platform
     ) -> tuple[str | None, list[str]]:
         from cbrowser.font_sets import DETECTION_FONTS
-        from cbrowser.runtime_agent.fontconfig import PLATFORM_FONTS_UNCONFIGURED
 
         if not font_set_id:
-            return None, [PLATFORM_FONTS_UNCONFIGURED]
+            # t075: bindings are guaranteed by creation/migration; a
+            # missing one is reported as "no binding known", never as
+            # the abolished base-fonts "unconfigured" state.
+            return None, []
         if platform not in _PLATFORM_DETECTION_LABELS:
             return str(font_set_id), []
         labels = _PLATFORM_DETECTION_LABELS[platform]

@@ -2944,13 +2944,16 @@ class SupervisorCore:
         profile_id: str | None = None,
         config_version: int | None = None,
     ) -> None:
-        """Fail closed when a bound font set cannot be trusted (AC-006).
+        """Fail closed when the font binding cannot be trusted (AC-006).
 
-        A null ``font_set_id`` is a supported configuration ("platform fonts
-        not configured"): the Profile launches with base fonts only. A bound
-        set must exist, declare the matching platform, and pass its integrity
-        check; anything else refuses the launch with one fixed, non-sensitive
-        reason so the Browser container is never started on unusable fonts.
+        t075: every Profile must be bound — the backend resolves the
+        binding from the catalog at creation and the migration binds
+        legacy rows — so a null ``font_set_id`` refuses the launch
+        like any other unusable binding. A bound set must exist,
+        declare the matching platform, and pass its integrity check;
+        anything else refuses the launch with one fixed, non-sensitive
+        reason so the Browser container is never started on unusable
+        fonts.
 
         t081: the full verification runs against the set this instance
         will actually mount, once per (profile_id, runtime_instance_id,
@@ -2959,13 +2962,12 @@ class SupervisorCore:
         health/status reads never re-run it.
         """
         if not config.font_set_id:
-            logger.info(
-                "Profile starts without platform fonts configured: "
-                "platform=%s; runtime status reports platform fonts "
-                "unconfigured and Linux base fonts exposed",
+            logger.warning(
+                "Profile has no font set bound; refusing to start: "
+                "platform=%s",
                 config.fingerprint_platform,
             )
-            return
+            raise FontSetUnavailableError()
         fence = (
             profile_id,
             runtime_instance_id,

@@ -1,6 +1,5 @@
 import {
   useEffect,
-  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -22,7 +21,6 @@ import { useI18n, type TranslationKey } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";
 import { DEFAULT_PROFILE_CREATE_VALUES } from "../../shared/api/types";
 import type {
-  FontSetInfo,
   GroupResponse,
   ProfileCreateRequest,
   ProfileResponse,
@@ -31,19 +29,17 @@ import type {
 } from "../../shared/api/types";
 import {
   useCreateGroupMutation,
-  useFontSetsQuery,
   useGroupsQuery,
   useProxiesQuery,
 } from "./useProfilesQuery";
 import {
+  defaultIncludeCjkForLocale,
   localeForTimezone,
-  selectFontSetForLocaleAndPlatform,
   timezoneForLocale,
   timezoneForProxy,
 } from "./profile_locale";
 import { diffProfileValues } from "./profile_field_diff";
 import { TimezoneCombobox } from "./TimezoneCombobox";
-import { formatFontSetDisplayName } from "../settings/SettingsPage";
 
 export type ProfileFormValues = ProfileCreateRequest;
 
@@ -59,14 +55,9 @@ export interface ProfileFormProps {
 
 const EMPTY_GROUPS: GroupResponse[] = [];
 const EMPTY_PROXIES: ProxyResponse[] = [];
-const EMPTY_FONT_SETS: FontSetInfo[] = [];
 
 function normalizePlatform(value: string | undefined): "windows" | "macos" {
   return value === "macos" ? "macos" : "windows";
-}
-
-function normalizeGpu(value: string): "auto" | "nvidia" | "intel" {
-  return value === "nvidia" || value === "intel" ? value : "auto";
 }
 
 function normalizePreset(value: string): "default" | "careful" {
@@ -75,10 +66,8 @@ function normalizePreset(value: string): "default" | "careful" {
 
 function normalizeColorScheme(
   value: string | null | undefined,
-): "light" | "dark" | "no-preference" | null {
-  return value === "light" || value === "dark" || value === "no-preference"
-    ? value
-    : null;
+): "light" | "dark" {
+  return value === "dark" ? "dark" : "light";
 }
 
 function randomValidSeed(): number {
@@ -103,15 +92,14 @@ function toFormValues(initial?: ProfileResponse): ProfileFormValues {
     locale: initial.locale ?? null,
     screen_width: initial.screen_width,
     screen_height: initial.screen_height,
-    gpu_family: normalizeGpu(initial.gpu_family),
     humanize: initial.humanize,
     human_preset: normalizePreset(initial.human_preset),
     geoip: initial.geoip,
     clipboard_sync: initial.clipboard_sync,
     auto_launch: initial.auto_launch,
     color_scheme: normalizeColorScheme(initial.color_scheme),
+    include_cjk_fonts: initial.include_cjk_fonts,
     fingerprint_platform: normalizePlatform(initial.fingerprint_platform),
-    font_set_id: initial.font_set_id ?? null,
     launch_args: initial.launch_args ?? [],
     extension_paths: initial.extension_paths ?? [],
     allow_3p_cookies: initial.allow_3p_cookies,
@@ -205,13 +193,10 @@ export function ProfileForm({
   const client = useApiClient();
   const { data: groupsData } = useGroupsQuery(client);
   const { data: proxiesData } = useProxiesQuery(client);
-  const { data: fontSetsData } = useFontSetsQuery(client);
   const createGroupMutation = useCreateGroupMutation(client);
 
   const groups = groupsData ?? EMPTY_GROUPS;
   const proxies = proxiesData ?? EMPTY_PROXIES;
-  const fontSets = fontSetsData?.items ?? EMPTY_FONT_SETS;
-  const defaultFontSetId = fontSetsData?.default_font_set_id ?? {};
 
   const [values, setValues] = useState<ProfileFormValues>(() =>
     toFormValues(initial),
@@ -233,52 +218,29 @@ export function ProfileForm({
   };
 
   const platform = normalizePlatform(values.fingerprint_platform);
-  const platformFontSets = useMemo(
-    () => fontSets.filter((fontSet) => fontSet.platform === platform),
-    [fontSets, platform],
-  );
-  const sortedFontSets = useMemo(
-    () =>
-      [...platformFontSets].sort((a, b) =>
-        (b.created_at ?? "").localeCompare(a.created_at ?? ""),
-      ),
-    [platformFontSets],
-  );
 
   const timezoneManualRef = useRef(false);
   const localeManualRef = useRef(false);
-  const fontSetUserChosenRef = useRef(false);
-  const defaultFontSetAppliedRef = useRef<string | null>(null);
+  const cjkUserChosenRef = useRef(false);
   const [manualOverrides, setManualOverrides] = useState({
     timezone: false,
     locale: false,
-    fontSet: false,
   });
 
+  // t075: until the user touches the switch, the CJK inclusion default
+  // follows the language (Chinese on, English off), mirroring the
+  // backend derivation for requests that omit the field.
   useEffect(() => {
-    if (mode !== "create" || fontSetUserChosenRef.current) return;
-    if (!fontSetsData) return;
-    if (defaultFontSetAppliedRef.current === platform) return;
-    defaultFontSetAppliedRef.current = platform;
+    if (mode !== "create" || cjkUserChosenRef.current) return;
     setValues((prev) => {
-      const aligned = selectFontSetForLocaleAndPlatform(
-        fontSets,
-        platform,
-        prev.locale,
-        defaultFontSetId,
-      );
-      return { ...prev, font_set_id: aligned } as ProfileFormValues;
+      const aligned = defaultIncludeCjkForLocale(prev.locale);
+      return prev.include_cjk_fonts === aligned
+        ? prev
+        : ({ ...prev, include_cjk_fonts: aligned } as ProfileFormValues);
     });
-  }, [mode, platform, fontSets, fontSetsData, defaultFontSetId]);
+  }, [mode, values.locale]);
 
-  const selectedFontSet = platformFontSets.find(
-    (fontSet) => fontSet.set_id === values.font_set_id,
-  );
   const selectedProxy = proxies.find((item) => item.id === values.proxy_id);
-  const missingFontSet =
-    values.font_set_id != null && selectedFontSet === undefined;
-  const inconsistent =
-    selectedFontSet !== undefined && !selectedFontSet.integrity.ok;
 
   const groupOptions: SelectOption[] = [
     { value: "__none__", label: t("envUngrouped") },
@@ -289,13 +251,6 @@ export function ProfileForm({
     { value: "__direct__", label: t("formDirect") },
     ...proxies.map((item) => ({ value: item.id, label: item.name })),
   ];
-  const fontSetOptions: SelectOption[] = [
-    { value: "__none__", label: t("formFontSetNone") },
-    ...sortedFontSets.map((fontSet) => ({
-      value: fontSet.set_id,
-      label: `${formatFontSetDisplayName(fontSet, t)} · ${fontSet.set_id.slice(0, 8)}`,
-    })),
-  ];
   const localeOptions: SelectOption[] = [
     { value: "zh-CN", label: t("formLocaleChinese") },
     { value: "en-US", label: t("formLocaleEnglish") },
@@ -304,20 +259,13 @@ export function ProfileForm({
     { value: "windows", label: t("formPlatformWindows") },
     { value: "macos", label: t("formPlatformMacos") },
   ];
-  const gpuOptions: SelectOption[] = [
-    { value: "auto", label: t("formGpuAuto") },
-    { value: "nvidia", label: t("formGpuNvidia") },
-    { value: "intel", label: t("formGpuIntel") },
-  ];
   const presetOptions: SelectOption[] = [
     { value: "default", label: t("formPresetDefault") },
     { value: "careful", label: t("formPresetCareful") },
   ];
   const colorSchemeOptions: SelectOption[] = [
-    { value: "__none__", label: t("formColorNoPreference") },
     { value: "light", label: t("formColorLight") },
     { value: "dark", label: t("formColorDark") },
-    { value: "no-preference", label: t("formColorNoPreference") },
   ];
 
   const submitValues = async () => {
@@ -456,11 +404,10 @@ export function ProfileForm({
                 if (inferredTz != null) {
                   timezoneManualRef.current = false;
                   localeManualRef.current = false;
-                  fontSetUserChosenRef.current = false;
+                  cjkUserChosenRef.current = false;
                   setManualOverrides({
                     timezone: false,
                     locale: false,
-                    fontSet: false,
                   });
                 }
                 setValues((prev) => {
@@ -471,21 +418,14 @@ export function ProfileForm({
                     inferredTz != null
                       ? localeForTimezone(inferredTz)
                       : prev.locale;
-                  const nextFontSetId =
-                    inferredTz == null && fontSetUserChosenRef.current
-                      ? prev.font_set_id
-                      : selectFontSetForLocaleAndPlatform(
-                          fontSets,
-                          normalizePlatform(prev.fingerprint_platform),
-                          nextLocale,
-                          defaultFontSetId,
-                        );
                   return {
                     ...prev,
                     proxy_id: nextProxyId,
                     timezone: nextTz,
                     locale: nextLocale,
-                    font_set_id: nextFontSetId,
+                    include_cjk_fonts: cjkUserChosenRef.current
+                      ? prev.include_cjk_fonts
+                      : defaultIncludeCjkForLocale(nextLocale),
                   } as ProfileFormValues;
                 });
               }}
@@ -513,19 +453,13 @@ export function ProfileForm({
                     !localeManualRef.current && timezone != null
                       ? localeForTimezone(timezone)
                       : prev.locale;
-                  const nextFontSetId = fontSetUserChosenRef.current
-                    ? prev.font_set_id
-                    : selectFontSetForLocaleAndPlatform(
-                        fontSets,
-                        normalizePlatform(prev.fingerprint_platform),
-                        nextLocale,
-                        defaultFontSetId,
-                      );
                   return {
                     ...prev,
                     timezone,
                     locale: nextLocale,
-                    font_set_id: nextFontSetId,
+                    include_cjk_fonts: cjkUserChosenRef.current
+                      ? prev.include_cjk_fonts
+                      : defaultIncludeCjkForLocale(nextLocale),
                   } as ProfileFormValues;
                 });
               }}
@@ -540,14 +474,6 @@ export function ProfileForm({
                   localeManualRef.current = true;
                   setManualOverrides((prev) => ({ ...prev, locale: true }));
                   setValues((prev) => {
-                    const nextFontSetId = fontSetUserChosenRef.current
-                      ? prev.font_set_id
-                      : selectFontSetForLocaleAndPlatform(
-                          fontSets,
-                          normalizePlatform(prev.fingerprint_platform),
-                          nextLocale,
-                          defaultFontSetId,
-                        );
                     const nextTimezone = timezoneManualRef.current
                       ? prev.timezone
                       : timezoneForLocale(nextLocale, prev.timezone);
@@ -555,7 +481,9 @@ export function ProfileForm({
                       ...prev,
                       locale: nextLocale,
                       timezone: nextTimezone,
-                      font_set_id: nextFontSetId,
+                      include_cjk_fonts: cjkUserChosenRef.current
+                        ? prev.include_cjk_fonts
+                        : defaultIncludeCjkForLocale(nextLocale),
                     } as ProfileFormValues;
                   });
                 }}
@@ -583,9 +511,7 @@ export function ProfileForm({
               : t("formAlignFontsEn");
           const tzText = values.timezone ?? t("formTimezoneAuto");
           const hasOverrides =
-            manualOverrides.timezone ||
-            manualOverrides.locale ||
-            manualOverrides.fontSet;
+            manualOverrides.timezone || manualOverrides.locale;
           if (!proxyInferredTz && !values.timezone && !hasOverrides) {
             return null;
           }
@@ -617,11 +543,10 @@ export function ProfileForm({
                     onClick={() => {
                       timezoneManualRef.current = false;
                       localeManualRef.current = false;
-                      fontSetUserChosenRef.current = false;
+                      cjkUserChosenRef.current = false;
                       setManualOverrides({
                         timezone: false,
                         locale: false,
-                        fontSet: false,
                       });
                       setValues((prev) => {
                         const resetTz = proxyInferredTz ?? null;
@@ -629,18 +554,12 @@ export function ProfileForm({
                           proxyInferredTz != null
                             ? localeForTimezone(proxyInferredTz)
                             : (DEFAULT_PROFILE_CREATE_VALUES.locale ?? "en-US");
-                        const resetFontSetId =
-                          selectFontSetForLocaleAndPlatform(
-                            fontSets,
-                            normalizePlatform(prev.fingerprint_platform),
-                            resetLocale,
-                            defaultFontSetId,
-                          );
                         return {
                           ...prev,
                           timezone: resetTz,
                           locale: resetLocale,
-                          font_set_id: resetFontSetId,
+                          include_cjk_fonts:
+                            defaultIncludeCjkForLocale(resetLocale),
                         } as ProfileFormValues;
                       });
                     }}
@@ -656,115 +575,37 @@ export function ProfileForm({
       </Section>
 
       <Section title={t("formSectionFingerprint")}>
-        <div className="flex gap-sm">
-          <Row label={t("formPlatform")}>
-            <div data-testid="profile-form-platform">
-              <Select
-                value={platform}
-                onValueChange={(value) => {
-                  const nextPlatform = normalizePlatform(value);
-                  fontSetUserChosenRef.current = false;
-                  setManualOverrides((prev) => ({ ...prev, fontSet: false }));
-                  defaultFontSetAppliedRef.current = nextPlatform;
-                  setValues((prev) => {
-                    const nextFontSetId = selectFontSetForLocaleAndPlatform(
-                      fontSets,
-                      nextPlatform,
-                      prev.locale,
-                      defaultFontSetId,
-                    );
-                    const isDefaultResolution =
-                      (prev.screen_width === 1920 && prev.screen_height === 1080) ||
-                      (prev.screen_width === 1440 && prev.screen_height === 900);
-                    return {
-                      ...prev,
-                      fingerprint_platform: nextPlatform,
-                      font_set_id: nextFontSetId,
-                      screen_width: isDefaultResolution
-                        ? nextPlatform === "macos"
-                          ? 1440
-                          : 1920
-                        : prev.screen_width,
-                      screen_height: isDefaultResolution
-                        ? nextPlatform === "macos"
-                          ? 900
-                          : 1080
-                        : prev.screen_height,
-                    } as ProfileFormValues;
-                  });
-                }}
-                options={platformOptions}
-                ariaLabel={t("formPlatform")}
-              />
-            </div>
-          </Row>
-          <Row label={t("formFontSet")}>
-            <div data-testid="profile-form-fontset">
-              <Select
-                value={values.font_set_id ?? "__none__"}
-                onValueChange={(value) => {
-                  fontSetUserChosenRef.current = true;
-                  setManualOverrides((prev) => ({ ...prev, fontSet: true }));
-                  setField("font_set_id", value === "__none__" ? null : value);
-                }}
-                onOptionSelect={() => {
-                  fontSetUserChosenRef.current = true;
-                  setManualOverrides((prev) => ({ ...prev, fontSet: true }));
-                }}
-                options={fontSetOptions}
-                ariaLabel={t("formFontSet")}
-              />
-            </div>
-          </Row>
-        </div>
-        <div className="hidden" aria-hidden="true">
-          <span data-testid="profile-form-fontset-selected">
-            {values.font_set_id ?? t("formFontSetNone")}
-          </span>
-          <div data-testid="profile-form-fontset-meta">
-            {selectedFontSet ? (
-              <>
-                <span>
-                  {t("formFontSetSourceVersion", {
-                    name: selectedFontSet.source_version ?? "",
-                  })}
-                </span>
-                <span>
-                  {t("formFontSetIntegrity")}:{" "}
-                  {selectedFontSet.integrity.ok
-                    ? t("fontSetIntegrityOk")
-                    : t("fontSetIntegrityBad")}
-                </span>
-              </>
-            ) : (
-              <span>{t("formFontSetNone")}</span>
-            )}
+        <Row label={t("formPlatform")}>
+          <div data-testid="profile-form-platform">
+            <Select
+              value={platform}
+              onValueChange={(value) => {
+                const nextPlatform = normalizePlatform(value);
+                setValues((prev) => {
+                  const isDefaultResolution =
+                    (prev.screen_width === 1920 && prev.screen_height === 1080) ||
+                    (prev.screen_width === 1440 && prev.screen_height === 900);
+                  return {
+                    ...prev,
+                    fingerprint_platform: nextPlatform,
+                    screen_width: isDefaultResolution
+                      ? nextPlatform === "macos"
+                        ? 1440
+                        : 1920
+                      : prev.screen_width,
+                    screen_height: isDefaultResolution
+                      ? nextPlatform === "macos"
+                        ? 900
+                        : 1080
+                      : prev.screen_height,
+                  } as ProfileFormValues;
+                });
+              }}
+              options={platformOptions}
+              ariaLabel={t("formPlatform")}
+            />
           </div>
-          <ul data-testid="profile-form-fontset-list">
-            {platformFontSets.map((fontSet) => (
-              <li
-                key={fontSet.set_id}
-                data-testid={`profile-form-fontset-option-${fontSet.set_id}`}
-              >
-                {fontSet.set_id} —{" "}
-                {t("formFontSetSourceVersion", {
-                  name: fontSet.source_version ?? "",
-                })}{" "}
-                —{" "}
-                {fontSet.integrity.ok
-                  ? t("fontSetIntegrityOk")
-                  : t("fontSetIntegrityBad")}
-              </li>
-            ))}
-          </ul>
-        </div>
-        {(missingFontSet || inconsistent) && (
-          <Banner tone="warning" testId="profile-form-fontset-warning">
-            {missingFontSet
-              ? t("formFontSetMissing")
-              : t("formFontSetInconsistent")}
-          </Banner>
-        )}
+        </Row>
         <Row
           label={t("formSeed")}
           hint={
@@ -813,27 +654,26 @@ export function ProfileForm({
           </div>
         </Row>
         <div className="flex gap-sm">
-          <Row label={t("formGpu")}>
-            <Select
-              value={values.gpu_family}
-              onValueChange={(value) => setField("gpu_family", normalizeGpu(value))}
-              options={gpuOptions}
-              ariaLabel={t("formGpu")}
-            />
-          </Row>
           <Row label={t("formColorScheme")}>
             <Select
-              value={values.color_scheme ?? "__none__"}
+              value={values.color_scheme ?? "light"}
               onValueChange={(value) =>
-                setField(
-                  "color_scheme",
-                  value === "__none__" ? null : normalizeColorScheme(value),
-                )
+                setField("color_scheme", normalizeColorScheme(value))
               }
               options={colorSchemeOptions}
               ariaLabel={t("formColorScheme")}
             />
           </Row>
+          <div data-testid="profile-form-include-cjk">
+            <BoolRow
+              label={t("formIncludeCjk")}
+              checked={values.include_cjk_fonts ?? false}
+              onChange={(checked) => {
+                cjkUserChosenRef.current = true;
+                setField("include_cjk_fonts", checked);
+              }}
+            />
+          </div>
         </div>
         <Row label={t("formResolution")}>
           <div className="flex items-center gap-sm">

@@ -187,8 +187,11 @@ async def test_unprotected_cleanup_failure_retains_port_until_retry(
 
 @pytest.mark.asyncio
 async def test_startup_failure_cleanup_retains_port_when_removal_unverified(
-    tmp_path,
+    tmp_path, fixture_font_set: str
 ):
+    # t075: the config carries a fixture font binding so the launch
+    # reaches the network failure under test; an unbound profile now
+    # refuses earlier, at font validation.
     docker = _FakeDocker(tmp_path / "data")
     core, api = _make_core(tmp_path, docker)
     core.agent_credentials = SimpleNamespace()
@@ -197,14 +200,16 @@ async def test_startup_failure_cleanup_retains_port_when_removal_unverified(
     docker.teardown_error = DockerException("daemon down")
 
     with pytest.raises(RuntimeError):
-        await core.start_profile("profile", ProfileConfig(name="x"))
+        await core.start_profile(
+            "profile", ProfileConfig(name="x", font_set_id=fixture_font_set)
+        )
     assert core.ports.get_port("profile") == 30000
     await api.aclose()
 
 
 @pytest.mark.asyncio
 async def test_startup_failure_cleanup_releases_port_only_after_confirmed_removal(
-    tmp_path,
+    tmp_path, fixture_font_set: str
 ):
     docker = _FakeDocker(tmp_path / "data")
     core, api = _make_core(tmp_path, docker)
@@ -213,7 +218,9 @@ async def test_startup_failure_cleanup_releases_port_only_after_confirmed_remova
     docker.create_network_error = RuntimeError("network create failed")
 
     with pytest.raises(RuntimeError):
-        await core.start_profile("profile", ProfileConfig(name="x"))
+        await core.start_profile(
+            "profile", ProfileConfig(name="x", font_set_id=fixture_font_set)
+        )
     assert core.ports.get_port("profile") is None
     await api.aclose()
 

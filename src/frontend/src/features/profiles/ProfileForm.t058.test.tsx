@@ -78,13 +78,13 @@ function profile(overrides: Partial<ProfileResponse> = {}): ProfileResponse {
     locale: null,
     screen_width: 1920,
     screen_height: 1080,
-    gpu_family: "auto",
     humanize: false,
     human_preset: "default",
     geoip: true,
     clipboard_sync: true,
     auto_launch: false,
-    color_scheme: null,
+    color_scheme: "light",
+    include_cjk_fonts: false,
     fingerprint_platform: "windows",
     font_set_id: null,
     launch_args: [],
@@ -192,9 +192,12 @@ describe("ProfileForm incremental edit submit (t058 A24, AC-001/AC-002)", () => 
     fireEvent.click(screen.getByTestId("profile-form-submit"));
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    // t075: CJK font inclusion is a language-linked field like locale —
+    // switching to a Chinese timezone carries it along (false -> true).
     expect(onSubmit).toHaveBeenCalledWith({
       timezone: "Asia/Shanghai",
       locale: "zh-CN",
+      include_cjk_fonts: true,
     });
   });
 

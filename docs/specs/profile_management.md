@@ -1,7 +1,7 @@
 ---
 slug: profile_management
 status: active
-tasks: [baseline, t076, t078, t079]
+tasks: [baseline, t075, t076, t078, t079]
 ---
 # 需求规范：Profile 管理与外部标签页
 
@@ -84,12 +84,13 @@ tasks: [baseline, t076, t078, t079]
 - 运行态或仍绑定实例的 Profile 删除返回 409 `profile_running`；error 且无实例可删除，删除成功后 DB 行、Artifact 与全部 Profile 专属目录都不存在。
 - 迁移目录以 t035 单 baseline 修订为起点，t041 追加增量迁移 `0002_fingerprint_platform.py`（新增 `fingerprint_platform` / `font_set_id`、删除 `font_bundle`）；旧 schema 代的 DB 在 API 启动与部署时失败封闭并输出重建指引，release controller 按修订链判定回退下限（ADR 023）。
 
-## 指纹平台与平台字体集（t041）
+## 指纹平台与平台字体集（t041，t075 修订）
 
-- Profile 运行配置新增 `fingerprint_platform`（`windows` 默认 / `macos`）与 `font_set_id`（引用同平台不可变字体集，可为 null），经增量迁移 `0002_fingerprint_platform.py` 加入；两者属运行配置，修改任一都生成新 `ProfileConfigVersion`（AC-003）。
-- `font_set_id` 必须引用已存在且平台一致的字体集，引用不存在或平台不一致的集被拒绝；新建 Profile 默认使用后端按完整性规则给出的默认集（`GET /api/v1/font-sets` 的 `default_font_set_id[platform]`，只取完整性通过的集，其中最新导入的胜出，无可用集时为 null），前端不再自行按创建时间推导（t053 A16）。
+- Profile 运行配置新增 `fingerprint_platform`（`windows` 默认 / `macos`）与 `font_set_id`（引用同平台不可变字体集），经增量迁移 `0002_fingerprint_platform.py` 加入；两者属运行配置，修改任一都生成新 `ProfileConfigVersion`（AC-003）。
+- t075 起 `font_set_id` 为后端托管绑定：创建/克隆/切平台由服务按资产目录默认规则解析（`GET /api/v1/font-sets` 的 `default_font_set_id[platform]`，只取 verified 的集，其中最近一次验证通过的胜出），创建/更新请求不再接受该字段；字体根已配置（一切真实部署）而平台无可用集时创建/切换在写入前失败，部署中不再产生「无字体集」的 Profile（未配置字体根的进程可暂无绑定，但启动失败封闭）。旧 t053 A16 的显式 null 语义废止。
+- t075 新增运行配置 `include_cjk_fonts`（中文字体暴露开关，创建默认按语言派生）；`color_scheme` 收敛为 `light` / `dark`；`gpu_family` 删除（GPU 身份由引擎按种子+平台派生）。旧形状由迁移 `0013_profile_identity.py` 一次性改写，不可等价映射改写前阻塞（详见 fingerprint_platform spec 2.1 与 ADR 040）。
 - `font_bundle`（文泉驿三档）已删除：字段、镜像字体包、代码、文档与测试引用一并清理（AC-009）。
-- runtime 响应与 SSE 下发实际使用的 `font_set_id` 与 `missing_fonts`；绑定字体集缺失或 manifest / 文件不一致时启动失败封闭 `font_set_unavailable`，`font_set_id` 为 null 时正常启动并报告平台字体未配置（AC-006 / AC-007）。
+- runtime 响应与 SSE 下发实际使用的 `font_set_id` 与 `missing_fonts`（t075 起读 Runner 启动前验证结论，不逐请求重扫）；绑定字体集缺失或 manifest / 文件不一致时启动失败封闭 `font_set_unavailable`，未绑定同样失败封闭（AC-006 / AC-007，旧 null 正常启动语义废止）。
 
 ## 语言、时区与参数自动对齐（t053+）
 
@@ -97,10 +98,10 @@ tasks: [baseline, t076, t078, t079]
 - 语言只支持 `zh-CN` / `en-US`（新建默认 `en-US`），后端校验拒绝其它值与非法时区，返回字段级错误；时区为空表示自动（随出口 IP）。
 - 时区 → 语言：中文地区时区（`Asia/Shanghai`、`Asia/Chongqing`、`Asia/Urumqi`、`Asia/Harbin`、`Asia/Hong_Kong`、`Asia/Macau`、`Asia/Taipei`）→ `zh-CN`，其余 → `en-US`；时区为空时语言保持当前值。
 - 代理 / 语言 / 平台参数自动联动：
-    - 选择代理时，前端根据代理位置（国家码 / 地区标签 / 名称）自动匹配对应 IANA 时区，并联动切换对应语言（`zh-CN` / `en-US`）与匹配的平台字体集。
-    - 切换语言（`locale`）时，自动匹配当前平台对应的字体包（如中文优先匹配 Office 中文字体包 / 苹方字体包，英文匹配标准字体包）并在已设时区时对齐对应地区时区。
-    - 切换平台（`fingerprint_platform`）时，自动切换为对应平台的默认字体集与默认分辨率（Windows 默认 `1920×1080`，macOS 默认 `1440×900`）。
-- 字体集下拉列表展示人类可读的字体包名称（如「Windows 标准字体包」「Office 中文字体包」「macOS 苹方字体包」），不向用户展示冗长的 SHA256 哈希字符串。
+    - 选择代理时，前端根据代理位置（国家码 / 地区标签 / 名称）自动匹配对应 IANA 时区，并联动切换对应语言（`zh-CN` / `en-US`）。
+    - 切换语言（`locale`）时，在已设时区时对齐对应地区时区；CJK 字体开关在用户未手动设置前随语言派生（中文开、英文关），用户手动切换后不再被语言联动改写（t075）。
+    - 切换平台（`fingerprint_platform`）时，自动切换默认分辨率（Windows 默认 `1920×1080`，macOS 默认 `1440×900`）；字体集绑定由后端按新平台重绑，表单不参与（t075）。
+- 环境表单不再提供字体包与 GPU 选择（t075）：字体集在设置页平台字体区块只读展示人类可读名称（如「Windows 标准字体包」「Office 中文字体包」「macOS 苹方字体包」），不向用户展示冗长的 SHA256 哈希字符串；会话详情只读展示实际绑定。
 
 ## 环境管理界面（t037+）
 

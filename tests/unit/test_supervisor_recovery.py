@@ -45,7 +45,7 @@ from supervisor_recovery_probe.gateway_service import (
 
 
 @pytest.fixture
-def supervisor_setup(tmp_path: Path):
+def supervisor_setup(tmp_path: Path, fixture_font_set: str):
     token = secrets.token_urlsafe(32)
     token_file = tmp_path / "sup_token"
     token_file.write_text(token)
@@ -85,7 +85,11 @@ def supervisor_setup(tmp_path: Path):
                 json={
                     "profile_id": "p_test",
                     "version": 1,
-                    "config": ProfileConfig(name="Test").model_dump(),
+                    # t075: the served config carries a fixture font
+                    # binding; an unbound config now refuses to start.
+                    "config": ProfileConfig(
+                        name="Test", font_set_id=fixture_font_set
+                    ).model_dump(),
                 },
             )
         if p.endswith("/state/snapshot"):

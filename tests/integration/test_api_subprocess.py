@@ -225,7 +225,7 @@ async def test_ac001_and_ac005_crud_restart_and_empty_dir_init_with_refs(
             "locale": "en-US",
             "screen_width": 1440,
             "screen_height": 900,
-            "gpu_family": "intel",
+            "include_cjk_fonts": False,
             "humanize": True,
             "human_preset": "careful",
             "geoip": False,
@@ -260,6 +260,9 @@ async def test_ac001_and_ac005_crud_restart_and_empty_dir_init_with_refs(
         assert created["current_config_version"] == 1
 
         # 2. Nullable vs Non-nullable validation
+        # t075: gpu_family is abolished — sending it at all is a 422
+        # (unknown field), which also proves removed fields cannot
+        # silently re-enter the stored identity.
         bad_gpu = await client.put(f"/api/v1/profiles/{pid}", json={"gpu_family": None})
         assert bad_gpu.status_code == 422
         _validate_schema(bad_gpu.json(), "ValidationErrorResponse")
@@ -282,7 +285,7 @@ async def test_ac001_and_ac005_crud_restart_and_empty_dir_init_with_refs(
         # Check that profile config is untouched after 422
         check_res = await client.get(f"/api/v1/profiles/{pid}")
         assert check_res.status_code == 200
-        assert check_res.json()["gpu_family"] == "intel"
+        assert check_res.json()["include_cjk_fonts"] is False
         assert check_res.json()["name"] == "Alpha Production Profile"
 
         # Nullable fields cleared to null: accepted with 200
@@ -317,7 +320,7 @@ async def test_ac001_and_ac005_crud_restart_and_empty_dir_init_with_refs(
         assert reloaded["locale"] == "en-US"
         assert reloaded["screen_width"] == 1440
         assert reloaded["screen_height"] == 900
-        assert reloaded["gpu_family"] == "intel"
+        assert reloaded["include_cjk_fonts"] is False
         assert reloaded["humanize"] is True
         assert reloaded["human_preset"] == "careful"
         assert reloaded["sort_order"] == 12

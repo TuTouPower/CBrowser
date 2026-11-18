@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 from cbrowser.domain.models import ProfileConfig
+from cbrowser.font_sets import import_font_set
 from cbrowser.supervisor.core import SupervisorCore
 from cbrowser.supervisor.event_forwarder import EventForwarder
 from cbrowser.supervisor.path_validator import PathValidator
@@ -15,10 +16,22 @@ from cbrowser.supervisor.port_allocator import PortAllocator, PortPoolExhaustedE
 
 @pytest.mark.asyncio
 async def test_exhausted_port_after_binding_records_one_start_failure(
-    supervisor_api, tmp_path
+    supervisor_api, tmp_path, monkeypatch
 ):
     server, token = supervisor_api
     profile = server.post("/api/v1/profiles", json={"name": "capacity"}).json()["id"]
+    # t075: an unbound profile now refuses to start before capacity is
+    # even consulted, so the launch under test carries a real binding
+    # (a fixture set on a private fonts root) — the port-exhaustion
+    # behavior under test is unchanged.
+    font_source = tmp_path / "font-src"
+    font_source.mkdir()
+    (font_source / "arial.ttf").write_bytes(b"FONT:arial")
+    fonts_root = tmp_path / "fonts"
+    imported = import_font_set(
+        "windows", [str(font_source)], "v1", root=str(fonts_root)
+    )
+    monkeypatch.setenv("CBROWSER_FONTS_DIR", str(fonts_root))
     server.patch(
         f"/api/v1/profiles/{profile}/runtime/desired-state",
         json={"desired_state": "running"},
@@ -51,7 +64,10 @@ async def test_exhausted_port_after_binding_records_one_start_failure(
             agent_key_file=key_file,
         )
         with pytest.raises(PortPoolExhaustedError):
-            await core.start_profile(profile, ProfileConfig(name="capacity"))
+            await core.start_profile(
+                profile,
+                ProfileConfig(name="capacity", font_set_id=imported["set_id"]),
+            )
         runtime = server.get(f"/api/v1/profiles/{profile}/runtime").json()
         assert runtime["runtime_instance_id"] is None
         assert runtime["failure_count"] == 1

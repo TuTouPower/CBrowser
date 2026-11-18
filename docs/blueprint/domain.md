@@ -22,7 +22,9 @@
 |**文件归档**|`Artifact`|用户上传到浏览器环境或浏览器内下载完成的文件元数据记录，包含 SHA-256、体积与配额信息。|
 |**文件交换区**|`ExchangeDirectory`|宿主机与容器共享的持久化上传/下载暂存目录，按 Profile 严格隔离。|
 |**指纹平台**|`ProfileConfig.fingerprint_platform`|Profile 绑定的反指纹目标平台，取值 `windows`（默认）/ `macos`；CloakBrowser 只支持这两种，无 Linux 平台。属运行配置，变更产生新 `ProfileConfigVersion`（t041）。|
-|**平台字体集**|`ProfileConfig.font_set_id`|对同平台、按内容寻址的不可变字体集的引用；null 表示未配置平台字体。字体集只在运行时只读挂载，不进镜像与仓库；属运行配置，变更产生新 `ProfileConfigVersion`（t041）。|
+|**平台字体集**|`ProfileConfig.font_set_id`|对同平台、按内容寻址的不可变字体集的引用；t075 起为后端托管绑定（创建/克隆/切平台由服务按目录默认规则解析，请求不接受该字段；字体根已配置的部署中恒有绑定，未配置字体根的进程可暂空但不可启动）。字体集只在运行时只读挂载，不进镜像与仓库；属运行配置，变更产生新 `ProfileConfigVersion`（t041 / t075）。|
+|**中文字体开关**|`ProfileConfig.include_cjk_fonts`|中文字体是否对 Browser 可见的显式开关；创建未给出时按语言派生（`zh-CN` 开、其余关），运行时 fontconfig 的中文裁剪只看此开关。属运行配置，变更产生新 `ProfileConfigVersion`（t075）。|
+|**配色方案**|`ProfileConfig.color_scheme`|只允许 `light` / `dark`（默认 `light`）；旧 `null` / `no-preference` 已由迁移 0013 统一映射为 `light`。属运行配置（t075 收敛）。|
 |**语言**|`ProfileConfig.locale`|Profile 的浏览器语言，封闭枚举 `zh-CN` / `en-US`（新建默认 `en-US`）。属运行配置，变更产生新 `ProfileConfigVersion`，重启后生效（t053）。|
 |**时区**|`ProfileConfig.timezone`|Profile 的时区，合法 IANA 时区名或 null（null 表示自动、随出口 IP）；非法时区在写入边界 422 拒绝。时区只决定语言联动的输入，不直接决定浏览器时区以外的行为（t053）。|
 

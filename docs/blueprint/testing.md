@@ -364,6 +364,22 @@ bash scripts/run_automation_probe.sh
 |AC-008|镜像层与 git 仓库无平台字体；部署 / 发布脚本不复制字体目录；task worktree 经 `.worktreeinclude` 共享同一字体目录|`docker save` 镜像层扫描 + 仓库扫描 + 脚本静态检查|
 |AC-009|`font_bundle` 字段、镜像字体包、代码与文档引用一并删除，扫描为空|全仓 grep 为空 + 增量迁移 `0002_fingerprint_platform.py` 删除列|
 
+## t075 运行身份与真实就绪验收映射
+
+下表把 t075 的 AC-001~009 映射到测试与证据入口；契约全文见 `docs/tasks/t075_profile_identity_assets_and_readiness/task.md`，需求级 spec 见 `docs/specs/fingerprint_platform.md`。云端无 Docker/真实引擎：AC-009 与 GPU 动态实测顺延本地补验 p137，不得记为已验。
+
+|AC|行为|测试 / 证据|
+|---|---|---|
+|AC-001|字体绑定后端托管：创建绑定平台默认集、已配置字体根而无集时创建失败、请求拒绝手选字段|unit `test_t075_profile_identity.py` + OpenAPI 导出比对|
+|AC-002|克隆保留已验证绑定、切平台重绑、无集切平台失败且原配置不变；GPU 字段与透传 flag 删除|unit `test_t075_profile_identity.py`；全仓 grep `gpu_family` 为空；同 seed 重启前后 WebGL 实值一致性为动态实测，待 p137 本地补验|
+|AC-003|配色只剩 light/dark、默认 light、请求拒绝第三态|unit `test_t075_profile_identity.py` + 前端 `ProfileForm` 用例|
+|AC-004|迁移 0013 改写行与快照、不可等价映射改写前阻塞、幂等、备份恢复演练|unit `test_t075_migration.py`（真实 SQLite + alembic）|
+|AC-005|字体源目录不存在时 Supervisor 挂载构造失败|unit `test_t075_supervisor_fonts.py`|
+|AC-006|挂载空/manifest 损坏/内容不符（逐文件 sha256 复核）/无必需字形时验证失败且健康不就绪；Runner 接缝真实验证后才启动|unit `test_t075_font_verification.py` + `test_t075_runner_fonts.py` + `test_t041_font_runtime.py` 就绪门禁|
+|AC-007|CJK 关时中文字体不可见、开时中文面可枚举（真实 fc-list）且中文字形经 FreeType 真实光栅化证明|unit `test_t075_fontconfig.py` / `test_t075_font_verification.py` / `test_t075_glyph_render.py`（宿主真实字体）；Chrome 引擎内渲染待 p137|
+|AC-008|可选探测缺口与必需失败在结论中区分；普通配置变更不触碰会话存储|unit `test_t075_font_verification.py`；`test_t075_profile_identity.py::test_ordinary_config_change_keeps_user_data_and_binding` 断言用户数据目录字节不变；配置版本分类（`include_cjk_fonts` 为 runtime 字段）|
+|AC-009|[deploy] 真实编排双平台隔离与中英文可读、错误挂载对照不就绪|云端不可验，顺延本地补验 p137|
+
 ## t051 运行时与部署可靠性验收映射
 
 下表把 t051 的 AC-001~021 映射到测试与证据入口；契约全文见 `docs/tasks/t051_runtime_deploy_reliability/task.md`，需求级 spec 见 `docs/specs/runtime_lifecycle.md` / `release_deployment.md` / `fingerprint_platform.md` / `access_control.md`。本机无 Docker、无真实部署环境：AC-013 真实部署、AC-014 双实例真实 Docker、AC-015 真实 Docker 挂起三项按链口径跳过按 pass 计，替代验证见表内，真实环境验证须在用户机按 t032 演练补验，不得记为已验。

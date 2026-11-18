@@ -298,7 +298,7 @@ def _profile_model(**overrides):
         locale=None,
         screen_width=1920,
         screen_height=1080,
-        gpu_family="nvidia",
+        include_cjk_fonts=True,
         humanize=True,
         human_preset="default",
         geoip=False,

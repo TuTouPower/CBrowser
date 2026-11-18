@@ -215,10 +215,21 @@ async def test_browser_runner_passes_sdk_proxy_kwarg_and_hardening_flags(
     monkeypatch.setattr(runner, "setup_display", lambda width, height: run_dir / "Xauth")
     monkeypatch.setattr(runner, "_resolve_browser_version", AsyncMock(return_value=("Chrome/146", "UA")))
     monkeypatch.setattr(runner, "_configure_window", AsyncMock())
+    # t075: the Runner verifies the mounted font set before launch.
+    # This test's subject is the SDK launch kwargs, so the fontconfig
+    # preparation and the mount verification are stubbed at the same
+    # seams the test already uses for pulse/display; the real
+    # verification is covered by test_t075_font_verification and the
+    # ready-gating tests in test_t041_font_runtime.
     monkeypatch.setattr(
         runner_mod,
         "prepare_profile_fontconfig",
-        lambda *_a, **_k: None,
+        lambda *_a, **_k: run_dir / "fonts.conf",
+    )
+    monkeypatch.setattr(
+        runner_mod,
+        "verify_mounted_font_set",
+        lambda **_k: {"status": "verified", "failures": []},
     )
     monkeypatch.setattr(
         runner_mod,

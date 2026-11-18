@@ -1,0 +1,19 @@
+{
+  "tid": "t075",
+  "attempt": 1,
+  "execution_id": "8933d31f8cf64517b3e9c955ff54b678",
+  "status": "done",
+  "branch": "t075_profile_identity_assets_and_readiness",
+  "base_sha": "c8737f0df60d146e2f6cf021b4054c8a38a8d5a3",
+  "spec_source_sha": "c8737f0df60d146e2f6cf021b4054c8a38a8d5a3",
+  "tests": "全量门禁最终轮证据 `~/workspace/cloud-task-logs/gate-t075-final3/`（总日志 `gate-t075-final3.log`，2026-11-18 11:20 起跑，约 13 分钟）：protocol_drift_check / requirements_check / design_lint / design_check / contract（389 条，388 passed + 1 skipped）/ frontend_build 均 exit 0；unit 2414 条，失败+错误 15 条＝15 条既有基线（t063×12、t068×2、a16 协议漂移×1），t027 本轮未失败；integration 228 条，6 failed + 2 errors（209 passed、7 skipped），8 条隔离复跑全部通过（8 passed、3 skipped，串行 + TMPDIR 指持久盘，80.77s），定性为负载 flaky：其中 2 条错误在门禁日志中实证为 `OSError: [Errno 28] No space left on device`（/tmp 512M tmpfs 在 unit 与 frontend_test 并行时被占满），其余 6 条为并行负载下时序敏感的浏览器链/速率限制用例，final2 同代码下 0 失败，且均不在本 task 改动路径上；frontend_test 692/693，唯一失败仍是 ConfigTab 保存回显用例 5000ms 超时（本轮 5508ms，前轮 6205ms），单跑仅 1123ms，属并行负载下 5 倍放慢的超时 flake，非回归；test:types（tsc -p tsconfig.test.json）已归零。p136 登记的 t078 并发 flaky 本轮未出现。",
+  "blackbox": "云端无 Docker/真实引擎，真实容器化编排与双平台渲染验证（AC-009、GPU 矩阵动态实测、CJK 开关实测、配色实测、身份迁移演练）整体登记 p137 本地补验，未用 mock/历史结果代替。",
+  "review": "Round 1 双轴审阅（指纹 `e72af9c394c4f887`）代码轴 PASS、测试轴 FAIL，10 条 finding 已全部处置（见上方 Review 处置表）；Round 2（指纹 `86817c96d31d703c`）双轴 PASS、0 新 finding，唯 code f004 复核为修不彻底；按建议抽 `_optional_coverage` helper 后主函数 CC 降至 14，Round 3（指纹 `382b23dcfe742f47`）双轴 PASS、0 新 finding，f004 彻底消除；finish 门禁 md_format 重排文档换行后 Round 4（指纹 `8f37c34486db496e`）双轴 PASS，代码轴新发现 minor f005（ADR 040 大小措辞残留），已修正一行措辞；Round 5（指纹 `6ae64bcb28c76d56`）双轴 PASS、0 新 finding，f005 消除。`task.py review-status`：overall=PASS、round=5、code_verdict=PASS、test_verdict=PASS、review_scope=ok、ac_review=ok；代码轴 coverage 7/9、测试轴 8/9（trust_prior 均在 30% 内）；唯一遗留为 test f005（GPU 动态实值，minor，p137）。",
+  "review_scope": "6ae64bcb28c76d56",
+  "pending": [
+    "p137"
+  ],
+  "findings": [
+    "d051"
+  ]
+}
