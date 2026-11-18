@@ -3198,6 +3198,104 @@
         ]
       }
     },
+    "/api/v1/font-sets/{platform}/{set_id}/audit": {
+      "post": {
+        "tags": [
+          "profiles"
+        ],
+        "summary": "Audit Font Set",
+        "description": "Schedule an explicit audit of one published set.\n\nReturns ``in_flight`` when an audit for the same set is already\nrunning (requests are deduplicated, never queued twice); the\nverdict lands in the catalog when the audit completes.",
+        "operationId": "audit_font_set_api_v1_font_sets__platform___set_id__audit_post",
+        "parameters": [
+          {
+            "name": "platform",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Platform"
+            }
+          },
+          {
+            "name": "set_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Set Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FontSetAuditResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ]
+      }
+    },
     "/api/v1/profiles/{profile_id}/artifacts": {
       "get": {
         "tags": [
@@ -6836,6 +6934,29 @@
         ],
         "title": "FontDetection"
       },
+      "FontSetAuditResponse": {
+        "properties": {
+          "platform": {
+            "type": "string",
+            "title": "Platform"
+          },
+          "set_id": {
+            "type": "string",
+            "title": "Set Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "platform",
+          "set_id",
+          "status"
+        ],
+        "title": "FontSetAuditResponse"
+      },
       "FontSetInfo": {
         "properties": {
           "platform": {
@@ -6890,6 +7011,36 @@
             "type": "integer",
             "title": "Used By Count",
             "default": 0
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          },
+          "verified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified At"
+          },
+          "audited_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audited At"
           }
         },
         "type": "object",
@@ -6897,7 +7048,11 @@
           "platform",
           "set_id",
           "integrity",
-          "file_count"
+          "file_count",
+          "state",
+          "revision",
+          "verified_at",
+          "audited_at"
         ],
         "title": "FontSetInfo"
       },
@@ -6983,7 +7138,7 @@
           "items"
         ],
         "title": "FontSetListResponse",
-        "description": "Font sets plus the backend-chosen default per platform (t053 A16).\n\n``default_font_set_id`` is decided only by the backend, from the same\nintegrity-ok rule as profile creation; the create form preselects it\nand never derives a default of its own."
+        "description": "Font sets plus the backend-chosen default per platform.\n\n``default_font_set_id`` is decided only by the backend, from the\ncatalog's verified records; the create form preselects it and never\nderives a default of its own."
       },
       "GatewayRuntimeResponse": {
         "properties": {

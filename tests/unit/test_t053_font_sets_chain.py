@@ -165,6 +165,14 @@ def _services(db_context):
     return ProfileService(ProfileRepository(session_maker))
 
 
+async def _adopted_service(db_context):
+    """t081: adoption (the API startup path) makes a published set
+    bindable in the catalog before profile creation reads it."""
+    service = _services(db_context)
+    await service.font_catalog().adopt_all()
+    return service
+
+
 @pytest.mark.asyncio
 async def test_create_applies_default_only_when_font_set_omitted(
     db_context, font_source: Path, tmp_path: Path, monkeypatch
@@ -172,7 +180,7 @@ async def test_create_applies_default_only_when_font_set_omitted(
     root = tmp_path / "fonts"
     result = import_font_set("windows", [str(font_source)], "v1", root=str(root))
     monkeypatch.setenv("CBROWSER_FONTS_DIR", str(root))
-    service = _services(db_context)
+    service = await _adopted_service(db_context)
 
     omitted = await service.create_profile(
         config=ProfileConfig(name="Omitted"),
@@ -195,7 +203,7 @@ async def test_create_with_supplied_set_keeps_it(
     root = tmp_path / "fonts"
     result = import_font_set("windows", [str(font_source)], "v1", root=str(root))
     monkeypatch.setenv("CBROWSER_FONTS_DIR", str(root))
-    service = _services(db_context)
+    service = await _adopted_service(db_context)
     profile = await service.create_profile(
         config=ProfileConfig(name="Bound", font_set_id=result["set_id"]),
         req_payload={"name": "Bound", "font_set_id": result["set_id"]},

@@ -1,0 +1,17 @@
+{
+  "tid": "t081",
+  "attempt": 1,
+  "execution_id": "cb44c789352f4eef9db3359be081af78",
+  "status": "done",
+  "branch": "t081_immutable_font_resource_lifecycle",
+  "base_sha": "c2d7c892b08ab2df34465b6b08620cc2d43de0d2",
+  "spec_source_sha": "dffadb298c123ae77a8e8b1f224731ba59030076",
+  "tests": "门禁终跑（.scratch/t081_gate_evidence_final）protocol_drift_check、requirements_check、design_lint、design_check、frontend_build、frontend_test、integration（215 条 0 失败）全 exit 0，contract 389 条 0 失败；unit 2308 条 15 条 bad 全为机器老基线（t063 ×12、t068 ×2、a16 ×1，均在无 t081 的主仓树复现）。审阅修复轮后 test_t081_font_catalog.py 14/14、字体/协调器/迁移回归 71/71、Supervisor 子集 85/85。",
+  "blackbox": "云端无 Docker Engine，真实容器黑盒不可执行；登记 p131 本地补验（现场规模集导入、共用绑定 10 分钟零正文读取、审计负例/修复正例留证）。",
+  "review": "首轮双轴 FAIL（代码 f001–f006、测试 f001–f007）已逐项修复并写入 Review 处置表；确认轮结果见 review_code.md / review_test.md。",
+  "review_scope": "69f046775b93e50b",
+  "pending": [
+    "p131"
+  ],
+  "findings": []
+}

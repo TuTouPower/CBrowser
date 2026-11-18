@@ -64,7 +64,9 @@ async def make_runtime_response(
     font_set_id: str | None = None
     missing_fonts: list[str] = []
     if coordinator is not None and hasattr(coordinator, "get_font_runtime"):
-        font_set_id, missing_fonts = await coordinator.get_font_runtime(rt.profile_id)
+        font_set_id, missing_fonts = await coordinator.get_font_runtime(
+            rt.profile_id, runtime=rt
+        )
     return ProfileRuntimeResponse(
         profile_id=rt.profile_id,
         display_number=rt.display_number,

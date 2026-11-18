@@ -248,6 +248,14 @@ class SupervisorCore:
         gateway_port: int | None = None,
     ):
         self.docker = docker_adapter
+        # t081: mounted-set verification verdicts, fenced per
+        # (profile_id, runtime_instance_id, config_version, platform,
+        # set_id).  A verdict is reused only for the same instance
+        # started from the same config version; a new instance or a new
+        # config version always re-verifies the set it actually mounts.
+        # Entries are bounded by the number of (profile, instance,
+        # version) starts in this process's lifetime.
+        self._font_verified: set[tuple[str, str, int, str, str]] = set()
         self.ports = port_allocator
         self.events = event_forwarder
         self.api = api_client
@@ -2606,7 +2614,14 @@ class SupervisorCore:
                     f"{type(exc).__name__}"
                 ) from None
 
-    def _validate_font_set(self, config: ProfileConfig) -> None:
+    def _validate_font_set(
+        self,
+        config: ProfileConfig,
+        runtime_instance_id: str | None = None,
+        *,
+        profile_id: str | None = None,
+        config_version: int | None = None,
+    ) -> None:
         """Fail closed when a bound font set cannot be trusted (AC-006).
 
         A null ``font_set_id`` is a supported configuration ("platform fonts
@@ -2614,6 +2629,12 @@ class SupervisorCore:
         set must exist, declare the matching platform, and pass its integrity
         check; anything else refuses the launch with one fixed, non-sensitive
         reason so the Browser container is never started on unusable fonts.
+
+        t081: the full verification runs against the set this instance
+        will actually mount, once per (profile_id, runtime_instance_id,
+        config_version, platform, set_id); repeat starts of the same
+        instance from the same config version reuse the verdict, and
+        health/status reads never re-run it.
         """
         if not config.font_set_id:
             logger.info(
@@ -2622,6 +2643,15 @@ class SupervisorCore:
                 "unconfigured and Linux base fonts exposed",
                 config.fingerprint_platform,
             )
+            return
+        fence = (
+            profile_id,
+            runtime_instance_id,
+            config_version,
+            config.fingerprint_platform,
+            config.font_set_id,
+        )
+        if runtime_instance_id is not None and fence in self._font_verified:
             return
         found = font_sets.get_font_set(
             config.fingerprint_platform, config.font_set_id
@@ -2633,6 +2663,8 @@ class SupervisorCore:
             raise FontSetUnavailableError()
         if not font_sets.check_font_set(directory)["ok"]:
             raise FontSetUnavailableError()
+        if runtime_instance_id is not None:
+            self._font_verified.add(fence)
 
     async def start_profile(
         self,
@@ -2719,7 +2751,12 @@ class SupervisorCore:
                 raise
 
             try:
-                self._validate_font_set(config)
+                self._validate_font_set(
+                    config,
+                    runtime_instance_id,
+                    profile_id=profile_id,
+                    config_version=config_version,
+                )
                 proxy_credentials = await self._resolve_proxy_credentials(
                     profile_id, config, config_version
                 )

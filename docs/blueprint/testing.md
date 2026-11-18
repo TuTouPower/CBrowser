@@ -507,3 +507,7 @@ bash scripts/run_automation_probe.sh
 - 挂载构造以单元矩阵验证（`tests/unit/test_t080_storage_layout.py`）：MountPlanner 对 data/runtime/fonts 三类根的解析、卷根与受管根外来源的构造期拒绝、Browser 精确 subpath 集合、Stream 零 Profile/Artifact/字体、cache-init 可写集合；SDK 序列化证据见 spike s025 / finding d050。真实 Engine 上的隔离正负对照（subpath 缺失行为、只读生效、跨 Profile 不可见、UDS 穿卷、Supervisor 重启后存活实例通信）属 [deploy] 层，不以单元证据替代，顺延登记见 p127。
 - 迁移故障矩阵以纯逻辑单元验证（`tests/unit/test_t080_storage_migration.py`）：dry-run 清单分类（含 runtime/gates 重映射与 Singleton 跳过）、符号链接失败封闭、实际写者拒绝、检测不可用时须显式确认停栈、恢复点摘要被篡改时切换前失败、复制故障注入后按 journal 续跑、目标同路径异内容拒绝覆盖、同内容文件 adopt 不删除、回退只删本轮 placed 文件。
 - 恢复点验收沿 t066 契约：迁移的 backup_verified 阶段复用恢复点 manifest 的逐文件摘要全量复核，先证实可恢复才允许切换。
+
+## 字体资产目录零读取与审计故障矩阵（t081）
+
+`tests/unit/test_t081_font_catalog.py` 以生产 helper 计数（`check_font_set` 与 `_sha256_file` 包装）锁定读路径契约：100 次 runtime 解析 + 100 次列表查询的字体正文打开/哈希恒为零，结果仍正确呈现绑定、覆盖与验证状态；集合使用明显大于小型假字体的合成集（20 文件 × 64 KB 级），不用字符串扫描冒充 I/O 证明。故障矩阵覆盖：发布后未接管不可绑定、接管恢复中断发布（staging 残留永不接管）与重复接管幂等、显式审计发现删改/额外文件/manifest 异常并撤销可用、受控修复以新修订恢复、迟到审计回执被 `state_seq` 围栏丢弃、审计并发上限（2）与同集去重、审计阻塞期间普通读取仍推进、Supervisor 每实例验证一次、运行状态按实例绑定配置版本报告、宿主导入源变更不泄漏进目录。旧语义测试 `test_a5_font_scan_offload.py`（每请求审计）与 `test_t053_coordinator_font_runtime.py`（实时读取/禁止缓存）已整体删除，理由见 ADR 030；离线与有界两条属性在审计引擎上重新证明。真实容器链路（现场规模集导入、共用绑定实例 10 分钟持续读取零字体正文、审计负例/修复正例留证）属 [deploy] 验证，云端不可执行，登记 pending 本地补验。

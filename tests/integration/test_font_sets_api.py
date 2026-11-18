@@ -104,15 +104,37 @@ def test_create_with_explicit_null_font_set_stays_null(api_client) -> None:
     assert created.json()["font_set_id"] is None
 
 
+def _audit_until_failed(client, set_id: str) -> dict:
+    """t081: POST an explicit audit and poll the list until the catalog
+    records the verdict (audits are asynchronous by design)."""
+    import time
+
+    response = client.post(f"/api/v1/font-sets/windows/{set_id}/audit")
+    assert response.status_code == 202, response.text
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        body = client.get("/api/v1/font-sets").json()
+        if body["items"] and body["items"][0]["state"] == "failed":
+            return body
+        time.sleep(0.1)
+    raise AssertionError("audit verdict was not recorded in time")
+
+
 def test_default_font_set_id_requires_integrity_ok(api_client) -> None:
-    """t053 A16: a tampered set stops being the backend default."""
+    """t081 (replaces the t053 A16 live-scan semantic): a tampered set
+    stops being the backend default once an explicit audit revokes it;
+    reads alone never re-verify, so the default survives until then."""
     client, fonts = api_client
     assert client.get("/api/v1/font-sets").json()["default_font_set_id"][
         "windows"
     ] == fonts["set_id"]
 
     (fonts["set_dir"] / "arial.ttf").write_bytes(b"TAMPERED")
-    after = client.get("/api/v1/font-sets").json()
+    untouched = client.get("/api/v1/font-sets").json()
+    assert untouched["items"][0]["integrity"]["ok"] is True
+    assert untouched["default_font_set_id"]["windows"] == fonts["set_id"]
+
+    after = _audit_until_failed(client, fonts["set_id"])
     assert after["items"][0]["integrity"]["ok"] is False
     assert after["default_font_set_id"]["windows"] is None
 
@@ -138,11 +160,18 @@ def test_patch_profile_rejects_invalid_font_set_id(api_client) -> None:
 
 
 def test_font_set_integrity_reflects_tampering(api_client) -> None:
+    """t081: integrity in the list response is the catalog verdict from
+    verification time; tampering is reflected after an explicit audit,
+    not on the next read (ADR 030)."""
     client, fonts = api_client
     before = client.get("/api/v1/font-sets").json()
     assert before["items"][0]["integrity"]["ok"] is True
 
     (fonts["set_dir"] / "arial.ttf").write_bytes(b"TAMPERED")
-    after = client.get("/api/v1/font-sets").json()
+    after = _audit_until_failed(client, fonts["set_id"])
     assert after["items"][0]["integrity"]["ok"] is False
+    assert any(
+        "sha256 mismatch" in problem
+        for problem in after["items"][0]["integrity"]["problems"]
+    )
     assert "arial.ttf" in after["items"][0]["integrity"]["hash_mismatches"]
