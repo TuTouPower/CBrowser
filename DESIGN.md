@@ -986,5 +986,7 @@ tokens instead. The generator emits them into the independent
 |badge|3rem|
 |table-select|2.5rem|
 |dropdown-list|16rem|
+|seed|5rem|
+|available-height|var(--radix-popper-available-height)|
 |swatch|1.5rem|
 |details|18.75rem|

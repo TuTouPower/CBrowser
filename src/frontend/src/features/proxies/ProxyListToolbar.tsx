@@ -4,6 +4,7 @@ import {
   Button,
   IconButton,
   SearchField,
+  SearchableSelect,
   Select,
   type SelectOption,
 } from "../../shared/ui";
@@ -89,19 +90,23 @@ export function ProxyListToolbar({
           />
         </div>
         <div data-testid="proxy-country-filter">
-          <Select
+          <SearchableSelect
             ariaLabel={t("proxyFilterCountry")}
             value={country}
             onValueChange={onCountryChange}
             options={countryOptions}
+            searchPlaceholder={t("searchCountries")}
+            noResultsLabel={t("noMatchingCountries")}
           />
         </div>
         <div data-testid="proxy-city-filter">
-          <Select
+          <SearchableSelect
             ariaLabel={t("proxyFilterCity")}
             value={city}
             onValueChange={onCityChange}
             options={cityOptions}
+            searchPlaceholder={t("searchCities")}
+            noResultsLabel={t("noMatchingCities")}
           />
         </div>
       </div>

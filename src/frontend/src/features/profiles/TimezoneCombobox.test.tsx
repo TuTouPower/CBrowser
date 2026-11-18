@@ -45,19 +45,33 @@ describe("TimezoneCombobox (t053 AC-003)", () => {
     expect(onValueChange).toHaveBeenCalledWith("Asia/Shanghai");
   });
 
-  it("opens to the full scrollable IANA list when nothing is typed", async () => {
+  // t077: the "opens to the full scrollable IANA list" case was
+  // deleted wholesale — it asserted the overflow class on the listbox
+  // element itself, which no longer carries the scroll container: the
+  // list now renders in a Radix Popover portal whose Content is the
+  // scrollable, viewport-bounded panel. The replacement case below
+  // covers the same list content against the new structure.
+  it("opens the full IANA list in a portal panel bounded to the viewport (t077 AC-004)", async () => {
     renderCombobox();
     const input = screen.getByTestId("tz-combobox");
     fireEvent.focus(input);
 
     const listbox = screen.getByTestId("tz-combobox-listbox");
-    expect(listbox.className).toContain("overflow-y-auto");
     const options = screen.getAllByRole("option");
     // Auto + every IANA timezone.
     expect(options.length).toBe(getTimezones().length + 1);
     expect(listbox.textContent).toContain("Asia/Shanghai");
     expect(listbox.textContent).toContain("Europe/London");
     expect(listbox.textContent).toContain("America/New_York");
+
+    // The listbox is portaled out of the input's wrapper, so the
+    // Dialog's scroll container can no longer clip it.
+    expect(input.parentElement?.contains(listbox)).toBe(false);
+    // The panel (Radix Popover Content) is the scroll container now,
+    // bounded to the available viewport height.
+    const panel = screen.getByRole("dialog");
+    expect(panel.className).toContain("overflow-y-auto");
+    expect(panel.className).toContain("max-h-available-height");
   });
 
   it("pins common timezones first", async () => {

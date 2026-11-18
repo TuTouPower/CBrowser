@@ -219,6 +219,12 @@ AC-003 扫描：20 个业务文件（外壳、`shared/ui`、登录页、设置�
 
 断线恢复以真实 hook + 可控 timer 复现（`useBrowserSession.wsRecovery.test.tsx`）：已连接后异常 WS 关闭、stats 始终健康且 ConnectionSnapshot 不变时，5 秒恢复检查后阶段收敛回 connected 且不重建 iframe；媒体不健康走既有重建路径；旧 generation 的迟到健康结果不覆盖当前状态；后端已停止时异常关闭被忽略。真实 Chrome 下的媒体健康断线恢复与无人连接保留属 [deploy] 黑盒范围（`CBROWSER_RUN_E2E=1`），云端无 Docker 时不执行、按跳过登记，不以组件测试替代其结论。
 
+### t077 表单与长集合交互的真实浏览器验证
+
+- 几何/滚轮/键盘/低视口矩阵不在 jsdom 里断言（jsdom 没有布局，类名断言不等于几何通过）：t077 用隔离探针应用（`.scratch/t077_browser_probe/`，导入真实组件 + 生产 CSS，mock ApiClient + 固定 200 代理/100 分组/100 环境夹具）+ Electron 44 headless（`~/workspace/omni_panel/node_modules/.bin/electron`，Hatch Chromium 157 的 Local Network Access 检查拦截一切 loopback 导航、无法用 feature flag 关掉）+ CDP 驱动（`drive.mjs`），4 个 pass 共 61 项检查：A 1280x900 light、B 1000x400 light、C 1280x900 dark（输入对比度 ≥4.5）、D 1280x900 zh；覆盖表单三列/种子不裁切/reseed 标签行对齐/无横向越出/12 帮助 + focus 开 Tooltip、窄屏 1 列、toolbar 三组可搜索选择的滚轮+末项+搜索+回显、长值截断 + title 全名、分组管理内部滚动 + 末项/提交可达、switcher/used-by/move/tz 在 400px 视口下的贴合 + 内部滚动 + 末项可达 + 搜索、tz 面板 Portal 到 body 外 + 选 Asia/Shanghai。探针与驱动不入库，证据为驱动输出文件。
+- CDP 滚轮的统一规则（均经隔离调试实测）：`Input.synthesizeScrollGesture` 在按钮/可拖拽行起点上永不返回（30 秒超时），只在 Select 项/链接起点上可用；原始 `dispatchMouseEvent` mouseWheel 在内容中心点上被吞，只在容器右侧槽位（右缘内 6px、中部高度）生效，且须先有一次中心滚轮建立悬停目标；统一用“中心预热 + 槽位滚轮”，`Cdp.send` 加 30 秒超时（渲染器挂起时失败而非永久卡死）；滚动体取 `scrollHeight` 最大者（勿取文档顺序最后一个）。无头 Electron 里 CDP 鼠标点击不聚焦、键盘事件到不了 tz 输入、insertText 写不进受控输入值——tz 检查改走原生 setter + input 事件写值、鼠标点选，focus-to-open 与键盘选择由 `TimezoneCombobox.test.tsx` 覆盖。
+- 集合规模矩阵（t076 的 0/1/100/1000）向前端几何延伸：200 代理/100 分组/100 环境/1000 候选的浮层与列表均按真实 `getBoundingClientRect`、`scrollHeight`/`clientHeight` 与真实滚轮结果验收，覆盖中英、长名称、窗口宽高与深浅主题；组件测试只验证搜索/选择 ID、键盘、焦点、hover/focus 帮助及同值提交语义。
+
 ## 历史实跑覆盖矩阵（t028）
 
 下表把 p016 原行为与 p021–p024、p026、p027 的逐项义务映射到现行入口：只引用既有或 t028 新建入口，不为凑行数新造。云端结果为 t028 执行环境（无 Docker）实测；「skip」指 collect-only 通过、因无 Docker 未实跑，不得记为已验。

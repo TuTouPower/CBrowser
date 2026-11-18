@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useI18n } from "../../i18n";
 import { Button } from "../../shared/ui";
 
@@ -6,13 +7,21 @@ export function BatchActionBar({
   onStart,
   onStop,
   onMove,
+  moveControl,
   onDelete,
   pending,
 }: {
   count: number;
   onStart: () => void;
   onStop: () => void;
-  onMove: () => void;
+  /** Only used when no moveControl is provided. */
+  onMove?: () => void;
+  /**
+   * When provided, this control replaces the plain Move button — the
+   * move-group menu (t077) renders its own Popover trigger here so
+   * the menu anchors to the button.
+   */
+  moveControl?: ReactNode;
   onDelete: () => void;
   pending: boolean;
 }) {
@@ -41,14 +50,16 @@ export function BatchActionBar({
       >
         {t("envBatchStop")}
       </Button>
-      <Button
-        data-testid="env-batch-move"
-        size="sm"
-        disabled={pending}
-        onClick={onMove}
-      >
-        {t("envBatchMove")}
-      </Button>
+      {moveControl ?? (
+        <Button
+          data-testid="env-batch-move"
+          size="sm"
+          disabled={pending}
+          onClick={onMove}
+        >
+          {t("envBatchMove")}
+        </Button>
+      )}
       <Button
         data-testid="env-batch-delete"
         size="sm"

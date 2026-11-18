@@ -50,11 +50,14 @@ export function ProxyUsedByPopover({
       ariaLabel={t("proxyColUsedBy")}
       contentClassName="w-(--container-dropdown-list)"
     >
-      <div data-testid="proxy-used-by-popover" className="flex flex-col gap-xs">
+      <div
+        data-testid="proxy-used-by-popover"
+        className="flex flex-1 flex-col gap-xs overflow-hidden"
+      >
         <p className="font-ui text-label-md text-on-surface-muted">
           {t("proxyUsedByCount", { count: entries.length })}
         </p>
-        <ul className="flex flex-col gap-2xs">
+        <ul className="flex flex-1 flex-col gap-2xs overflow-y-auto">
           {entries.map((entry) => {
             const running = observedById.get(entry.profile_id) === "running";
             return (

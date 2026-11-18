@@ -272,3 +272,72 @@ describe("Select onOptionSelect", () => {
     expect(onValueChange).toHaveBeenCalledWith("win-1");
   });
 });
+
+describe("Select viewport bounds and long-value truncation (t077 AC-001/AC-003/AC-004/AC-007)", () => {
+  it("bounds the popup to the available viewport height", async () => {
+    render(
+      <Select
+        value="__none__"
+        onValueChange={vi.fn()}
+        options={OPTIONS}
+        ariaLabel="Font set"
+      />,
+    );
+    openMenu();
+    const listbox = await screen.findByRole("listbox");
+    // The Radix popper writes --radix-popper-available-height on the
+    // content element; the max-h-available-height token consumes it, so
+    // the popup can never grow past the viewport.
+    expect(listbox.className).toContain("max-h-available-height");
+  });
+
+  it("truncates a long selected value on one line and exposes the full name", () => {
+    const longLabel =
+      "A very long proxy name that must not push the trigger taller than one line";
+    render(
+      <Select
+        value="long-1"
+        onValueChange={vi.fn()}
+        options={[
+          { value: "__none__", label: "None" },
+          { value: "long-1", label: longLabel },
+        ]}
+        ariaLabel="Proxy"
+      />,
+    );
+    const trigger = screen.getByRole("combobox");
+    // The trigger must expose the full name via title for AC-007
+    // full-name access, and its value must sit on one truncated line.
+    expect(trigger).toHaveAttribute("title", longLabel);
+    const valueSpan = trigger.querySelector("span");
+    expect(valueSpan).not.toBeNull();
+    expect(valueSpan?.className).toContain("truncate");
+    // The label itself must still render (Radix portals it into the
+    // value node); a Value asChild child would swallow it.
+    expect(trigger.textContent).toContain(longLabel);
+  });
+
+  it("is a block-level flex trigger so a long value shrinks to its container instead of overflowing it", () => {
+    // An inline-flex trigger sizes to its content in normal flow: in
+    // a narrow column (form grid cell, w-64 probe box) a long label
+    // blows the trigger out to its full text width instead of
+    // truncating (real browser: 954px in a 256px box). A block-level
+    // flex trigger fills its containing block, so the truncate span
+    // inside it can shrink. (Geometry itself is proven by the t077
+    // browser probe's long-value scene; this pins the class.)
+    render(
+      <Select
+        value="long-1"
+        onValueChange={vi.fn()}
+        options={[
+          { value: "__none__", label: "None" },
+          { value: "long-1", label: "A very long proxy name that must shrink to the column" },
+        ]}
+        ariaLabel="Proxy"
+      />,
+    );
+    const trigger = screen.getByRole("combobox");
+    expect(trigger.className).toContain("flex");
+    expect(trigger.className.split(" ")).not.toContain("inline-flex");
+  });
+});

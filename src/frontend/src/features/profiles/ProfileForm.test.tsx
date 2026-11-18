@@ -443,3 +443,127 @@ describe("ProfileForm", () => {
   // the binding is backend-managed and the form carries only the CJK
   // inclusion switch (covered by the alignment cases above).
 });
+
+describe("ProfileForm (t077)", () => {
+  it("proxy select is searchable and Enter picks the filtered match (AC-003)", async () => {
+    const zebra: ProxyResponse = {
+      ...proxy(),
+      id: "px-zebra",
+      name: "Zebra Node",
+      country_code: "US",
+      region_label: "Los Angeles",
+    };
+    renderForm({
+      mode: "create",
+      stub: makeStub({ proxies: [proxy(), zebra] }),
+    });
+    await screen.findByTestId("profile-form-name");
+    fireEvent.click(
+      within(screen.getByTestId("profile-form-proxy")).getByRole("combobox"),
+    );
+    const search = await screen.findByLabelText(en.proxySearch);
+    fireEvent.change(search, { target: { value: "Zebra" } });
+    expect(
+      screen.queryByRole("option", { name: "Proxy A" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Zebra Node" }),
+    ).toBeInTheDocument();
+    fireEvent.keyDown(search, { key: "Enter" });
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId("profile-form-proxy")).getByRole("combobox")
+          .textContent,
+      ).toContain("Zebra Node"),
+    );
+  });
+
+  it("group select is searchable (AC-003)", async () => {
+    renderForm({
+      mode: "create",
+      stub: makeStub({ proxies: [proxy()], groups: [group()] }),
+    });
+    await screen.findByTestId("profile-form-name");
+    fireEvent.click(
+      within(screen.getByTestId("profile-form-group")).getByRole("combobox"),
+    );
+    const search = await screen.findByLabelText(en.searchGroups);
+    fireEvent.change(search, { target: { value: "Work" } });
+    expect(
+      screen.getByRole("option", { name: "Work" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: en.formNewGroup }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("every advanced option and extra parameter field has a keyboard-readable help trigger (AC-006)", async () => {
+    renderForm({ mode: "create", stub: makeStub() });
+    await screen.findByTestId("profile-form-name");
+    const fields = [
+      en.formHumanize,
+      en.formClipboardSync,
+      en.formAutoLaunch,
+      en.formAllow3pCookies,
+      en.formSetGoogleDefault,
+      en.formRestoreSession,
+      en.formTransparentProxy,
+      en.formPortableCookies,
+      en.formCapturePreview,
+      en.formHumanPreset,
+      en.formLaunchArgs,
+      en.formExtensionPaths,
+    ];
+    for (const field of fields) {
+      expect(
+        screen.getByRole("button", {
+          name: en.formShowHelp.replace("{field}", field),
+        }),
+      ).toBeInTheDocument();
+    }
+    // Keyboard focus opens the tooltip with the real help text.
+    const humanizeHelp = screen.getByRole("button", {
+      name: en.formShowHelp.replace("{field}", en.formHumanize),
+    });
+    fireEvent.focus(humanizeHelp);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      en.formHumanizeHelp,
+    );
+  });
+
+  it("seed input is compact and the reseed button sits on the label row (AC-002)", async () => {
+    renderForm({ mode: "create", stub: makeStub() });
+    await screen.findByTestId("profile-form-name");
+    const seedInput = screen.getByLabelText(en.formSeed) as HTMLInputElement;
+    expect(seedInput.className).toContain("w-seed");
+    const reseed = screen.getByTestId("profile-form-reseed");
+    // The reseed button shares its parent row with the field label.
+    expect(reseed.parentElement?.textContent).toContain(en.formSeed);
+    expect(reseed.parentElement?.textContent).not.toContain(
+      String(seedInput.value),
+    );
+  });
+
+  it("every select trigger fills its field width so a long value truncates instead of overflowing the column (AC-001/AC-007)", async () => {
+    // Chrome sizes a button's width:auto to its content even with
+    // display:flex, so a bare trigger in a narrow grid cell blows
+    // out to its full text width (real browser: 954px in a 256px
+    // box) instead of truncating. The form's selects carry w-full
+    // so they fill their grid cell and the truncate span inside can
+    // shrink. (Geometry itself is proven by the t077 browser
+    // probe's long-value scene; this pins the class at each site.)
+    renderForm({ mode: "create", stub: makeStub() });
+    await screen.findByTestId("profile-form-name");
+    for (const name of [
+      en.formGroup,
+      en.formProxy,
+      en.formLocale,
+      en.formPlatform,
+      en.formColorScheme,
+      en.formHumanPreset,
+    ]) {
+      const trigger = screen.getByRole("combobox", { name });
+      expect(trigger.className).toContain("w-full");
+    }
+  });
+});

@@ -83,7 +83,12 @@ export function LoginPage() {
         )}
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-md">
-          <div>
+          {/* t077: the label/input gap comes from the layout (gap-sm,
+              the 8px the label's old mb-sm provided), not from a
+              margin on the shared FieldLabel — a margin inside a
+              flex label row offsets sibling icons (ProfileForm's
+              seed hint/reseed sat 4px off the label center). */}
+          <div className="flex flex-col gap-sm">
             <FieldLabel htmlFor="login-password">{t("accessToken")}</FieldLabel>
             <Input
               id="login-password"

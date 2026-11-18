@@ -203,6 +203,35 @@ describe("validateAndGenerate", () => {
     expect(css).toContain("--container-dialog: 32rem;");
     expect(css).not.toContain("--container-lg");
   });
+
+  it("inlines var()-valued container tokens into the size rules so they resolve where they are used", () => {
+    // A var()-valued container token (e.g. available-height ->
+    // --radix-popper-available-height) must not be routed through
+    // var(--container-<name>): a custom property defined on :root
+    // whose var() cannot resolve there becomes guaranteed-invalid
+    // and poisons every descendant through inheritance, even
+    // elements where the referenced variable IS defined — so the
+    // popup's max-height computes to none in a real browser and the
+    // list grows unbounded (t077). Inlining the token value into
+    // the rule evaluates the var() on the element that uses it,
+    // where Radix defines it. Literal-valued tokens keep the
+    // indirection so width utilities and the variable stay linked.
+    const source = withReplacements([
+      ["|dialog|32rem|\n", "|dialog|32rem|\n|available-height|var(--radix-popper-available-height)|\n"],
+    ]);
+    const css = validateAndGenerate(source);
+    expect(css).toContain(".max-h-available-height { max-height: var(--radix-popper-available-height); }");
+    expect(css).toContain(".h-available-height { height: var(--radix-popper-available-height); }");
+    expect(css).toContain(".min-h-available-height { min-height: var(--radix-popper-available-height); }");
+    expect(css).not.toContain("var(--container-available-height)");
+    // The @theme definition itself must not be emitted either: a
+    // var()-valued token has no :root-resolvable value, so the
+    // --container-<name> custom property would be guaranteed-invalid
+    // and inherited by every descendant (t077_gen_f002). The inlined
+    // size rules above are the token's only outlet.
+    expect(css).not.toContain("--container-available-height:");
+    expect(css).toContain(".max-h-dialog { max-height: var(--container-dialog); }");
+  });
 });
 
 

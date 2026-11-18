@@ -1,7 +1,7 @@
 ---
 slug: profile_management
 status: active
-tasks: [baseline, t075, t076, t078, t079]
+tasks: [baseline, t075, t076, t077, t078, t079]
 ---
 # 需求规范：Profile 管理与外部标签页
 
@@ -22,6 +22,14 @@ tasks: [baseline, t075, t076, t078, t079]
 - 列表不再拉全量再客户端拼装：`GET /api/v1/profiles/collection`（搜索 / 分组 / 代理 / 状态 / 平台 / 排序 `default|manual|name|recent|created`，分页 `page_size` 服务端钳制 1..100，总数计全量筛选集）、`GET /api/v1/proxies/collection`、`GET /api/v1/groups/collection`，有界候选 `…/candidates`（`limit` 钳制 1..50）与代理国家→城市范围 `GET /api/v1/proxies/countries`（键为稳定国家代码）。排序默认稳定（`sort_order`、`created_at`、`id`），分页无重复遗漏。
 - 运行状态只读一次批量摘要：`GET /api/v1/profiles/runtime-summary` 返回全部环境 `desired_state` / `observed_state` / `config_version` / 实例 / 失败计数 / 启停时间 / 预览捕获时间 / 协调器错误与运行总数；列表、卡片、工作台入口与关闭的切换器都只读它，不再按环境逐个发 runtime 请求。单环境详情仍按需读 `GET /api/v1/profiles/{id}/runtime`。
 - SSE `runtime_state` 事件带 `config_version` 围栏：旧版本或旧实例的迟到事件丢弃，重复/重放事件无副作用且不触发列表重取；有效事件原地更新 runtime 缓存与摘要缓存。`GET /api/v1/proxies/{id}/used-by` 返回当前配置 ∪ 运行绑定版本的并集明细（每项标 `current` / `bound` / `both`），计数、导航与删除保护用同一口径。
+
+## 表单布局与长集合选择交互（t077）
+
+- 创建/编辑表单（`ProfileForm`）的分区按弹窗实际可用宽度规划，不再按外部视口断点切列：表单为容器查询根（`@container`），Section 在容器宽 ≥24rem 时两列、≥36rem 时三列；时区/语言、配色/CJK 为直接网格项，不再嵌套半列；字段占宽明确（种子输入 `w-seed` 5rem、6 位数字不裁切，刷新按钮在标签行）。普通/窄/低高度窗口与中英长文本下字段不重叠、不越出表单，提交/取消可达。
+- 固定少量枚举（状态/平台/排序/协议/语言/配色/拟人化预设）用有界 `Select`（长值单行截断 + `title` 回显全名，触发器在表单格内 `w-full`）；增长型实体（代理/环境/分组/国家/城市）用可搜索选择 `SearchableSelect`（顶部搜索框 + 完整候选数组客户端过滤 + Enter 选首个匹配），选择身份始终是稳定 ID，不与显示名称/排序混用；候选来自 t076 的有界端点（首 50 条 + 已选值单读回显）。200 代理与 100 分组/地区候选下列表内部滚动、滚轮可达末项、搜索可找到未加载末项、选中值准确回显。
+- 共享浮层契约：`Select`/`Popover` 内容限高为 Radix 可用高度（`max-h-available-height`，`--radix-popper-available-height`），内容区内部滚动、定位与碰撞翻转走 Radix；`Popover` 内容为纵向 flex 列 + 内部滚动区；长列表的键盘（方向键/Home/End/Enter 提交/Escape 关闭/焦点回归）与 p070/t053 的既有提交判据保持不变，同值重选只触发一次既有提交语义。时区候选走 Radix Popover Portal（锚定输入框，`side="bottom"` + 碰撞翻转），不再被外层 Dialog 滚动区裁切。
+- 批量移动分组菜单（`MoveGroupMenu`）为锚定到移动按钮的 Popover（搜索 + 内部滚动 + 键盘导航 + Escape 焦点回归），取代旧的页面底部固定菜单；100 分组下在常规与 400px 低视口中均受实际可用视口约束。环境切换器列表内部滚动；关联环境浮层（`ProxyUsedByPopover`）列表内部滚动。分组管理弹窗与外层 Dialog 保持既有内部滚动，末项与提交可达。
+- 全部高级布尔选项（拟人化、自动启动、Google 默认、透明代理、预览、剪贴板、第三方 Cookie、恢复会话、便携 Cookie）与拟人化预设、启动参数、扩展路径字段旁均有可聚焦的感叹号帮助入口，鼠标与键盘均可读到当前界面语言的说明，内容与实际运行行为一致。注意：`auto_launch` 当前无任何消费点（后端/前端均不读取），帮助文案如实写“保存但当前不触发任何自动启动”；实现或删除该字段不在 t077 范围内，待另行定夺。
 
 ## 删除生命周期（t078）
 

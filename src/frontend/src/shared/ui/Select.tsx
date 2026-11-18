@@ -74,24 +74,18 @@ export function Select({
       onValueChange={onValueChange}
       disabled={disabled}
     >
-      <SelectPrimitive.Trigger
-        aria-label={ariaLabel}
-        className={cn(
-          "inline-flex h-(--component-select-height) items-center justify-between gap-sm rounded-md border border-outline bg-surface px-md font-ui text-body-md text-on-surface",
-          "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:opacity-50",
-          className,
-        )}
-      >
-        <SelectPrimitive.Value placeholder={placeholder} />
-        <SelectPrimitive.Icon>
-          <ChevronDown aria-hidden="true" className="size-(--component-icon-md-size)" />
-        </SelectPrimitive.Icon>
-      </SelectPrimitive.Trigger>
+      <SelectTrigger
+        value={value}
+        options={options}
+        placeholder={placeholder}
+        ariaLabel={ariaLabel}
+        className={className}
+      />
       <SelectPrimitive.Portal>
         <SelectPrimitive.Content
           position="popper"
           sideOffset={4}
-          className="z-50 min-w-select overflow-hidden rounded-lg border border-outline bg-surface-raised text-on-surface shadow-lg"
+          className="z-50 max-h-available-height min-w-select overflow-hidden rounded-lg border border-outline bg-surface-raised text-on-surface shadow-lg"
         >
           <SelectPrimitive.Viewport className="p-sm">
             {options.map((option) => (
@@ -108,7 +102,57 @@ export function Select({
   );
 }
 
-function SelectItem({
+/**
+ * Shared trigger for the bounded Select and the searchable variant:
+ * the selected value is a single truncated line (the wrapper lets it
+ * shrink inside the flex row; its overflow clips the label) and the
+ * full name is exposed via the trigger's `title` (t077 AC-001/AC-007).
+ */
+export function SelectTrigger({
+  value,
+  options,
+  placeholder,
+  ariaLabel,
+  className,
+}: {
+  value?: string;
+  options: SelectOption[];
+  placeholder?: string;
+  ariaLabel: string;
+  className?: string;
+}) {
+  // Full name of the selected value, exposed via the trigger's title
+  // so a long value that is visually truncated can still be read in
+  // full (t077 AC-007).
+  const selectedLabel = options.find((option) => option.value === value)?.label;
+  return (
+    <SelectPrimitive.Trigger
+      aria-label={ariaLabel}
+      title={selectedLabel}
+      className={cn(
+        "flex h-(--component-select-height) items-center justify-between gap-sm rounded-md border border-outline bg-surface px-md font-ui text-body-md text-on-surface",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:opacity-50",
+        className,
+      )}
+    >
+      {/* NOTE: do not use Value asChild here, and do not put a
+          className on Value either. Radix portals the selected
+          item's label into the value node only when Value has no
+          children (dist: SelectItemText), and Value destructures
+          className/style away without applying them — an asChild
+          child would swallow the label and a className would be
+          silently dropped. The wrapper span is what truncates. */}
+      <span className="flex-1 truncate">
+        <SelectPrimitive.Value placeholder={placeholder} />
+      </span>
+      <SelectPrimitive.Icon className="shrink-0">
+        <ChevronDown aria-hidden="true" className="size-(--component-icon-md-size)" />
+      </SelectPrimitive.Icon>
+    </SelectPrimitive.Trigger>
+  );
+}
+
+export function SelectItem({
   option,
   onOptionSelect,
 }: {

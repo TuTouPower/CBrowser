@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, ReactNode } from "react";
+import type { InputHTMLAttributes, ReactNode, Ref } from "react";
 import { Search } from "lucide-react";
 import { cn } from "./cn";
 
@@ -23,12 +23,14 @@ export function Input({ label, className, id, ...rest }: InputProps) {
 export interface SearchFieldProps extends InputHTMLAttributes<HTMLInputElement> {
   label: string;
   containerClassName?: string;
+  ref?: Ref<HTMLInputElement>;
 }
 
 export function SearchField({
   label,
   className,
   containerClassName,
+  ref,
   ...rest
 }: SearchFieldProps) {
   return (
@@ -43,6 +45,7 @@ export function SearchField({
         className="size-(--component-icon-md-size) shrink-0 text-on-surface-muted"
       />
       <input
+        ref={ref}
         aria-label={label}
         type="search"
         className={cn(
@@ -65,7 +68,7 @@ export function FieldLabel({
   return (
     <label
       htmlFor={htmlFor}
-      className="mb-sm block font-ui text-label-sm text-on-surface-muted"
+      className="block font-ui text-label-sm text-on-surface-muted"
     >
       {children}
     </label>
