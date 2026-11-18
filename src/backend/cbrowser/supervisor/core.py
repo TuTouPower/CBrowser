@@ -311,6 +311,7 @@ class SupervisorCore:
         self._policy_paused: dict[tuple[str, str], float] = {}
         self._policy_unknown_since: dict[tuple[str, str, str], float] = {}
         self._unprotected_since: dict[str, float] = {}
+        self._scan_requested: bool = False
         self._event_cursors: dict[str, dict[str, list]] = self._load_event_cursors()
         self._event_cursor_file = (
             self.docker.validator.data_root / "control" / "event_cursors.json"
@@ -346,6 +347,12 @@ class SupervisorCore:
             runtime_instance_id,
             config_version,
         ) in self._terminal_observations
+
+    def pop_scan_requested(self) -> bool:
+        """Consume any pending cleanup-scan wake requested by terminal events."""
+        requested = self._scan_requested
+        self._scan_requested = False
+        return requested
 
     async def query_agent_health(self, profile_id: str):
         """Public health probe used by tests and diagnostics."""
@@ -1076,13 +1083,8 @@ class SupervisorCore:
                 "runtime": validator.get_runtime_dir(profile_id),
                 "secret": validator.get_secret_dir(profile_id),
             }
-            secret_file = dirs["secret"] / "agent_secret.txt"
-            if not secret_file.exists():
-                token = self.agent_credentials.token_for(profile_id, instance_id)
-                atomic_write_text(secret_file, token, mode=0o600)
-            selkies_tokens = SelkiesTokens.generate()
-            selkies_file = selkies_tokens.provision_credentials_file(
-                validator.get_secret_dir(profile_id), instance_id
+            secret_file, selkies_file = self._prepare_stream_secrets(
+                profile_id, instance_id, overwrite_agent_secret=False
             )
             objects = await asyncio.to_thread(
                 self.docker.get_profile_containers, profile_id
@@ -1521,9 +1523,39 @@ class SupervisorCore:
                 return
             desired = rt.get("desired_state", "stopped")
             api_inst = rt.get("runtime_instance_id")
+            session = self._sessions.get(pid)
+            bound_version = int(
+                rt.get("config_version", b_c.get("config_version", 1))
+            )
 
             # Fence check: if API instance does not match container instance
             if desired == "running" and api_inst != b_inst:
+                # If API already released runtime_instance_id while an already
+                # locally-terminated normal-exit generation still sits uncleaned,
+                # finish reclaiming the exited sandbox instead of wedging.
+                normal_exit_terminated = (
+                    self._native_terminal_observation(pid, b_inst, bound_version)
+                    == ("stopped", "normal_exit")
+                    or (
+                        session is not None
+                        and session.runtime_instance_id == b_inst
+                        and session.observed_state == "stopped"
+                        and session.desired_state == "stopped"
+                    )
+                )
+                if api_inst is None and normal_exit_terminated:
+                    logger.info(
+                        "Reclaiming terminated normal-exit sandbox before unbound start: "
+                        "profile=%s instance=%s",
+                        pid,
+                        b_inst,
+                    )
+                    await self.stop_profile(
+                        pid,
+                        expected_instance=b_inst,
+                        operation_id=f"reconcile_normal_exit:{pid}:{b_inst}",
+                    )
+                    return
                 logger.warning(
                     "Instance fence mismatch: profile=%s docker=%s api=%s",
                     pid,
@@ -1531,11 +1563,6 @@ class SupervisorCore:
                     api_inst,
                 )
                 return
-
-            session = self._sessions.get(pid)
-            bound_version = int(
-                rt.get("config_version", b_c.get("config_version", 1))
-            )
             if (
                 desired == "running"
                 and s_c is None
@@ -1989,6 +2016,9 @@ class SupervisorCore:
                 allow_create=True,
             )
             archive.mkdir(parents=True, exist_ok=True)
+            for directory in (archive.parent, archive):
+                directory.chmod(0o750)
+                self._assign_runtime_ownership(directory, "event archive directory")
             os.replace(event_file, archive / event_file.name)
             archived = sorted(
                 archive.glob("*.json"), key=lambda p: p.stat().st_mtime_ns
@@ -2141,6 +2171,10 @@ class SupervisorCore:
                     # Temporarily unavailable: stays pending for a later scan.
                     continue
                 total_forwarded += 1
+                if etype == "exit" and self._native_exit_instances.get(
+                    (profile_id, instance_id, config_version)
+                ) == ("stopped", "normal_exit"):
+                    self._scan_requested = True
                 await self._reconcile_instance_observation(
                     profile_id, instance_id, config_version
                 )
@@ -2854,18 +2888,45 @@ class SupervisorCore:
                     endpoint
                 ).host
         atomic_write_text(path, json.dumps(runtime_credentials), mode=0o600)
-        if getattr(self.docker, "manage_ownership", False):
-            try:
-                os.chown(
-                    path,
-                    self.docker.runtime_uid,
-                    self.docker.runtime_gid,
-                )
-            except OSError as exc:
-                raise DockerSandboxError(
-                    "Cannot assign proxy credentials ownership: "
-                    f"{type(exc).__name__}"
-                ) from None
+        self._assign_runtime_ownership(path, "proxy credentials")
+
+    def _assign_runtime_ownership(self, path: Path, label: str) -> None:
+        if not getattr(self.docker, "manage_ownership", False):
+            return
+        try:
+            os.chown(path, self.docker.runtime_uid, self.docker.runtime_gid)
+        except OSError as exc:
+            raise DockerSandboxError(
+                f"Cannot assign {label} ownership: {type(exc).__name__}"
+            ) from None
+
+    def _prepare_secret_dir(self, profile_id: str) -> Path:
+        secret_dir = self.docker.validator.get_secret_dir(profile_id)
+        secret_dir.mkdir(parents=True, exist_ok=True)
+        self._assign_runtime_ownership(secret_dir.parent, "secrets root")
+        secret_dir.chmod(0o700)
+        self._assign_runtime_ownership(secret_dir, "secret directory")
+        return secret_dir
+
+    def _prepare_stream_secrets(
+        self,
+        profile_id: str,
+        instance_id: str,
+        *,
+        overwrite_agent_secret: bool,
+    ) -> tuple[Path, Path]:
+        secret_dir = self._prepare_secret_dir(profile_id)
+        agent_secret = secret_dir / "agent_secret.txt"
+        if overwrite_agent_secret or not agent_secret.exists():
+            token = self.agent_credentials.token_for(profile_id, instance_id)
+            atomic_write_text(agent_secret, token, mode=0o600)
+        self._assign_runtime_ownership(agent_secret, "agent secret")
+        selkies_tokens = SelkiesTokens.generate()
+        selkies_file = selkies_tokens.provision_credentials_file(
+            secret_dir, instance_id
+        )
+        self._assign_runtime_ownership(selkies_file, "selkies credentials")
+        return agent_secret, selkies_file
 
     def _read_browser_version(self, profile_id: str) -> tuple[str | None, str | None]:
         """Read CDP browser version facts from the live runner metadata.
@@ -2893,18 +2954,7 @@ class SupervisorCore:
         self, snap_path: Path, snapshot: ConfigVersionSnapshot
     ) -> None:
         atomic_write_text(snap_path, snapshot.model_dump_json(indent=2), mode=0o600)
-        if getattr(self.docker, "manage_ownership", False):
-            try:
-                os.chown(
-                    snap_path,
-                    self.docker.runtime_uid,
-                    self.docker.runtime_gid,
-                )
-            except OSError as exc:
-                raise DockerSandboxError(
-                    "Cannot assign runtime snapshot ownership: "
-                    f"{type(exc).__name__}"
-                ) from None
+        self._assign_runtime_ownership(snap_path, "runtime snapshot")
 
     def _validate_font_set(
         self,
@@ -2974,6 +3024,7 @@ class SupervisorCore:
             self.docker.remember_profile_number(profile_id, profile_number)
         lock = self._profile_locks.lock_for(profile_id)
         async with lock:
+            stale_stopped_session: ActiveSession | None = None
             if profile_id in self._sessions:
                 session = self._sessions[profile_id]
                 if session.observed_state == "running":
@@ -2983,9 +3034,15 @@ class SupervisorCore:
                         session.runtime_instance_id,
                     )
                     return session
-                raise LifecycleConflictError(
-                    "Existing runtime must finish cleanup before a new start"
-                )
+                if (
+                    session.observed_state == "stopped"
+                    and session.desired_state == "stopped"
+                ):
+                    stale_stopped_session = session
+                else:
+                    raise LifecycleConflictError(
+                        "Existing runtime must finish cleanup before a new start"
+                    )
 
             if force:
                 if not operation_id:
@@ -3007,6 +3064,17 @@ class SupervisorCore:
                     "Automatic retries exhausted; manual retry required"
                 )
 
+            if stale_stopped_session is not None:
+                await self._stop_session_unlocked(
+                    profile_id,
+                    expected_instance=stale_stopped_session.runtime_instance_id,
+                    operation_id=(
+                        f"prestart_cleanup:{profile_id}:"
+                        f"{stale_stopped_session.runtime_instance_id}"
+                    ),
+                    report_to_api=False,
+                )
+
             runtime_instance_id = f"inst_{uuid.uuid4().hex[:12]}"
             self._native_exit_instances = {
                 key: value
@@ -3019,9 +3087,7 @@ class SupervisorCore:
             # Credentials live in the Profile secret dir and are mounted
             # read-only into the Browser container, which connects directly
             # to the upstream proxy.
-            secret_dir = self.docker.validator.get_secret_dir(profile_id)
-            secret_dir.mkdir(parents=True, exist_ok=True)
-            secret_dir.chmod(0o700)
+            secret_dir = self._prepare_secret_dir(profile_id)
             creds_path = secret_dir / PROXY_CREDENTIALS_FILENAME
 
             # Bind runtime instance via internal supervisor API
@@ -3126,19 +3192,10 @@ class SupervisorCore:
                 # Launch Stream. Agent credentials live outside the Browser
                 # runtime mount and are readable only by the Stream container.
                 (dirs["runtime"] / "agent_secret.txt").unlink(missing_ok=True)
-                secret_dir = self.docker.validator.get_secret_dir(profile_id)
-                secret_dir.mkdir(parents=True, exist_ok=True)
-                secret_dir.chmod(0o700)
-                agent_secret = secret_dir / "agent_secret.txt"
-                atomic_write_text(
-                    agent_secret,
-                    self.agent_credentials.token_for(profile_id, runtime_instance_id),
-                    mode=0o600,
-                )
-                selkies_tokens = SelkiesTokens.generate()
-                selkies_dir = secret_dir
-                selkies_tokens_file = selkies_tokens.provision_credentials_file(
-                    selkies_dir, runtime_instance_id
+                agent_secret, selkies_tokens_file = self._prepare_stream_secrets(
+                    profile_id,
+                    runtime_instance_id,
+                    overwrite_agent_secret=True,
                 )
                 s_container = await self.docker.start_stream_container(
                     profile_id=profile_id,
@@ -3282,133 +3339,153 @@ class SupervisorCore:
         """
         lock = self._profile_locks.lock_for(profile_id)
         async with self._global_lock, lock:
-            session = self._sessions.get(profile_id)
-            target = expected_instance or (
-                session.runtime_instance_id if session else None
+            return await self._stop_session_unlocked(
+                profile_id,
+                expected_instance=expected_instance,
+                operation_id=operation_id,
+                report_to_api=True,
             )
-            if target is None:
-                self._registration.pop(profile_id, None)
-                self._forget_preview_state(profile_id)
-                return {
-                    "profile_id": profile_id,
-                    "status": "already_absent",
-                    "runtime_instance_id": None,
-                }
-            command_id = operation_id or f"reconcile_stop:{profile_id}:{target}"
-            request = {"profile_id": profile_id, "runtime_instance_id": target}
-            previous = self.operations.begin(command_id, request)
-            if previous is not None:
-                return previous
-            result = {
+
+    async def _stop_session_unlocked(
+        self,
+        profile_id: str,
+        *,
+        expected_instance: str | None = None,
+        operation_id: str | None = None,
+        report_to_api: bool = True,
+    ) -> dict[str, Any]:
+        """Stop & tear down the active sandbox; caller must hold the profile lock."""
+        session = self._sessions.get(profile_id)
+        target = expected_instance or (
+            session.runtime_instance_id if session else None
+        )
+        if target is None:
+            self._registration.pop(profile_id, None)
+            self._forget_preview_state(profile_id)
+            return {
+                "profile_id": profile_id,
+                "status": "already_absent",
+                "runtime_instance_id": None,
+            }
+        command_id = operation_id or f"reconcile_stop:{profile_id}:{target}"
+        request = {"profile_id": profile_id, "runtime_instance_id": target}
+        previous = self.operations.begin(command_id, request)
+        if previous is not None:
+            return previous
+        result = {
+            "profile_id": profile_id,
+            "runtime_instance_id": target,
+            "status": "stopped",
+        }
+        if session is not None and session.runtime_instance_id != target:
+            # The target instance was superseded by a newer one. The
+            # command is a no-op result: the replacement is protected
+            # and must not be reported as stopped.
+            superseded = {
                 "profile_id": profile_id,
                 "runtime_instance_id": target,
-                "status": "stopped",
+                "status": "superseded_noop",
             }
-            if session is not None and session.runtime_instance_id != target:
-                # The target instance was superseded by a newer one. The
-                # command is a no-op result: the replacement is protected
-                # and must not be reported as stopped.
-                superseded = {
+            self.operations.complete(command_id, request, superseded)
+            return superseded
+        if session is None:
+            owned = [
+                item
+                for item in await asyncio.to_thread(
+                    self.docker.scan_active_containers
+                )
+                if item["profile_id"] == profile_id
+            ]
+            matching = [item for item in owned if item["instance_id"] == target]
+            if not matching:
+                absent = {
                     "profile_id": profile_id,
                     "runtime_instance_id": target,
-                    "status": "superseded_noop",
+                    "status": "already_absent",
                 }
-                self.operations.complete(command_id, request, superseded)
-                return superseded
-            if session is None:
-                owned = [
-                    item
-                    for item in await asyncio.to_thread(
-                        self.docker.scan_active_containers
-                    )
-                    if item["profile_id"] == profile_id
-                ]
-                matching = [item for item in owned if item["instance_id"] == target]
-                if not matching:
-                    absent = {
-                        "profile_id": profile_id,
-                        "runtime_instance_id": target,
-                        "status": "already_absent",
-                    }
-                    self.operations.complete(command_id, request, absent)
-                    return absent
-                if len(matching) != len(owned):
-                    raise DockerSandboxError(
-                        "Mixed runtime instances require reconciliation"
-                    )
-                config_version = int(matching[0]["config_version"])
-                session = ActiveSession(
-                    profile_id,
-                    target,
-                    config_version,
-                    0,
-                    "",
-                    "",
-                    observed_state="stopping",
+                self.operations.complete(command_id, request, absent)
+                return absent
+            if len(matching) != len(owned):
+                raise DockerSandboxError(
+                    "Mixed runtime instances require reconciliation"
                 )
-                self._sessions[profile_id] = session
-            curr_inst = session.runtime_instance_id if session else "unknown"
-            cfg_ver = session.config_version if session else 1
+            config_version = int(matching[0]["config_version"])
+            session = ActiveSession(
+                profile_id,
+                target,
+                config_version,
+                0,
+                "",
+                "",
+                observed_state="stopping",
+            )
+            self._sessions[profile_id] = session
+        curr_inst = session.runtime_instance_id if session else "unknown"
+        cfg_ver = session.config_version if session else 1
 
+        if report_to_api:
             await self._report_observed(
                 profile_id, curr_inst, "stopping", cfg_ver, reason="stop_requested"
             )
-            if session is not None:
-                session.observed_state = "stopping"
+        if session is not None:
+            session.observed_state = "stopping"
 
-            await self.disconnect_viewers(profile_id)
+        await self.disconnect_viewers(profile_id)
 
-            teardown_error: Exception | None = None
-            try:
-                await self.docker.teardown_profile(profile_id)
-            except Exception as exc:  # noqa: BLE001 - teardown failure recorded for controlled propagation
-                teardown_error = exc
-                logger.error(
-                    "Sandbox teardown failed: profile=%s error_type=%s",
-                    profile_id,
-                    type(exc).__name__,
-                )
-            if teardown_error is not None:
-                logger.warning(
-                    "Sandbox teardown failed; port retained pending cleanup: "
-                    "profile=%s",
-                    profile_id,
-                )
-                raise DockerSandboxError(
-                    "Sandbox teardown failed; residual containers require cleanup"
-                ) from teardown_error
-            if not await self._confirm_sandbox_gone(profile_id):
-                logger.warning(
-                    "Sandbox removal unverified; port retained pending cleanup: "
-                    "profile=%s",
-                    profile_id,
-                )
-                raise DockerSandboxError(
-                    "Sandbox removal unverified; residual containers require cleanup"
-                )
-            if self._sessions.get(profile_id) is session:
-                await self.ports.release(profile_id)
-                self._sessions.pop(profile_id, None)
-                self._terminal_observations.discard(
-                    (profile_id, curr_inst, cfg_ver)
-                )
-                self.forget_instance_events(profile_id, curr_inst)
+        teardown_error: Exception | None = None
+        try:
+            await self.docker.teardown_profile(profile_id)
+        except Exception as exc:  # noqa: BLE001 - teardown failure recorded for controlled propagation
+            teardown_error = exc
+            logger.error(
+                "Sandbox teardown failed: profile=%s error_type=%s",
+                profile_id,
+                type(exc).__name__,
+            )
+        if teardown_error is not None:
+            logger.warning(
+                "Sandbox teardown failed; port retained pending cleanup: "
+                "profile=%s",
+                profile_id,
+            )
+            raise DockerSandboxError(
+                "Sandbox teardown failed; residual containers require cleanup"
+            ) from teardown_error
+        if not await self._confirm_sandbox_gone(profile_id):
+            logger.warning(
+                "Sandbox removal unverified; port retained pending cleanup: "
+                "profile=%s",
+                profile_id,
+            )
+            raise DockerSandboxError(
+                "Sandbox removal unverified; residual containers require cleanup"
+            )
+        if self._sessions.get(profile_id) is session:
+            await self.ports.release(profile_id)
+            self._sessions.pop(profile_id, None)
+            self._terminal_observations.discard(
+                (profile_id, curr_inst, cfg_ver)
+            )
+            self._policy_paused.pop((profile_id, curr_inst), None)
+            self._policy_fail_closed.discard((profile_id, curr_inst))
+            self.forget_instance_events(profile_id, curr_inst)
 
+        if report_to_api:
             await self._report_observed(
                 profile_id, curr_inst, "stopped", cfg_ver, reason="stop_requested"
             )
-            self.operations.complete(command_id, request, result)
-            self._registration.pop(profile_id, None)
-            self._update_transport(
-                profile_id,
-                browser_state="stopped",
-                stream_state="stopped",
-                transport_state="unknown",
-            )
-            logger.info(
-                f"Profile {profile_id} cleanly stopped and resources reclaimed."
-            )
-            return result
+        self.operations.complete(command_id, request, result)
+        self._registration.pop(profile_id, None)
+        self._update_transport(
+            profile_id,
+            browser_state="stopped",
+            stream_state="stopped",
+            transport_state="unknown",
+        )
+        logger.info(
+            f"Profile {profile_id} cleanly stopped and resources reclaimed."
+        )
+        return result
 
     async def disconnect_viewers(self, profile_id: str) -> None:
         """Best-effort viewer closure; teardown never depends on signaling."""
@@ -3519,6 +3596,8 @@ class SupervisorCore:
                 session.observed_state = observed_state
                 if observed_state == "stopped" and reason == "normal_exit":
                     session.desired_state = "stopped"
+            if observed_state == "stopped":
+                self._scan_requested = True
             return True
         return False
 

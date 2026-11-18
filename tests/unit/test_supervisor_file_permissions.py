@@ -161,3 +161,216 @@ def test_cache_ownership_failure_is_fail_closed(
     monkeypatch.setattr(os, "chown", deny)
     with pytest.raises(Exception, match="cache ownership"):
         adapter._apply_cache_permissions()
+
+
+def _make_start_core(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, manage_ownership: bool):
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    import httpx
+    from cbrowser.domain.models import ProfileConfig
+    from cbrowser.supervisor.core import SupervisorCore
+    from cbrowser.supervisor.port_allocator import PortAllocator
+
+    root = tmp_path / "data"
+    validator = PathValidator(root)
+    (root / "profiles" / "p1" / "profile").mkdir(parents=True)
+    (root / "runtime" / "p1").mkdir(parents=True)
+    (root / "runtime-events" / "p1").mkdir(parents=True)
+    (root / "exchange" / "p1").mkdir(parents=True)
+    (root / "uploads" / "p1").mkdir(parents=True)
+    (root / "profiles" / "p1" / "preview").mkdir(parents=True)
+    (root / "runtime" / "p1" / "x11").mkdir(parents=True)
+    (root / "runtime" / "p1" / "pulse").mkdir(parents=True)
+
+    dirs = {
+        "profile": root / "profiles" / "p1" / "profile",
+        "runtime": root / "runtime" / "p1",
+        "events": root / "runtime-events" / "p1",
+        "exchange": root / "exchange" / "p1",
+        "uploads": root / "uploads" / "p1",
+        "x11": root / "runtime" / "p1" / "x11",
+        "pulse": root / "runtime" / "p1" / "pulse",
+        "preview": root / "profiles" / "p1" / "preview",
+    }
+
+    async def start_browser_container(**_kwargs):
+        return SimpleNamespace(id="browser-cid", name="cbrowser-0001-browser")
+
+    async def start_stream_container(**_kwargs):
+        s = SimpleNamespace(id="stream-cid", status="running")
+        s.reload = lambda: None
+        return s
+
+    docker = SimpleNamespace(
+        validator=validator,
+        manage_ownership=manage_ownership,
+        runtime_uid=1000,
+        runtime_gid=1000,
+        remember_profile_number=lambda *_a: None,
+        prepare_profile_directories=lambda _pid: dirs,
+        create_profile_network=AsyncMock(),
+        attach_profile_infrastructure=lambda *_a, **_kw: {"gateway_ip": "10.0.0.1", "gateway_url": "ws://gateway:18080"},
+        start_browser_container=start_browser_container,
+        start_stream_container=start_stream_container,
+        get_profile_containers=lambda _pid: {"browser": SimpleNamespace(name="cbrowser-0001-browser")},
+        get_stream_container_name=lambda _pid: "cbrowser-0001-stream",
+        rebuild_media_network=lambda _pid: None,
+        cleanup_container_by_name=lambda _name: None,
+    )
+
+    def api_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/runtime"):
+            return httpx.Response(
+                200,
+                json={"desired_state": "running", "restart_blocked": False},
+            )
+        return httpx.Response(200, json={})
+
+    api = httpx.AsyncClient(transport=httpx.MockTransport(api_handler), base_url="http://api")
+    gateway_control = SimpleNamespace(has_foreground_viewers=AsyncMock(return_value=False))
+    key_file = tmp_path / "agent_key"
+    key_file.write_text("agent-master-key-" + "x" * 32, encoding="utf-8")
+    key_file.chmod(0o600)
+
+    core = SupervisorCore(
+        docker,
+        PortAllocator(),
+        None,
+        api,
+        agent_key_file=key_file,
+        gateway_control=gateway_control,
+    )
+    core._resolve_gateway_id = lambda: "gw-1"  # type: ignore[method-assign]
+
+    @asynccontextmanager
+    async def _no_op_lock(_pid: str):
+        yield
+
+    core._profile_locks.lock_for = lambda _pid: _no_op_lock(_pid)  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        "cbrowser.supervisor.core.browser_runtime_ready",
+        lambda *_a, **_kw: True,
+    )
+    return core, api, validator, ProfileConfig()
+
+
+@pytest.mark.asyncio
+async def test_stream_secrets_are_chowned_on_start_and_replace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    chown_calls: list[tuple[Path, int, int]] = []
+    monkeypatch.setattr(
+        os,
+        "chown",
+        lambda path, uid, gid: chown_calls.append((Path(path), uid, gid)),
+    )
+    core, api, validator, cfg = _make_start_core(
+        tmp_path, monkeypatch, manage_ownership=True
+    )
+    try:
+        session = await core.start_profile("p1", cfg, 1, profile_number=1)
+        secret_dir = validator.get_secret_dir("p1")
+        agent_secret = secret_dir / "agent_secret.txt"
+        selkies_file = secret_dir / f"selkies_tokens_{session.runtime_instance_id}.json"
+
+        assert stat.S_IMODE(secret_dir.stat().st_mode) == 0o700
+        assert stat.S_IMODE(agent_secret.stat().st_mode) == 0o600
+        assert stat.S_IMODE(selkies_file.stat().st_mode) == 0o600
+        chowned = {(path, uid, gid) for path, uid, gid in chown_calls}
+        assert (secret_dir, 1000, 1000) in chowned
+        assert (agent_secret, 1000, 1000) in chowned
+        assert (selkies_file, 1000, 1000) in chowned
+
+        chown_calls.clear()
+        selkies_file.unlink()
+        replaced = await core._replace_stream_only("p1", session, rebuild_network=False)
+        assert replaced is True
+        chowned_replace = {(path, uid, gid) for path, uid, gid in chown_calls}
+        assert (secret_dir, 1000, 1000) in chowned_replace
+        assert (agent_secret, 1000, 1000) in chowned_replace
+        assert (selkies_file, 1000, 1000) in chowned_replace
+    finally:
+        await api.aclose()
+
+
+def test_probe_credentials_are_private_and_chowned_when_managed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cbrowser.domain.proxy_endpoint import parse_proxy_link
+    from tests.unit.test_t052_supervisor_probe import _adapter as probe_adapter
+
+    chown_calls: list[tuple[Path, int, int]] = []
+    monkeypatch.setattr(
+        os,
+        "chown",
+        lambda path, uid, gid: chown_calls.append((Path(path), uid, gid)),
+    )
+    adapter, _fake, _calls, _root = probe_adapter(tmp_path)
+    adapter.manage_ownership = True
+    outcome = adapter.run_egress_probe(
+        proxy_id="px-1",
+        endpoint=parse_proxy_link("http://user:pw@proxy.example.com:8080"),
+        credentials={"password": "pw", "credential_revision": 1},
+    )
+    assert outcome.egress_ip == "203.0.113.7"
+    assert any(
+        path.name == "proxy_credentials.json" and (uid, gid) == (1000, 1000)
+        for path, uid, gid in chown_calls
+    )
+
+
+def test_prepare_profile_directories_chowns_intermediate_profile_and_artifact_parents(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    adapter = _adapter(tmp_path, manage_ownership=True)
+    chown_calls: list[tuple[Path, int, int]] = []
+    monkeypatch.setattr(
+        os,
+        "chown",
+        lambda path, uid, gid: chown_calls.append((Path(path), uid, gid)),
+    )
+    dirs = adapter.prepare_profile_directories("p1")
+    chowned = {(path, uid, gid) for path, uid, gid in chown_calls}
+    # API runs as uid/gid 1000 and runs shutil.rmtree on profiles/<id> and
+    # artifacts/<id> during Profile deletion; both parents must be 1000:1000.
+    assert (dirs["profile"].parent, 1000, 1000) in chowned
+    assert (dirs["exchange"].parent, 1000, 1000) in chowned
+
+
+def test_archive_event_file_chowns_archive_directories_when_managed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+    from cbrowser.supervisor.core import SupervisorCore
+    from cbrowser.supervisor.port_allocator import PortAllocator
+
+    root = tmp_path / "data"
+    validator = PathValidator(root)
+    core = SupervisorCore(
+        SimpleNamespace(
+            validator=validator,
+            manage_ownership=True,
+            runtime_uid=1000,
+            runtime_gid=1000,
+        ),
+        PortAllocator(),
+        None,
+        None,
+    )
+    event_file = root / "runtime-events" / "p1" / "events" / "runtime" / "inst1" / "001.json"
+    event_file.parent.mkdir(parents=True)
+    event_file.write_text('{"event_type":"exit"}', encoding="utf-8")
+
+    chown_calls: list[tuple[Path, int, int]] = []
+    monkeypatch.setattr(
+        os,
+        "chown",
+        lambda path, uid, gid: chown_calls.append((Path(path), uid, gid)),
+    )
+    core._archive_event_file(event_file, "p1", "inst1")
+    archive_inst = root / "runtime-events" / "p1" / "archive" / "inst1"
+    chowned = {(path, uid, gid) for path, uid, gid in chown_calls}
+    assert (archive_inst.parent, 1000, 1000) in chowned
+    assert (archive_inst, 1000, 1000) in chowned

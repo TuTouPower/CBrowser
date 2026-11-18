@@ -59,9 +59,18 @@
     - **删除面**：一次性策略 CLI（`network_policy.main`）删除，
         `network_policy.py` 收敛为纯规则库（渲染、应用、替换、失败
         封闭校验）；临时 helper 的命名、超时与日志抓取路径整体退役。
-    - **未验证假设（spike 延期）**：仅 NET_ADMIN + policy 镜像 +
-        `network_mode=container` 的完整策略/DNS 能力、以及 pause 冻结
-        流量的网络负例与暂停所有权，云端无 Docker 不可证，按用户
-        2026-11-18 裁定设计按最小权限假设先行，正式 spike 与 AC-010
-        部署验收延期本地执行，分别由 pending p132 / p133 跟踪；spike
-        若否定假设，停止扩权并修订本 ADR，不静默绕过。
+    - **实证结论（d052，p132 本地 spike 已验证）**：上述最小权限与暂停安全
+        假设已在本地真实 Docker（OrbStack / `nf_tables` 后端）中获实证
+        确认（见 `docs/findings/d052_policy_agent_net_admin_and_pause_isolation.md`）：
+        Agent 容器在 `cap_drop=ALL`、`cap_add=NET_ADMIN`、`read_only=True`、
+        `no-new-privileges=true`、`network_mode=container:<target>` 且仅挂载
+        自身 `/run/cbrowser_policy_agent` slot（`/tmp` tmpfs）下，实测
+        `CapEff=0000000000001000`、`NoNewPrivs=1`、PID 隔离且可完成双栈
+        `iptables`/`ip6tables` 安装与比对、`fail_close` 规则在 Agent 移除
+        后仍持续生效、UDS `resolve` 与目标内 `getaddrinfo` 双栈一致、
+        身份与旧修订拒绝成立。`docker pause` 实测立即冻结目标出站 TCP
+        并在 `unpause` 后毫秒级恢复；`ipc_mode=shareable` 下的 Stream 替换
+        保留 Browser 容器与 `/dev/shm` IPC；Supervisor 重启仅对
+        `desired=running` 的暂停实例按策略复验后原实例恢复，`desired=stopped`
+        的暂停实例直接拆除清理，无需扩权。AC-010 全链路部署验收由
+        pending p133 验证。

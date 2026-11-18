@@ -95,6 +95,7 @@ from cbrowser.supervisor.path_validator import (
     prepare_socket_dir,
     validate_socket_deployment,
 )
+from cbrowser.shared.storage_layout import RUNTIME_GATES_PREFIX
 from cbrowser.supervisor.storage_layout import MountPlanner
 from cbrowser.supervisor.volume_spec import (
     SINGLETON_LOCK_NAMES,
@@ -1038,16 +1039,27 @@ class DockerAdapter:
             self._remove_policy_agents_for_profile(f"probe-{probe_id}")
             self._cleanup_probe_resources(helper, network, probe_dir)
 
-    @staticmethod
+    def _assign_runtime_ownership(self, path: Path, label: str) -> None:
+        if not self.manage_ownership:
+            return
+        try:
+            os.chown(path, self.runtime_uid, self.runtime_gid)
+        except OSError as exc:
+            raise DockerSandboxError(
+                f"Cannot assign {label} ownership: {type(exc).__name__}"
+            ) from None
+
     def _write_probe_credentials(
+        self,
         probe_dir: Path,
         runtime_endpoint: ProxyEndpoint,
         credentials: dict[str, Any],
     ) -> Path:
         """Write the (mapped) endpoint + credentials for the helper.
 
-        The file is 0600 and lives under the probe dir, which is removed
-        together with the helper and network when the probe finishes."""
+        The file is 0600 (chowned to runtime_uid when managed) and lives
+        under the probe dir, which is removed together with the helper
+        and network when the probe finishes."""
         creds_file = probe_dir / PROXY_CREDENTIALS_FILENAME
         atomic_write_text(
             creds_file,
@@ -1065,6 +1077,7 @@ class DockerAdapter:
             ),
             mode=0o600,
         )
+        self._assign_runtime_ownership(creds_file, "probe credentials")
         return creds_file
 
     def _create_probe_network(self, net_name: str, probe_id: str):
@@ -1766,6 +1779,8 @@ with path.open('w') as output:
         preview_dir = self.validator.get_preview_dir(profile_id)
 
         for d in (
+            profile_dir.parent,
+            exchange_dir.parent,
             profile_dir,
             runtime_dir,
             events_dir,
@@ -1836,13 +1851,7 @@ with path.open('w') as output:
         but never fall back to globally writable modes.
         """
         directory.mkdir(parents=True, exist_ok=True)
-        if self.manage_ownership:
-            try:
-                os.chown(directory, self.runtime_uid, self.runtime_gid)
-            except OSError as exc:
-                raise DockerSandboxError(
-                    f"Cannot assign Profile directory ownership: {type(exc).__name__}"
-                ) from None
+        self._assign_runtime_ownership(directory, "Profile directory")
         os.chmod(directory, mode)
 
     def setup_x11_permissions(self, x11_dir: Path) -> None:
@@ -2998,6 +3007,59 @@ with path.open('w') as output:
         self.cleanup_network_by_name(net_name)
         self.cleanup_network_by_name(self.get_browser_network_name(profile_id))
 
+    def _validated_policy_gate_dir(
+        self, container: Any, profile: str, instance: str, role: str
+    ) -> Path | None:
+        runtime_volume = self.mount_planner.volume("runtime")
+        active_mounts = [
+            mount
+            for mount in (container.attrs.get("Mounts") or [])
+            if mount.get("Destination") == "/run/cbrowser_policy"
+        ]
+        if len(active_mounts) != 1:
+            return None
+        active = active_mounts[0]
+        if (
+            active.get("Type") != "volume"
+            or active.get("Name") != runtime_volume
+            or active.get("RW") is not False
+        ):
+            return None
+
+        host_mounts = [
+            mount
+            for mount in (
+                container.attrs.get("HostConfig", {}).get("Mounts") or []
+            )
+            if mount.get("Target") == "/run/cbrowser_policy"
+        ]
+        if len(host_mounts) != 1:
+            return None
+        spec = host_mounts[0]
+        if (
+            spec.get("Type") != "volume"
+            or spec.get("Source") != runtime_volume
+            or spec.get("ReadOnly") is not True
+        ):
+            return None
+        subpath = (spec.get("VolumeOptions") or {}).get("Subpath")
+        if not isinstance(subpath, str) or "\\" in subpath:
+            return None
+        parts = subpath.split("/")
+        if len(parts) != 4 or parts[:3] != [RUNTIME_GATES_PREFIX, profile, instance]:
+            return None
+        gate_name = parts[3]
+        if gate_name in {".", ".."} or not gate_name.startswith(role + "_"):
+            return None
+
+        expected = (
+            self.validator.data_root / "control" / "gates" / profile / instance
+        )
+        gate = self.validator.validate_safe_path(expected / gate_name)
+        if gate.parent != expected or gate.name != gate_name:
+            return None
+        return gate
+
     def _runtime_policy_ready(self, container: Any) -> bool:
         labels = container.labels or {}
         if labels.get("com.cbrowser.network-policy") != "v1":
@@ -3008,29 +3070,22 @@ with path.open('w') as output:
         if not profile or not instance or not role:
             return False
         try:
-            expected = (
-                self.validator.data_root / "control" / "gates" / profile / instance
+            gate = self._validated_policy_gate_dir(
+                container, profile, instance, role
             )
-            for mount in container.attrs.get("Mounts", []):
-                if mount.get("Destination") != "/run/cbrowser_policy":
-                    continue
-                if mount.get("RW") is not False:
-                    return False
-                gate = self.validator.validate_safe_path(Path(mount["Source"]))
-                if gate.parent != expected or not gate.name.startswith(role + "_"):
-                    return False
-                marker = gate / "ready.json"
-                if marker.is_symlink():
-                    return False
-                value = json.loads(marker.read_text(encoding="utf-8"))
-                return value == {
-                    "instance_id": instance,
-                    "role": role,
-                    "status": "ready",
-                }
-        except (OSError, ValueError, TypeError, KeyError):
+            if gate is None:
+                return False
+            marker = gate / "ready.json"
+            if marker.is_symlink():
+                return False
+            value = json.loads(marker.read_text(encoding="utf-8"))
+            return value == {
+                "instance_id": instance,
+                "role": role,
+                "status": "ready",
+            }
+        except (OSError, ValueError, TypeError, KeyError, PathSecurityError):
             return False
-        return False
 
     def scan_gateway_containers(self) -> list[Any]:
         """Running containers carrying this deployment's Gateway identity.

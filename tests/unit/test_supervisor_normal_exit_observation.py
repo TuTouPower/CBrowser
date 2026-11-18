@@ -993,3 +993,264 @@ async def test_agent_health_missing_state_does_not_manufacture_stopped() -> None
         api_client.post.assert_not_called()
     finally:
         shutil.rmtree(data_root)
+
+
+@pytest.mark.asyncio
+async def test_normal_exit_session_allows_immediate_start_without_409_conflict(
+    tmp_path: Path,
+) -> None:
+    """When a cleanly stopped normal-exit session still sits in _sessions awaiting
+    scan cleanup, starting a new running intent tears down the old stopped sandbox
+    instead of failing with LifecycleConflictError (409).
+    """
+    data_root = tmp_path / "data"
+    validator = PathValidator(data_root)
+    for sub in (
+        "profiles/p1/profile",
+        "profiles/p1/preview",
+        "runtime/p1/x11",
+        "runtime/p1/pulse",
+        "runtime-events/p1",
+        "artifacts/p1/downloads",
+        "artifacts/p1/uploads",
+    ):
+        (data_root / sub).mkdir(parents=True, exist_ok=True)
+    dirs = {
+        "profile": data_root / "profiles/p1/profile",
+        "preview": data_root / "profiles/p1/preview",
+        "runtime": data_root / "runtime/p1",
+        "events": data_root / "runtime-events/p1",
+        "exchange": data_root / "artifacts/p1/downloads",
+        "uploads": data_root / "artifacts/p1/uploads",
+        "x11": data_root / "runtime/p1/x11",
+        "pulse": data_root / "runtime/p1/pulse",
+    }
+    torn_down: list[str] = []
+    active_containers = True
+
+    async def _teardown(pid: str) -> None:
+        nonlocal active_containers
+        torn_down.append(pid)
+        active_containers = False
+
+    async def _start_browser(**_kw):
+        return MagicMock(id="b-new", name="cbrowser-0001-browser")
+
+    async def _start_stream(**_kw):
+        s = MagicMock(id="s-new", status="running")
+        s.reload = lambda: None
+        return s
+
+    docker = MagicMock()
+    docker.validator = validator
+    docker.manage_ownership = False
+    docker.prepare_profile_directories = lambda _pid: dirs
+    docker.teardown_profile = AsyncMock(side_effect=_teardown)
+    docker.scan_active_containers = lambda: (
+        [{"profile_id": "p1", "role": "browser", "instance_id": "inst_old"}]
+        if active_containers
+        else []
+    )
+    docker.create_profile_network = AsyncMock()
+    docker.attach_profile_infrastructure = lambda *_a, **_kw: {
+        "gateway_ip": "10.0.0.1",
+        "gateway_url": "ws://gateway:18080",
+    }
+    docker.start_browser_container = AsyncMock(side_effect=_start_browser)
+    docker.start_stream_container = AsyncMock(side_effect=_start_stream)
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/runtime"):
+            return httpx.Response(
+                200,
+                json={
+                    "desired_state": "running",
+                    "observed_state": "stopped",
+                    "runtime_instance_id": None,
+                    "restart_blocked": False,
+                },
+            )
+        return httpx.Response(200, json={})
+
+    api = httpx.AsyncClient(transport=httpx.MockTransport(_handler), base_url="http://api")
+    key_file = tmp_path / "agent_key"
+    key_file.write_text("agent-master-key-" + "x" * 32, encoding="utf-8")
+    key_file.chmod(0o600)
+    gw = MagicMock()
+    gw.disconnect_viewers = AsyncMock()
+    gw.has_foreground_viewers = AsyncMock(return_value=False)
+
+    ports = PortAllocator()
+    old_port = await ports.allocate("p1")
+    core = SupervisorCore(
+        docker_adapter=docker,
+        port_allocator=ports,
+        event_forwarder=MagicMock(spec=EventForwarder),
+        api_client=api,
+        agent_key_file=key_file,
+        gateway_control=gw,
+    )
+    core._resolve_gateway_id = lambda: "gw-1"  # type: ignore[method-assign]
+    core._sessions["p1"] = ActiveSession(
+        profile_id="p1",
+        runtime_instance_id="inst_old",
+        config_version=1,
+        udp_mux_port=old_port,
+        browser_container_id="b-old",
+        stream_container_id="s-old",
+        desired_state="stopped",
+        observed_state="stopped",
+    )
+    from cbrowser.domain.models import ProfileConfig
+    import cbrowser.supervisor.core as sup_core
+
+    orig_ready = sup_core.browser_runtime_ready
+    sup_core.browser_runtime_ready = lambda *_a, **_kw: True
+    try:
+        new_session = await core.start_profile("p1", ProfileConfig(name="p1"), 1, profile_number=1)
+        assert torn_down == ["p1"]
+        assert new_session.runtime_instance_id != "inst_old"
+        assert new_session.observed_state == "running"
+    finally:
+        sup_core.browser_runtime_ready = orig_ready
+        await api.aclose()
+
+
+@pytest.mark.asyncio
+async def test_scan_cleans_up_normal_exit_residual_when_desired_running_and_api_unbound(
+    tmp_path: Path,
+) -> None:
+    """When API already moved to desired=running, api_inst=None, a residual stopped
+    normal-exit container must be cleaned up by scan instead of logging fence mismatch forever."""
+    data_root = tmp_path / "data"
+    validator = PathValidator(data_root)
+    active = True
+
+    async def _teardown(_pid: str) -> None:
+        nonlocal active
+        active = False
+
+    docker = MagicMock()
+    docker.validator = validator
+    docker.teardown_profile = AsyncMock(side_effect=_teardown)
+    docker.scan_active_containers = lambda: (
+        [
+            {
+                "profile_id": "p1",
+                "role": "browser",
+                "instance_id": "inst_old",
+                "status": "running",
+                "id": "b-old",
+                "config_version": 1,
+                "policy_ready": True,
+            },
+            {
+                "profile_id": "p1",
+                "role": "stream",
+                "instance_id": "inst_old",
+                "status": "running",
+                "id": "s-old",
+                "config_version": 1,
+                "policy_ready": True,
+            },
+        ]
+        if active
+        else []
+    )
+
+    api = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda _r: httpx.Response(
+                200,
+                json={
+                    "desired_state": "running",
+                    "observed_state": "stopped",
+                    "runtime_instance_id": None,
+                    "config_version": 1,
+                },
+            )
+        ),
+        base_url="http://api",
+    )
+    gw = MagicMock()
+    gw.disconnect_viewers = AsyncMock()
+    ports = PortAllocator()
+    port = await ports.allocate("p1")
+    core = SupervisorCore(
+        docker_adapter=docker,
+        port_allocator=ports,
+        event_forwarder=MagicMock(spec=EventForwarder),
+        api_client=api,
+        gateway_control=gw,
+    )
+    core._sessions["p1"] = ActiveSession(
+        profile_id="p1",
+        runtime_instance_id="inst_old",
+        config_version=1,
+        udp_mux_port=port,
+        browser_container_id="b-old",
+        stream_container_id="s-old",
+        desired_state="stopped",
+        observed_state="stopped",
+    )
+    try:
+        await core.scan_and_reconcile_existing()
+        assert docker.teardown_profile.called
+        assert core.get_session("p1") is None
+        assert "p1" not in ports._allocated
+    finally:
+        await api.aclose()
+
+
+@pytest.mark.asyncio
+async def test_classify_abnormal_exits_skips_uds_poll_once_terminal_acknowledged(
+    tmp_path: Path,
+) -> None:
+    """Once terminal observation is acknowledged, recovery must not re-poll Agent UDS every second."""
+    from cbrowser.supervisor.recovery_coordinator import RecoveryCoordinator
+
+    core = SupervisorCore(
+        docker_adapter=MagicMock(validator=PathValidator(tmp_path / "data")),
+        port_allocator=PortAllocator(),
+        event_forwarder=MagicMock(spec=EventForwarder),
+        api_client=AsyncMock(spec=httpx.AsyncClient),
+    )
+    core._terminal_observations.add(("p1", "inst_1", 1))
+    reconcile_mock = AsyncMock(return_value=None)
+    core._reconcile_instance_observation = reconcile_mock  # type: ignore[method-assign]
+
+    recovery = RecoveryCoordinator(core)
+    docker_by_profile = {
+        "p1": {
+            "browser": {
+                "profile_id": "p1",
+                "role": "browser",
+                "instance_id": "inst_1",
+                "status": "running",
+                "id": "b1",
+                "config_version": 1,
+            }
+        }
+    }
+    await recovery._classify_abnormal_exits(docker_by_profile)
+    reconcile_mock.assert_not_called()
+    assert "inst_1" in recovery._reported_dead_instances
+
+
+@pytest.mark.asyncio
+async def test_report_terminal_stopped_requests_scan_wakeup(tmp_path: Path) -> None:
+    api_client = AsyncMock(spec=httpx.AsyncClient)
+    api_client.post = AsyncMock(return_value=MagicMock(status_code=200))
+    core = SupervisorCore(
+        docker_adapter=MagicMock(validator=PathValidator(tmp_path / "data")),
+        port_allocator=PortAllocator(),
+        event_forwarder=MagicMock(spec=EventForwarder),
+        api_client=api_client,
+    )
+    assert core.pop_scan_requested() is False
+    ok = await core.report_terminal_observation(
+        "p1", "inst_1", 1, observed_state="stopped", reason="normal_exit"
+    )
+    assert ok is True
+    assert core.pop_scan_requested() is True
+    assert core.pop_scan_requested() is False

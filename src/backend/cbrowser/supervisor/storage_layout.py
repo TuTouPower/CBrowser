@@ -15,15 +15,13 @@ from typing import Iterable
 
 from docker.types import Mount
 
+from cbrowser.shared.storage_layout import (
+    RUNTIME_GATES_PREFIX,
+    RUNTIME_POLICY_AGENTS_PREFIX,
+    RUNTIME_SOCKETS_PREFIX,
+    VOLUME_KINDS,
+)
 from cbrowser.supervisor.path_validator import PathSecurityError
-
-VOLUME_KINDS = ("db", "data", "fonts", "runtime")
-
-# Subpath prefixes inside the runtime volume (ADR 029 frozen layout).
-RUNTIME_GATES_PREFIX = "gates"
-RUNTIME_SOCKETS_PREFIX = "sockets"
-# t082 / ADR 039: Policy Agent control slots (Supervisor + owning Agent only).
-RUNTIME_POLICY_AGENTS_PREFIX = "policy-agents"
 
 
 def volume_name(resource_prefix: str, kind: str) -> str:

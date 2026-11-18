@@ -102,3 +102,153 @@ def test_init_storage_volumes_stamps_identity_and_covers_fonts() -> None:
     text = _deploy_text()
     assert '--fonts-root /fonts-vol --prefix "$PREFIX"' in text
     assert '-v "$(fonts_volume_name):/fonts-vol"' in text
+
+
+def _compose_volume_subpaths(compose_text: str) -> dict[str, set[str]]:
+    import re
+
+    subpaths: dict[str, set[str]] = {}
+    current_source: str | None = None
+    in_volume_block = False
+    for raw in compose_text.splitlines():
+        line = raw.strip()
+        if line.startswith("- type:"):
+            current_source = None
+            in_volume_block = False
+            continue
+        if m := re.match(r"^source:\s*(\S+)\s*$", line):
+            current_source = m.group(1)
+            in_volume_block = False
+            continue
+        if line == "volume:":
+            in_volume_block = True
+            continue
+        if in_volume_block and current_source:
+            if m := re.match(r"^subpath:\s*(\S+)\s*$", line):
+                subpaths.setdefault(current_source, set()).add(m.group(1))
+                in_volume_block = False
+    return subpaths
+
+
+def test_init_layout_creates_compose_subpaths_and_storage_prefixes(
+    tmp_path: Path,
+) -> None:
+    import importlib.util
+    import json
+    from cbrowser.supervisor.storage_layout import (
+        RUNTIME_GATES_PREFIX,
+        RUNTIME_POLICY_AGENTS_PREFIX,
+        RUNTIME_SOCKETS_PREFIX,
+    )
+
+    spec = importlib.util.spec_from_file_location(
+        "deploy_volume_ops", ROOT / "scripts" / "deploy_volume_ops.py"
+    )
+    assert spec is not None and spec.loader is not None
+    volume_ops = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(volume_ops)
+
+    data_root = tmp_path / "data"
+    runtime_root = tmp_path / "runtime"
+    fonts_root = tmp_path / "fonts"
+    rc = volume_ops.main(
+        [
+            "init-layout",
+            "--data-root",
+            str(data_root),
+            "--runtime-root",
+            str(runtime_root),
+            "--fonts-root",
+            str(fonts_root),
+            "--prefix",
+            "cbrowser",
+        ]
+    )
+    assert rc == 0
+
+    subpaths = _compose_volume_subpaths(_compose_text())
+    assert "policy-agents" in subpaths.get("runtime", set())
+    for sub in subpaths.get("runtime", set()):
+        assert (runtime_root / sub).is_dir(), f"missing runtime subpath: {sub}"
+    for sub in subpaths.get("data", set()):
+        assert (data_root / sub).is_dir(), f"missing data subpath: {sub}"
+
+    for prefix in (
+        RUNTIME_GATES_PREFIX,
+        RUNTIME_SOCKETS_PREFIX,
+        RUNTIME_POLICY_AGENTS_PREFIX,
+        ".secrets",
+    ):
+        assert (runtime_root / prefix).is_dir(), f"missing runtime prefix: {prefix}"
+
+    assert (data_root / "control" / "gates").is_dir()
+    assert (data_root / "control" / "policy-agents").is_dir()
+
+    for root_dir, kind in (
+        (data_root, "data"),
+        (runtime_root, "runtime"),
+        (fonts_root, "fonts"),
+    ):
+        marker = json.loads((root_dir / ".cbrowser-volume.json").read_text(encoding="utf-8"))
+        assert marker == {"volume": f"cbrowser-{kind}", "prefix": "cbrowser"}
+
+
+def test_init_layout_assigns_runtime_ownership_when_root_and_creates_font_platforms(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import importlib.util
+    import os
+
+    spec = importlib.util.spec_from_file_location(
+        "deploy_volume_ops", ROOT / "scripts" / "deploy_volume_ops.py"
+    )
+    assert spec is not None and spec.loader is not None
+    volume_ops = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(volume_ops)
+
+    chown_calls: list[tuple[Path, int, int]] = []
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    monkeypatch.setattr(
+        os,
+        "chown",
+        lambda path, uid, gid: chown_calls.append((Path(path), uid, gid)),
+    )
+
+    data_root = tmp_path / "data"
+    runtime_root = tmp_path / "runtime"
+    fonts_root = tmp_path / "fonts"
+    rc = volume_ops.main(
+        [
+            "init-layout",
+            "--data-root",
+            str(data_root),
+            "--runtime-root",
+            str(runtime_root),
+            "--fonts-root",
+            str(fonts_root),
+            "--prefix",
+            "cbrowser",
+        ]
+    )
+    assert rc == 0
+    assert (fonts_root / "macos").is_dir()
+    assert (fonts_root / "windows").is_dir()
+
+    chowned = {(path, uid, gid) for path, uid, gid in chown_calls}
+    for expected in (
+        data_root,
+        runtime_root,
+        fonts_root,
+        fonts_root / "macos",
+        fonts_root / "windows",
+        data_root / "profiles",
+        data_root / "network",
+        runtime_root / "policy-agents",
+        fonts_root / ".cbrowser-volume.json",
+    ):
+        assert (expected, 1000, 1000) in chowned, f"missing chown for {expected}"
+
+    init_section = _deploy_text().split("init_storage_volumes()")[1].split(
+        "check_legacy_host_storage()"
+    )[0]
+    assert "--user=0:0" in init_section

@@ -177,7 +177,7 @@ copy_into_data_volume() {
   # Copy one host file into the data volume via a throwaway container;
   # the host never writes into a volume directly.
   local api_image="$1" host_file="$2" volume_dir="$3"
-  docker run --rm \
+  docker run --rm --user=0:0 \
     -v "$(data_volume_name):/data" \
     -v "$(dirname "$host_file"):/src:ro" \
     -v "$ROOT/scripts:/scripts:ro" \
@@ -521,7 +521,7 @@ init_storage_volumes() {
   # the runtime volume there, and the API mounts the runtime volume at
   # /data/runtime, so neither service reads the shadow copies.
   local api_image="$1"
-  docker run --rm \
+  docker run --rm --user=0:0 \
     -v "$(data_volume_name):/data" \
     -v "$(runtime_volume_name):/runtime" \
     -v "$(fonts_volume_name):/fonts-vol" \

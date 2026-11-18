@@ -435,3 +435,144 @@ def test_probe_helper_uses_browser_policy_and_returns_full_observation(
     assert policy_doc.allowed_udp == [("127.0.0.11", 53)]
     assert all(c.removed for c in fake.containers.created)
     assert all(n.removed for n in fake.networks.created)
+
+
+# --- _runtime_policy_ready with named-volume subpath mounts ---
+
+
+def _gate_container(
+    *,
+    profile: str = "p1",
+    instance: str = "inst1",
+    role: str = "browser",
+    subpath: str = "gates/p1/inst1/browser_abc123",
+    volume_name: str = RUNTIME_VOL,
+    mount_type: str = "volume",
+    rw: bool = False,
+    read_only: bool = True,
+    include_host_mount: bool = True,
+    include_active_mount: bool = True,
+):
+    from types import SimpleNamespace
+
+    active_mounts = (
+        [
+            {
+                "Type": mount_type,
+                "Name": volume_name,
+                "Source": f"/var/lib/docker/volumes/{volume_name}/_data",
+                "Destination": "/run/cbrowser_policy",
+                "RW": rw,
+            }
+        ]
+        if include_active_mount
+        else []
+    )
+    host_mounts = (
+        [
+            {
+                "Type": mount_type,
+                "Source": volume_name,
+                "Target": "/run/cbrowser_policy",
+                "ReadOnly": read_only,
+                "VolumeOptions": {"Subpath": subpath} if subpath is not None else {},
+            }
+        ]
+        if include_host_mount
+        else []
+    )
+    return SimpleNamespace(
+        labels={
+            "com.cbrowser.network-policy": "v1",
+            "com.cbrowser.profile-id": profile,
+            "com.cbrowser.role": role,
+        },
+        attrs={
+            "Config": {
+                "Env": [f"CBROWSER_RUNTIME_INSTANCE_ID={instance}"],
+                "Entrypoint": [
+                    "python3",
+                    "/run/cbrowser_policy/startup_gate.py",
+                    "--instance-id",
+                    instance,
+                    "--role",
+                    role,
+                ],
+            },
+            "Mounts": active_mounts,
+            "HostConfig": {"Mounts": host_mounts},
+        },
+    )
+
+
+def test_runtime_policy_ready_accepts_named_volume_subpath_gate(
+    tmp_path: Path,
+) -> None:
+    adapter = _adapter(tmp_path)
+    gate_dir = (
+        adapter.validator.data_root
+        / "control"
+        / "gates"
+        / "p1"
+        / "inst1"
+        / "browser_abc123"
+    )
+    gate_dir.mkdir(parents=True)
+    (gate_dir / "ready.json").write_text(
+        json.dumps({"instance_id": "inst1", "role": "browser", "status": "ready"}),
+        encoding="utf-8",
+    )
+    container = _gate_container()
+    assert adapter._runtime_policy_ready(container) is True
+
+
+def test_runtime_policy_ready_rejects_invalid_volume_mounts_without_crashing(
+    tmp_path: Path,
+) -> None:
+    adapter = _adapter(tmp_path)
+    gate_dir = (
+        adapter.validator.data_root
+        / "control"
+        / "gates"
+        / "p1"
+        / "inst1"
+        / "browser_abc123"
+    )
+    gate_dir.mkdir(parents=True)
+    ready_file = gate_dir / "ready.json"
+    ready_file.write_text(
+        json.dumps({"instance_id": "inst1", "role": "browser", "status": "ready"}),
+        encoding="utf-8",
+    )
+
+    # Missing HostConfig.Mounts subpath (old host-volume Source would trigger PathSecurityError)
+    assert adapter._runtime_policy_ready(_gate_container(include_host_mount=False)) is False
+    # Bind mount rejected
+    assert adapter._runtime_policy_ready(_gate_container(mount_type="bind")) is False
+    # Wrong volume rejected
+    assert adapter._runtime_policy_ready(_gate_container(volume_name="wrong-vol")) is False
+    # Writable mount rejected
+    assert adapter._runtime_policy_ready(_gate_container(rw=True)) is False
+    assert adapter._runtime_policy_ready(_gate_container(read_only=False)) is False
+    # Subpath traversal / wrong role rejected
+    assert (
+        adapter._runtime_policy_ready(
+            _gate_container(subpath="gates/p1/inst1/../inst2/browser_abc123")
+        )
+        is False
+    )
+    assert (
+        adapter._runtime_policy_ready(
+            _gate_container(subpath="gates/p1/inst1/stream_abc123")
+        )
+        is False
+    )
+    # Missing active mount entry rejected
+    assert adapter._runtime_policy_ready(_gate_container(include_active_mount=False)) is False
+
+    # Symlink ready.json rejected
+    outside = tmp_path / "outside.json"
+    outside.write_text(ready_file.read_text(encoding="utf-8"), encoding="utf-8")
+    ready_file.unlink()
+    ready_file.symlink_to(outside)
+    assert adapter._runtime_policy_ready(_gate_container()) is False

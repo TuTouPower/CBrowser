@@ -21,18 +21,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src" / "backend"))
 
-DATA_LAYOUT = (
-    "profiles",
-    "runtime",
-    "runtime-events",
-    "artifacts",
-    "spool",
-    "control",
-    "control/gates",
-    "engine-cache/geoip",
-    "network",
+from cbrowser.shared.storage_layout import (  # noqa: E402
+    DATA_VOLUME_LAYOUT as DATA_LAYOUT,
+    FONTS_VOLUME_LAYOUT as FONTS_LAYOUT,
+    RUNTIME_GID,
+    RUNTIME_UID,
+    RUNTIME_VOLUME_LAYOUT as RUNTIME_LAYOUT,
 )
-RUNTIME_LAYOUT = ("gates", "sockets", ".secrets")
 
 
 def _fsync_dir(path: Path) -> None:
@@ -41,6 +36,22 @@ def _fsync_dir(path: Path) -> None:
         os.fsync(fd)
     finally:
         os.close(fd)
+
+
+def _chown_runtime(path: Path) -> None:
+    if os.geteuid() == 0:
+        os.chown(path, RUNTIME_UID, RUNTIME_GID)
+
+
+def _ensure_layout_tree(root: Path, subpaths: tuple[str, ...]) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    _chown_runtime(root)
+    for rel in subpaths:
+        cur = root
+        for part in Path(rel).parts:
+            cur = cur / part
+            cur.mkdir(exist_ok=True)
+            _chown_runtime(cur)
 
 
 def _stamp_volume_identity(root: Path, prefix: str, kind: str) -> None:
@@ -54,21 +65,21 @@ def _stamp_volume_identity(root: Path, prefix: str, kind: str) -> None:
         handle.write(payload + "\n")
         handle.flush()
         os.fsync(handle.fileno())
+    _chown_runtime(marker)
 
 
 def _init_layout(args: argparse.Namespace) -> int:
     data_root = Path(args.data_root)
     runtime_root = Path(args.runtime_root)
-    for rel in DATA_LAYOUT:
-        (data_root / rel).mkdir(parents=True, exist_ok=True)
-    for rel in RUNTIME_LAYOUT:
-        (runtime_root / rel).mkdir(parents=True, exist_ok=True)
+    _ensure_layout_tree(data_root, DATA_LAYOUT)
+    _ensure_layout_tree(runtime_root, RUNTIME_LAYOUT)
+    fonts_root = Path(args.fonts_root) if args.fonts_root else None
+    if fonts_root is not None:
+        _ensure_layout_tree(fonts_root, FONTS_LAYOUT)
     if args.prefix:
         _stamp_volume_identity(data_root, args.prefix, "data")
         _stamp_volume_identity(runtime_root, args.prefix, "runtime")
-        if args.fonts_root:
-            fonts_root = Path(args.fonts_root)
-            fonts_root.mkdir(parents=True, exist_ok=True)
+        if fonts_root is not None:
             _stamp_volume_identity(fonts_root, args.prefix, "fonts")
     return 0
 
@@ -77,11 +88,13 @@ def _copy_into(args: argparse.Namespace) -> int:
     source = Path(args.source)
     dest_dir = Path(args.dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
+    _chown_runtime(dest_dir)
     destination = dest_dir / source.name
     with source.open("rb") as src, destination.open("wb") as dst:
         shutil.copyfileobj(src, dst, length=1024 * 1024)
         dst.flush()
         os.fsync(dst.fileno())
+    _chown_runtime(destination)
     _fsync_dir(dest_dir)
     return 0
 

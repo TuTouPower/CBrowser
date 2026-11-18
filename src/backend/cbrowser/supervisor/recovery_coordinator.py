@@ -171,14 +171,22 @@ class RecoveryCoordinator:
             if browser_terminated(b_status, b_inst, self._reported_dead_instances):
                 await self._report_browser_exit(pid, b_c, b_inst)
             elif b_status == "running" and b_inst not in self._reported_dead_instances:
-                obs = await self.core._reconcile_instance_observation(
-                    pid,
-                    b_inst,
-                    int(b_c.get("config_version", 1)),
-                    container_status=b_status,
-                )
-                if obs in ("stopped", "error"):
+                cfg_ver = int(b_c.get("config_version", 1))
+                if self.core.terminal_observation_acknowledged(pid, b_inst, cfg_ver):
                     self._reported_dead_instances.add(b_inst)
+                else:
+                    obs = await self.core._reconcile_instance_observation(
+                        pid,
+                        b_inst,
+                        cfg_ver,
+                        container_status=b_status,
+                    )
+                    if obs in ("stopped", "error") or (
+                        self.core.terminal_observation_acknowledged(
+                            pid, b_inst, cfg_ver
+                        )
+                    ):
+                        self._reported_dead_instances.add(b_inst)
 
     async def _report_browser_exit(
         self, profile_id: str, browser: dict[str, Any], instance_id: str

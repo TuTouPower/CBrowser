@@ -520,6 +520,8 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
                     for repair_profile in repair_profiles:
                         await core.note_policy_agent_event(repair_profile)
                 now = time.monotonic()
+                if core.pop_scan_requested():
+                    scan_wakeup.set()
                 if scan_wakeup.is_set() or now - last_scan >= 30.0:
                     scan_wakeup.clear()
                     last_scan = now
@@ -528,6 +530,8 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
                     metrics.record("scan", time.monotonic() - started)
                 started = time.monotonic()
                 await recovery.tick(containers=container_snapshot)
+                if core.pop_scan_requested():
+                    scan_wakeup.set()
                 metrics.record("recovery", time.monotonic() - started)
                 if metrics.should_report():
                     logger.info("Supervisor stage metrics: %s", metrics.snapshot())
