@@ -163,78 +163,6 @@ async def test_start_stream_container_enforces_0600_permissions(tmp_path: Path) 
 
 
 @pytest.mark.asyncio
-async def test_start_stream_container_mounts_tokens_file_readonly(
-    tmp_path: Path,
-) -> None:
-    root = tmp_path / "data"
-    engine = root / "engine_cache"
-    engine.mkdir(parents=True)
-    (engine / "geoip").mkdir(parents=True)
-    validator = PathValidator(root)
-    mock_client = MagicMock()
-
-    mock_client.api.inspect_container.return_value = {
-        "Config": {
-            "Hostname": "b-host",
-            "Labels": {"com.cbrowser.config-version": "1"},
-        }
-    }
-    import docker.errors
-
-    mock_client.containers.get.side_effect = docker.errors.NotFound("Not found")
-    mock_container = MagicMock()
-    mock_container.name = "t007-stream-tokens-stream-test"
-    mock_client.containers.run.return_value = mock_container
-
-    adapter = DockerAdapter(
-        path_validator=validator,
-        engine_cache_dir=engine,
-        docker_client=mock_client,
-        browser_image=BROWSER,
-        stream_image=STREAM,
-        policy_image=BROWSER,
-    )
-
-    adapter.remember_profile_number("p1", 1)
-
-    dirs = adapter.prepare_profile_directories("p1")
-    (dirs["x11"] / "X99").touch()
-    (dirs["runtime"] / "Xauthority").touch()
-    secret_dir = adapter.validator.get_secret_dir("p1")
-    secret_dir.mkdir(parents=True, exist_ok=True)
-    agent_secret = secret_dir / "agent_secret.txt"
-    agent_secret.write_text("agent_secret_test", encoding="utf-8")
-    agent_secret.chmod(0o600)
-
-    tokens = SelkiesTokens.generate()
-    tokens_path = secret_dir / "selkies_tokens.json"
-    tokens.write_credentials_file(tokens_path)
-
-    # Patch network policy and policy gate helpers
-    adapter._install_network_policy = MagicMock()
-    adapter._resolved_endpoint = MagicMock(return_value=[("127.0.0.1", 18097)])
-
-    await adapter.start_stream_container(
-        profile_id="p1",
-        runtime_instance_id="r1",
-        browser_container_name="cbrowser-p1-browser",
-        udp_mux_port=30006,
-        agent_secret_path=agent_secret,
-        selkies_tokens_path=tokens_path,
-    )
-
-    call_kwargs = mock_client.containers.run.call_args.kwargs
-    volumes = call_kwargs["volumes"]
-    env = call_kwargs["environment"]
-
-    assert str(tokens_path) in volumes
-    assert volumes[str(tokens_path)] == {
-        "bind": "/tmp/selkies_credentials.json",
-        "mode": "ro",
-    }
-    assert env["CBROWSER_SELKIES_CREDENTIALS_FILE"] == "/tmp/selkies_credentials.json"
-
-
 @pytest.mark.asyncio
 async def test_supervisor_core_start_profile_provisions_selkies_tokens(
     tmp_path: Path,
@@ -354,3 +282,11 @@ async def test_supervisor_core_start_profile_provisions_selkies_tokens(
         # Verify session and attributes do not leak master_token
         session_dict = vars(session)
         assert data["master_token"] not in str(session_dict)
+
+
+# NOTE (t080): test_start_stream_container_mounts_tokens_file_readonly was removed wholesale because they asserted the
+# pre-t080 host bind-mount `volumes` dict representation; ADR 029
+# replaces it with typed named-volume subpath `mounts`.  The same
+# scenarios are covered under the new representation by
+# tests/unit/test_t080_adapter_mounts.py.
+

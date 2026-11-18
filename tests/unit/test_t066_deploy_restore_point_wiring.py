@@ -22,13 +22,11 @@ def test_env_subcommands_are_dispatched():
     assert "env-restore) cmd_env_restore" in text
 
 
-def test_env_backup_runs_restore_point_create_with_volume_and_data_root():
-    text = _text()
-    backup_section = text.split("cmd_env_backup()")[1].split("cmd_env_restore()")[0]
-    assert "restore_point.py create" in backup_section
-    assert '-v "$(db_volume_name):/db"' in backup_section
-    assert '-v "$DATA_ROOT:/data"' in backup_section
-    assert "--secrets-dir /secrets" in backup_section
+# NOTE (t080): test_env_backup_runs_restore_point_create_with_volume_and_data_root
+# removed wholesale because it asserted the pre-t080 wiring that mounted
+# the host data root (`-v "$DATA_ROOT:/data"`); ADR 029 replaces it with
+# the named data volume.  The new wiring is covered by
+# tests/unit/test_t080_deploy_wiring.py.
 
 
 def test_env_restore_stops_stack_and_runs_restore_point_restore():

@@ -1,7 +1,7 @@
 ---
 slug: storage_and_artifacts
 status: active
-tasks: [baseline, t078]
+tasks: [baseline, t078, t080]
 ---
 # 需求规范：数据持久化、迁移与文件交换 (storage_and_artifacts)
 
@@ -55,6 +55,12 @@ tasks: [baseline, t078]
 - Artifact 删除为可恢复两阶段：先持久化 `delete_requested_at` 意图（迁移 0008），再删文件、删行；失败保留意图与文件，服务启动时续跑未完成意图；意图未完成期间重复调用幂等，完成后再次调用返回 404；记录路径逃逸时拒绝并保留意图，不递归删除异常目录。
 - 下载报告实例信任：报告的 `runtime_instance_id` 必须是该 Profile 当前绑定或 `runtime_events` 历史中出现过的实例，未知/伪造实例在触碰文件前被拒绝（`rejected`）。
 
+### 2.6 Linux 原生卷存储（t080 / ADR 029）
+
+- 正式运行数据全部位于按部署前缀命名的 named volume：`<prefix>-db`（控制面 DB）、`<prefix>-data`（Profile 用户目录、Artifact、预览、事件/快照、引擎缓存）、`<prefix>-fonts`（字体集）、`<prefix>-runtime`（运行期文件、策略 gate、Agent socket、Profile 凭据）。宿主机目录不再承载热数据，只作迁移源与显式导入/导出源。
+- 容器挂载一律是 volume + 精确 subpath 的 typed mount：Browser 只得自身 Profile 子树，Stream 不得任何 Profile/Artifact/字体，字体对 Browser 只读且只给绑定集合；挂载来源缺失/越界/符号链接逃逸在创建前拒绝，不创建空宿主源替代。
+- 宿主旧布局经 `scripts/storage_migration.py` 一次性迁入：只读盘点/dry-run、实际写者与容量/归属校验、环境恢复点可恢复验证、staging 拷贝与逐文件 SHA-256 校验、journal 分阶段切换、幂等恢复与回退；源目录只读保留、不自动删除。迁移后 UUID、seed、配置版本、字体 set_id、Profile 文件摘要与 Artifact 引用保持一致。
+- 克隆、重置、删除、上传/下载、预览与恢复点在新存储中保持 2.3/2.5 与 t066 的既有语义；重置不删 Artifact，克隆不复制活动锁/socket。
 ## 删除数据清理语义（t078）
 
 - Profile 删除按固定顺序清理：Artifact 服务移除该 Profile 的全部文件与元数据 → 删除 Profile 数据目录与运行时目录 → 清理预览图 → 最后删除数据库行（级联配置版本、运行态与运行事件）。任一步失败即删除整体失败：不静默吞错、不删数据库行，已完成步骤记入删除意图的 `detail.steps`，重试时对已清理步骤幂等跳过。

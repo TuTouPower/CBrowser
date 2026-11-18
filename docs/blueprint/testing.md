@@ -512,3 +512,9 @@ bash scripts/run_automation_probe.sh
     - **unit**（`tests/unit/test_egress_plan_and_runner_sdk.py`、`test_t035_proxy_runtime.py`、`test_network_policy.py`、`test_t052_supervisor_probe.py`）：统一规划 `ProfileEgressPlan` 在运行/Supervisor/探针三端一致性、`--disable-quic` 与 `--force-webrtc-ip-handling-policy=disable_non_proxied_udp` 参数注入、`proxy=` URL 规范化编码、失败封闭凭据校验、`proxy_enforced=True` 双栈 `OUTPUT -j DROP` 规则渲染与 `SupervisorCore` 策略漂移 `fail_close_container` 触发。
     - **真实 Docker E2E**：`tests/e2e/test_browser_runtime_e2e.py::test_p102_authenticated_proxy_sdk_hardening_e2e`（真 HTTP Basic + 特殊字符密码及真 RFC 1929 SOCKS5 代理 + `BrowserRunner` CLI 旗标验证）、`tests/e2e/test_supervisor_namespace_policy_e2e.py::test_kernel_proxy_enforced_blocks_public_egress_and_non_proxy_udp`（真内核双栈 `proxy_enforced=True` 阻断 `1.1.1.1:80`、IPv6 越权与 STUN/DNS UDP 旁路 + `probe_egress_plan` 对齐）。
 - 平台豁免声明：本轮真实引擎与内核实证仅覆盖 `linux-arm64`（`chromium-146.0.7680.177.3`）；`linux-x64`（`chromium-146.0.7680.177.5`）沿用既定环境豁免正式记为 `NOT_RUN / USER_WAIVED`。
+
+## Linux 原生卷挂载隔离与迁移故障矩阵（t080）
+
+- 挂载构造以单元矩阵验证（`tests/unit/test_t080_storage_layout.py`）：MountPlanner 对 data/runtime/fonts 三类根的解析、卷根与受管根外来源的构造期拒绝、Browser 精确 subpath 集合、Stream 零 Profile/Artifact/字体、cache-init 可写集合；SDK 序列化证据见 spike s025 / finding d050。真实 Engine 上的隔离正负对照（subpath 缺失行为、只读生效、跨 Profile 不可见、UDS 穿卷、Supervisor 重启后存活实例通信）属 [deploy] 层，不以单元证据替代，顺延登记见 p127。
+- 迁移故障矩阵以纯逻辑单元验证（`tests/unit/test_t080_storage_migration.py`）：dry-run 清单分类（含 runtime/gates 重映射与 Singleton 跳过）、符号链接失败封闭、实际写者拒绝、检测不可用时须显式确认停栈、恢复点摘要被篡改时切换前失败、复制故障注入后按 journal 续跑、目标同路径异内容拒绝覆盖、同内容文件 adopt 不删除、回退只删本轮 placed 文件。
+- 恢复点验收沿 t066 契约：迁移的 backup_verified 阶段复用恢复点 manifest 的逐文件摘要全量复核，先证实可恢复才允许切换。

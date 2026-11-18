@@ -1,7 +1,7 @@
 ---
 slug: fingerprint_platform
 status: active
-tasks: [baseline]
+tasks: [baseline, t080]
 ---
 # 需求规范：指纹平台与平台字体集 (fingerprint_platform)
 

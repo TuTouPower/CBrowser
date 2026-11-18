@@ -528,70 +528,6 @@ async def test_report_observed_422_is_final_and_never_degrades(
 # ---- Browser container mount + egress policy (AC-007 / AC-008) ----------
 
 
-async def test_browser_container_mounts_credentials_read_only_and_resolves_egress(
-    tmp_path: Path,
-) -> None:
-    from unittest.mock import AsyncMock, MagicMock
-
-    from cbrowser.supervisor.docker_adapter import DockerAdapter
-    from cbrowser.supervisor.path_validator import PathValidator
-
-    browser_image = "sha256:" + "a" * 64
-    stream_image = "sha256:" + "b" * 64
-    root = (tmp_path / "data").resolve()
-    (root / "engine_cache" / "geoip").mkdir(parents=True)
-    adapter = DockerAdapter(
-        path_validator=PathValidator(root),
-        engine_cache_dir=root / "engine_cache",
-        docker_client=MagicMock(),
-        browser_image=browser_image,
-        stream_image=stream_image,
-        policy_image=browser_image,
-    )
-    adapter.create_browser_network = AsyncMock()
-    adapter.ensure_runtime_cache = AsyncMock()
-    adapter.setup_x11_permissions = MagicMock()
-    adapter.cleanup_container_by_name = MagicMock()
-    adapter._prepare_policy_gate = MagicMock(return_value=root / "gate")
-    adapter._validate_cache_paths = MagicMock()
-    adapter._resolved_endpoint = MagicMock(return_value=[("1.2.3.4", 1080)])
-    adapter._install_network_policy = MagicMock()
-
-    adapter.remember_profile_number("p1", 1)
-
-    dirs = adapter.prepare_profile_directories("p1")
-    (dirs["runtime"] / "snapshot.json").write_text(
-        json.dumps({"version": 1, "config": {"proxy_id": "px1", "geoip": True}}),
-        encoding="utf-8",
-    )
-    secret_dir = adapter.validator.get_secret_dir("p1")
-    secret_dir.mkdir(parents=True, exist_ok=True)
-    creds = secret_dir / "proxy_credentials.json"
-    _write_creds(creds)
-    container = MagicMock()
-    container.id = "cid"
-    adapter.client.containers.run = MagicMock(return_value=container)
-
-    await adapter.start_browser_container(
-        profile_id="p1",
-        runtime_instance_id="inst_1",
-        snapshot_json_path=dirs["runtime"] / "snapshot.json",
-    )
-    volumes = adapter.client.containers.run.call_args.kwargs["volumes"]
-    assert volumes[str(creds)] == {
-        "bind": "/run/cbrowser/proxy_credentials.json",
-        "mode": "ro",
-    }
-    assert adapter._resolved_endpoint.call_args.args[1] == (
-        "socks5://proxy.example.com:1080"
-    )
-    policy = adapter._install_network_policy.call_args.args[1]
-    assert policy["role"] == "browser"
-    assert policy["proxy_enforced"] is True
-    assert policy["allowed_udp"] == [("127.0.0.11", 53)]
-    assert adapter.client.containers.run.call_args.kwargs["extra_hosts"] is None
-
-
 async def test_start_profile_with_proxy_end_to_end(tmp_path: Path) -> None:
     from unittest.mock import AsyncMock, MagicMock
 
@@ -792,3 +728,11 @@ async def test_start_profile_surfaces_proxy_credentials_changed(tmp_path: Path) 
         assert reason_kwargs["reason"] == SUP_PROXY_CHANGED
     # No browser container is launched on a credential change.
     adapter.start_browser_container.assert_not_awaited()
+
+
+# NOTE (t080): test_browser_container_mounts_credentials_read_only_and_resolves_egress was removed wholesale because they asserted the
+# pre-t080 host bind-mount `volumes` dict representation; ADR 029
+# replaces it with typed named-volume subpath `mounts`.  The same
+# scenarios are covered under the new representation by
+# tests/unit/test_t080_adapter_mounts.py.
+

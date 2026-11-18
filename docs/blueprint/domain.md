@@ -97,6 +97,10 @@
 - **seed 单一空间**：指纹 seed 只有一个声明空间 100000..999999（`domain/models.py` 的 `FINGERPRINT_SEED_MIN/MAX`）；普通创建、普通 reset 与按 operation_id 的幂等 reset 全部由此空间取值，幂等路径用 `derive_fingerprint_seed(operation_id)` 确定性推导，同一操作 ID 重放同 seed；已保存的 seed 不被追溯改写。
 - **clone 与密钥根**：引擎（Chromium 146）在 Local State 中不设按 Profile 锚定的 OSCrypt 密钥根（t066 spike 实测），include-state clone 逐字复制即保持 Cookie 可用，不删 Local State；两态 clone（仅配置 / 带状态）失败或取消不残留目录与 DB 行，源目录不受影响。
 
+## 存储逻辑引用（t080）
+
+领域层只持逻辑引用：Profile 以 UUID 定位其用户数据目录，Artifact 以 artifact id 定位交换文件，字体以 `font_set_id` 定位字体集，部署归属以 instance_id 定位卷集。物理位置（named volume + subpath）只在 Supervisor 的 MountPlanner 与部署/迁移工具中解析（ADR 029）；DB 中保存的 `user_data_dir` 等路径是 API 容器内逻辑路径（`/data/…`），不构成宿主路径契约，宿主目录布局变化不改变任何领域引用与身份。
+
 ## 语言、时区与高级选项默认值（t053）
 
 - **语言是封闭枚举**：`ProfileConfig.locale` / `ProfileCreateRequest.locale` / `ProfileUpdateRequest.locale` / `ProfileResponse.locale` 的类型为 `ProfileLocale = Literal["zh-CN", "en-US"]`，OpenAPI 呈现为封闭 enum，非法值在 DTO 边界即 422 拒绝（字段级错误）。数据库层迁移 `0007_profile_locale_enum_defaults.py`（revision `1a8db6b91744`）追加 `CHECK (locale IS NULL OR locale IN ('zh-CN', 'en-US'))`；存量行的 `locale` 一律不改写（历史遗留 null 照常读取，仍可通过 PATCH 改为枚举值）。

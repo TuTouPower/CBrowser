@@ -92,84 +92,6 @@ def _running_handler(_req: httpx.Request) -> httpx.Response:
     )
 
 
-async def _start_browser(tmp_path: Path, config: dict) -> dict:
-    from cbrowser.supervisor.docker_adapter import DockerAdapter
-    from cbrowser.supervisor.path_validator import PathValidator
-
-    browser_image = "sha256:" + "a" * 64
-    stream_image = "sha256:" + "b" * 64
-    root = (tmp_path / "data").resolve()
-    (root / "engine_cache" / "geoip").mkdir(parents=True)
-    adapter = DockerAdapter(
-        path_validator=PathValidator(root),
-        engine_cache_dir=root / "engine_cache",
-        docker_client=MagicMock(),
-        browser_image=browser_image,
-        stream_image=stream_image,
-        policy_image=browser_image,
-    )
-    adapter.create_browser_network = AsyncMock()
-    adapter.ensure_runtime_cache = AsyncMock()
-    adapter.setup_x11_permissions = MagicMock()
-    adapter.cleanup_container_by_name = MagicMock()
-    adapter._prepare_policy_gate = MagicMock(return_value=root / "gate")
-    adapter._validate_cache_paths = MagicMock()
-    adapter._install_network_policy = MagicMock()
-
-    adapter.remember_profile_number("p1", 1)
-
-    dirs = adapter.prepare_profile_directories("p1")
-    (dirs["runtime"] / "snapshot.json").write_text(
-        json.dumps({"version": 1, "config": config}), encoding="utf-8"
-    )
-    container = MagicMock()
-    container.id = "cid"
-    adapter.client.containers.run = MagicMock(return_value=container)
-
-    await adapter.start_browser_container(
-        profile_id="p1",
-        runtime_instance_id="inst_1",
-        snapshot_json_path=dirs["runtime"] / "snapshot.json",
-    )
-    return adapter.client.containers.run.call_args.kwargs["volumes"]
-
-
-async def test_browser_container_mounts_font_set_read_only(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fonts_root, set_id = _make_font_set(tmp_path)
-    monkeypatch.setenv("CBROWSER_FONTS_DIR", str(fonts_root))
-    volumes = await _start_browser(
-        tmp_path,
-        {
-            "geoip": True,
-            "fingerprint_platform": "windows",
-            "font_set_id": set_id,
-        },
-    )
-    host_dir = fonts_root / "windows" / set_id
-    assert volumes[str(host_dir)] == {
-        "bind": f"/run/cbrowser/fonts/windows/{set_id}",
-        "mode": "ro",
-    }
-    assert str(fonts_root) not in volumes
-
-
-async def test_browser_container_no_font_mount_when_unset(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("CBROWSER_FONTS_DIR", str(tmp_path / "fonts"))
-    volumes = await _start_browser(
-        tmp_path, {"geoip": True, "fingerprint_platform": "windows", "font_set_id": None}
-    )
-    font_binds = [
-        v["bind"]
-        for v in volumes.values()
-        if str(v["bind"]).startswith("/run/cbrowser/fonts/")
-    ]
-    assert font_binds == []
-
-
 def _light_core(tmp_path: Path, api: httpx.AsyncClient):
     from cbrowser.supervisor.core import SupervisorCore
     from cbrowser.supervisor.path_validator import PathValidator
@@ -510,3 +432,10 @@ async def test_runtime_response_marks_linux_base_fonts_when_unset(
     assert any(
         "linux base fonts" in item.lower() for item in event_data.missing_fonts
     ), event_data.missing_fonts
+
+
+# NOTE (t080): _start_browser and the two font-mount tests were removed
+# wholesale because they asserted the pre-t080 host bind-mount
+# `volumes` dict representation; ADR 029 replaces it with typed
+# named-volume subpath `mounts`.  The same scenarios are covered
+# under the new representation by tests/unit/test_t080_adapter_mounts.py.

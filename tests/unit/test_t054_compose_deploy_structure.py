@@ -85,16 +85,12 @@ def test_deploy_derives_default_port_from_single_constant() -> None:
     assert "DEFAULT_HTTPS_PORT" in text
 
 
-def test_deploy_renders_caddyfile_and_hashes_the_product() -> None:
-    text = _deploy_text()
-    assert "-m cbrowser.network_config_cli" in text
-    assert "render --network-dir" in text
-    assert "init --network-dir" not in text
-    assert "read --network-dir" not in text
-    # The fingerprint is the hash of the rendered Caddyfile file, never
-    # of the generator source.
-    assert 'sha256_of_file "$DATA_ROOT/network/Caddyfile"' in text
-    assert 'sha256_of_file "$ROOT/src/backend/cbrowser/network_config.py"' not in text
+# NOTE (t080): test_deploy_renders_caddyfile_and_hashes_the_product
+# removed wholesale because it asserted the fingerprint was taken from
+# the host data root's rendered Caddyfile file; ADR 029 moves the
+# rendered Caddyfile into the data volume and the fingerprint is now
+# the render output's CADDYFILE_SHA256.  Its still-valid assertions are
+# carried verbatim into tests/unit/test_t080_deploy_wiring.py.
 
 
 def test_deploy_derives_edge_subnet_and_trusted_cidrs() -> None:

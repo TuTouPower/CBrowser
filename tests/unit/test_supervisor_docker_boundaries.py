@@ -150,7 +150,7 @@ def test_x11_helper_is_least_privilege_and_cleaned_up(tmp_path) -> None:
 
     client = SimpleNamespace(containers=SimpleNamespace(run=run))
     adapter = _adapter(tmp_path, client)
-    adapter.setup_x11_permissions(tmp_path / "x11")
+    adapter.setup_x11_permissions(tmp_path / "data" / "runtime" / "p1" / "x11")
     assert calls["cap_drop"] == ["ALL"]
     assert calls["cap_add"] == ["FOWNER"]
     assert calls["read_only"] is True
@@ -168,7 +168,7 @@ def test_x11_helper_nonzero_exit_is_an_explicit_failure(tmp_path) -> None:
     )
     adapter = _adapter(tmp_path, client)
     with pytest.raises(DockerSandboxError):
-        adapter.setup_x11_permissions(tmp_path / "x11")
+        adapter.setup_x11_permissions(tmp_path / "data" / "runtime" / "p1" / "x11")
     assert helper.removed is True
 
 
@@ -181,7 +181,7 @@ def test_x11_helper_launch_failure_is_an_explicit_error(tmp_path) -> None:
     client = SimpleNamespace(containers=SimpleNamespace(run=run))
     adapter = _adapter(tmp_path, client)
     with pytest.raises(DockerSandboxError):
-        adapter.setup_x11_permissions(tmp_path / "x11")
+        adapter.setup_x11_permissions(tmp_path / "data" / "runtime" / "p1" / "x11")
 
 
 def test_x11_helper_wait_failure_still_cleans_up(tmp_path) -> None:
@@ -198,7 +198,7 @@ def test_x11_helper_wait_failure_still_cleans_up(tmp_path) -> None:
     )
     adapter = _adapter(tmp_path, client)
     with pytest.raises(DockerSandboxError):
-        adapter.setup_x11_permissions(tmp_path / "x11")
+        adapter.setup_x11_permissions(tmp_path / "data" / "runtime" / "p1" / "x11")
     assert helper.removed is True
 
 
@@ -219,7 +219,7 @@ def test_x11_helper_remove_failure_never_masks_the_outcome(tmp_path) -> None:
 
     client = SimpleNamespace(containers=SimpleNamespace(run=run))
     adapter = _adapter(tmp_path, client)
-    adapter.setup_x11_permissions(tmp_path / "x11")  # must not raise
+    adapter.setup_x11_permissions(tmp_path / "data" / "runtime" / "p1" / "x11")  # must not raise
     # f006: the helper carries the deterministic managed name the startup
     # orphan reaper recognizes.
     assert calls["name"].startswith(f"{adapter.resource_prefix}-x11-")

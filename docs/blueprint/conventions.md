@@ -33,6 +33,7 @@
 - `docs/spikes/` 中状态为 `completed` / `superseded` 的 spike 只作历史证据，不在仓库内运行；先完整复制到 `.scratch/<probe_name>/`，按报告的依赖与清理契约执行。旧 harness 可能关闭 X11/PulseAudio/Selkies 鉴权，只允许在隔离探针网络与临时容器中运行；探针秘密及 `probe_work/` 工作目录不得入库。
 - **产品无代际标识（t051）**：默认数据根、现行文档、源码与脚本不得出现产品代际自指，模式清单见 `tests/unit/test_t051_generation_hygiene.py` 的 `PATTERNS`；例外仅 `scripts/deploy.sh` 的旧库探测（AC-004，须写出真实旧路径）与对应断言。协议版本（Stream/Agent `version="v2"`）、库版本（Pydantic v2、SQLAlchemy 2.x）、API `version="2.0.0"` 与 SemVer 发布头不在此限。
 - **部署身份与前缀（t051）**：部署输入的资源 prefix 须匹配 `^[a-z0-9][a-z0-9_]*$`（不含连字符），由 deploy.sh 与 Supervisor 启动在任何 Docker 操作前校验；默认部署前缀为 `cbrowser-t005`（编译内既定标识，不在校验之列，DockerAdapter 构造不校验）；首次部署身份为确定性 `instance_id`，同一 prefix 与同一实际数据目录的后续部署复用当前 release 身份，归属判定只凭 `com.cbrowser.instance-id` 标签值 == 本实例 instance_id（该键即部署身份键；运行时实例 id 写入容器运行时配置，不走标签）。
+- **正式运行与宿主边界（t080）**：正式运行数据只存于按前缀命名的 Linux named volume（ADR 029）；宿主目录只作显式导入/导出源与一次性迁移源（`scripts/storage_migration.py`），禁止新增以宿主 bind mount 承载 Profile 热数据、Artifact、字体或运行期文件的实现；凭据/配置类小型只读挂载（`/run/secrets/*`）不在此限。消费方挂载一律经 MountPlanner 解析为 typed volume subpath mount，宿主路径不得进入容器创建请求。
 
 ## 4. 编码与安全规范
 

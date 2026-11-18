@@ -1,9 +1,18 @@
-"""Stateless Docker volume mount specifications for supervisor containers."""
+"""Typed Docker volume mount specifications for supervisor containers.
+
+t080 / ADR 029: every mount is a named-volume subpath mount built by
+:class:`~cbrowser.supervisor.storage_layout.MountPlanner`.  No host bind
+mounts remain for runtime data; a source outside the managed storage
+roots fails closed at construction time.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+
+from docker.types import Mount
+
+from cbrowser.supervisor.storage_layout import MountPlanner
 
 SINGLETON_LOCK_NAMES = ("SingletonLock", "SingletonCookie", "SingletonSocket")
 
@@ -12,77 +21,62 @@ PREVIEW_CONTAINER_DIR = "/data/preview"
 
 def browser_volumes(
     *,
+    planner: MountPlanner,
     profile_id: str,
     dirs: dict[str, Path],
     gate: Path,
     engine_cache: Path,
     geoip_cache: Path,
     credentials_path: Path | None = None,
-) -> dict[str, dict[str, Any]]:
+) -> list[Mount]:
     upload_dir = dirs.get("uploads") or dirs["exchange"].parent / "uploads"
     preview_dir = dirs.get("preview") or dirs["profile"].parent / "preview"
-    volumes: dict[str, dict[str, Any]] = {
-        str(gate): {"bind": "/run/cbrowser_policy", "mode": "ro"},
-        str(dirs["profile"]): {
-            "bind": f"/data/profiles/{profile_id}/profile",
-            "mode": "rw",
-        },
-        str(dirs["events"]): {
-            "bind": f"/data/runtime-events/{profile_id}",
-            "mode": "rw",
-        },
-        str(dirs["exchange"]): {"bind": "/exchange/downloads", "mode": "rw"},
-        str(upload_dir): {"bind": "/exchange/uploads", "mode": "rw"},
-        str(dirs["runtime"]): {"bind": "/run/cbrowser/runtime", "mode": "rw"},
-        str(dirs["x11"]): {"bind": "/tmp/.X11-unix", "mode": "rw"},
-        str(dirs["pulse"]): {"bind": "/pulse", "mode": "rw"},
-        str(preview_dir): {"bind": PREVIEW_CONTAINER_DIR, "mode": "rw"},
-        str(engine_cache): {"bind": "/data/engine-cache", "mode": "ro"},
-        str(geoip_cache): {
-            "bind": "/data/engine-cache/geoip",
-            "mode": "ro",
-        },
-    }
+    items: list[tuple[Path, str, str]] = [
+        (gate, "/run/cbrowser_policy", "ro"),
+        (dirs["profile"], f"/data/profiles/{profile_id}/profile", "rw"),
+        (dirs["events"], f"/data/runtime-events/{profile_id}", "rw"),
+        (dirs["exchange"], "/exchange/downloads", "rw"),
+        (upload_dir, "/exchange/uploads", "rw"),
+        (dirs["runtime"], "/run/cbrowser/runtime", "rw"),
+        (dirs["x11"], "/tmp/.X11-unix", "rw"),
+        (dirs["pulse"], "/pulse", "rw"),
+        (preview_dir, PREVIEW_CONTAINER_DIR, "rw"),
+        (engine_cache, "/data/engine-cache", "ro"),
+        (geoip_cache, "/data/engine-cache/geoip", "ro"),
+    ]
     if credentials_path is not None:
-        volumes[str(credentials_path)] = {
-            "bind": "/run/cbrowser/proxy_credentials.json",
-            "mode": "ro",
-        }
-    return volumes
+        items.append(
+            (credentials_path, "/run/cbrowser/proxy_credentials.json", "ro")
+        )
+    return planner.mounts_for(items)
 
 
 def stream_volumes(
     *,
+    planner: MountPlanner,
     gate: Path,
     x11_socket: Path,
     xauth_file: Path,
     pulse_dir: Path,
     secret_file: Path,
     selkies_file: Path,
-) -> dict[str, dict[str, str]]:
-    return {
-        str(gate): {"bind": "/run/cbrowser_policy", "mode": "ro"},
-        str(x11_socket): {"bind": "/tmp/.X11-unix/X99", "mode": "ro"},
-        str(xauth_file): {"bind": "/tmp/.Xauthority", "mode": "ro"},
-        str(pulse_dir): {"bind": "/pulse", "mode": "ro"},
-        str(secret_file): {"bind": "/tmp/secret.txt", "mode": "ro"},
-        str(selkies_file): {
-            "bind": "/tmp/selkies_credentials.json",
-            "mode": "ro",
-        },
-    }
+) -> list[Mount]:
+    items: list[tuple[Path, str, str]] = [
+        (gate, "/run/cbrowser_policy", "ro"),
+        (x11_socket, "/tmp/.X11-unix/X99", "ro"),
+        (xauth_file, "/tmp/.Xauthority", "ro"),
+        (pulse_dir, "/pulse", "ro"),
+        (secret_file, "/tmp/secret.txt", "ro"),
+        (selkies_file, "/tmp/selkies_credentials.json", "ro"),
+    ]
+    return planner.mounts_for(items)
 
 
 def cache_init_volumes(
-    *, engine_cache: Path, geoip_cache: Path
-) -> dict[str, dict[str, str]]:
-    return {
-        str(engine_cache): {
-            "bind": "/data/engine-cache",
-            "mode": "rw",
-        },
-        str(geoip_cache): {
-            "bind": "/data/engine-cache/geoip",
-            "mode": "rw",
-        },
-    }
+    *, planner: MountPlanner, engine_cache: Path, geoip_cache: Path
+) -> list[Mount]:
+    items: list[tuple[Path, str, str]] = [
+        (engine_cache, "/data/engine-cache", "rw"),
+        (geoip_cache, "/data/engine-cache/geoip", "rw"),
+    ]
+    return planner.mounts_for(items)

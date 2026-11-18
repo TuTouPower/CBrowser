@@ -1031,6 +1031,16 @@ class ProfileService:
                 pass
             except OSError as exc:
                 return f"directory_cleanup_failed: {sub}: {exc}"
+        # t080: the per-Profile secret directory lives under
+        # runtime/.secrets (runtime volume); it is private credential
+        # material and is removed with the Profile.
+        secrets = self._data_root / "runtime" / ".secrets" / profile_id
+        try:
+            await asyncio.to_thread(shutil.rmtree, secrets)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            return f"directory_cleanup_failed: runtime/.secrets: {exc}"
         return None
 
     async def delete_profile(self, profile_id: str) -> bool:
