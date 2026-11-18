@@ -612,6 +612,60 @@ async def test_adoption_rejects_platform_and_manifest_defects(
 
 
 @pytest.mark.asyncio
+async def test_concurrent_audit_verdicts_serialize_without_lock_error(
+    db_context, tmp_path: Path
+) -> None:
+    """t084 (p138): concurrent apply_audit_verdict calls serialize
+    under BEGIN IMMEDIATE instead of colliding with
+    SQLITE_BUSY_SNAPSHOT ("database is locked").
+
+    Two races: concurrent adoption of one absent set, and concurrent
+    verdicts on one existing row under the same fence.  In both cases
+    exactly one call wins and the rest lose the fence — none may raise
+    OperationalError."""
+    repo = FontSetRepository(db_context[1])
+    set_id = "a" * 64
+    integrity = {"ok": True, "problems": [], "file_count": 4}
+
+    adopted = await asyncio.gather(
+        *(
+            repo.apply_audit_verdict(
+                "windows",
+                set_id,
+                expected_seq=None,
+                ok=True,
+                integrity=integrity,
+                file_count=4,
+                total_bytes=100,
+            )
+            for _ in range(8)
+        )
+    )
+    assert adopted.count(True) == 1
+    record = await repo.get("windows", set_id)
+    assert record is not None and record.verified
+
+    verdicts = await asyncio.gather(
+        *(
+            repo.apply_audit_verdict(
+                "windows",
+                set_id,
+                expected_seq=record.state_seq,
+                ok=False,
+                integrity={"ok": False, "problems": ["x"], "file_count": 4},
+                file_count=4,
+                total_bytes=100,
+            )
+            for _ in range(8)
+        )
+    )
+    assert verdicts.count(True) == 1
+    record = await repo.get("windows", set_id)
+    assert record is not None and not record.verified
+    assert record.state_seq == 2
+
+
+@pytest.mark.asyncio
 async def test_two_profiles_share_one_set_without_reverification(
     db_context, tmp_path: Path, monkeypatch
 ) -> None:

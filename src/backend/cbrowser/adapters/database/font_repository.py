@@ -20,6 +20,7 @@ import json
 from dataclasses import dataclass
 
 from cbrowser.adapters.database.models import FontSetAssetModel
+from cbrowser.adapters.database.session import write_transaction
 from cbrowser.domain.models import utc_now_iso
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -116,7 +117,11 @@ class FontSetRepository:
         Returns False when the verdict was stale and dropped.
         """
         now = utc_now_iso()
-        async with self._session_maker() as session:
+        # t084 (p138): the whole read-then-write runs inside
+        # write_transaction so the read snapshot is taken under
+        # BEGIN IMMEDIATE; concurrent verdicts serialize instead of
+        # colliding with SQLITE_BUSY_SNAPSHOT on commit.
+        async with self._session_maker() as session, write_transaction(session):
             row = await session.get(FontSetAssetModel, (platform, set_id))
             if row is None:
                 if expected_seq is not None:
@@ -139,7 +144,7 @@ class FontSetRepository:
                 )
                 session.add(row)
                 try:
-                    await session.commit()
+                    await session.flush()
                 except IntegrityError:
                     await session.rollback()
                     return False
@@ -156,5 +161,4 @@ class FontSetRepository:
             row.revision += 1
             row.state_seq += 1
             row.updated_at = now
-            await session.commit()
             return True

@@ -1,0 +1,15 @@
+{
+  "tid": "t084",
+  "attempt": 1,
+  "execution_id": "34a125ba7d33491e8d866b2e1fd1dbb3",
+  "status": "done",
+  "branch": "t084_font_repository_write_transaction",
+  "base_sha": "1939aaac9dc74747d303cfd396eea4403791d8e7",
+  "spec_source_sha": "1939aaac9dc74747d303cfd396eea4403791d8e7",
+  "tests": "新并发回归测试 5/5 通过；`test_t081_font_catalog.py` + `test_font_sets.py` + `tests/integration/test_font_sets_api.py` 共 34 passed；`test_font_sets_api.py` 连续 3 轮 `-n 4` 各 7 passed，无 `database is locked`；全量门禁 `~/workspace/cloud-task-logs/gate-t084-final/` 9 套件 8 过（unit 仅 14 项已知基线 t063×12、t068×2，2371 passed）",
+  "blackbox": "不适用——后端仓储写事务修复，无 UI 与部署变更；并发语义由单元回归测试与 `-n 4` 复跑覆盖",
+  "review": "Round 1 PASS，零 finding，AC 5/5 TICK-VALID（`review_general.md`）",
+  "review_scope": "27b9a04abcbffcca",
+  "pending": [],
+  "findings": []
+}
