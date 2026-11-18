@@ -1,10 +1,15 @@
 ---
-id: p131
-title: 本地补验 t081 AC-009：真实容器链路字体集生命周期
-status: todo
-kind: entry
-created_at: 2026-11-18
+pid: "p131"
+slug: "verify_t081_deploy_chain"
+status: "closed"
+resolution: "resolved"
+reason: "本地隔离真实容器链路（release 20261118212912-a0fed8e，cb131）实证 AC-009 通过：143 个 Windows 字体集导入接管 verified、双 Profile 共用绑定 10 分钟零审计正文读取、3 类完整性篡改阻断启动且重导入恢复，并修复新卷初始化属主与平台布局目录"
+fix_ref: "main"
 ---
+# p131 本地补验 t081 AC-009：真实容器链路字体集生命周期
+
+- 创建时间：2026-11-18
+- 处理：main；resolution=resolved；reason=本地隔离真实容器链路（release 20261118212912-a0fed8e，cb131）实证 AC-009 通过：143 个 Windows 字体集导入接管 verified、双 Profile 共用绑定 10 分钟零审计正文读取、3 类完整性篡改阻断启动且重导入恢复，并修复新卷初始化属主与平台布局目录
 
 ## 要验证什么
 
