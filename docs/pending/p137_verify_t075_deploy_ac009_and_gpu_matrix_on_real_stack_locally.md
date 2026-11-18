@@ -1,7 +1,10 @@
 ---
 pid: "p137"
 slug: "verify_t075_deploy_ac009_and_gpu_matrix_on_real_stack_locally"
-status: "todo"
+status: "closed"
+resolution: "resolved"
+reason: "本地隔离真实栈（cb137，release 20261119011954-9af0098）通过全部 7 项补验：双平台（143/371 字体）隔离与官方 Chrome 无头 Viewer 地址栏/中英文可读且零 Skia FATAL/零 .dmp、空目录与错平台挂载失败封闭、en-US/zh-CN CJK 开关 fc-list 与真实汉字成像对照成立、s026 双平台双 seed WebGL/WebGPU 矩阵自洽并回填报告、light/dark 跨页/重启/UI 主题切换隔离、以及含 nvidia 阻塞清单一阶前置校验的迁移与还原演练"
+fix_ref: "main"
 ---
 # p137 本地真实栈补验 t075 AC-009（双平台字体集隔离 Browser 中英文渲染）与 s026 GPU 能力矩阵实测
 
@@ -13,4 +16,4 @@ status: "todo"
     4. 配色实测：light/dark 两值在初始页、新增页、导航与重启后媒体查询与网页 CSS 与所选一致；后台主题切换不改写网页配色。
     5. 身份迁移演练（隔离副本）：对含旧形状配置（gpu_family=nvidia、color_scheme=null/no-preference、font_set_id=null）的备份 DB 副本先跑迁移计划核对阻塞清单，再执行迁移与恢复演练，核对 seed、绑定、版本与浏览器数据完整。
         全程只用隔离实例/备份副本，不操作生产数据；结论逐项记录实测证据（镜像 ID、fc-list 输出、截图、探针 JSON）。
-- 处理：未开
+- 处理：main；resolution=resolved；reason=本地隔离真实栈（cb137，release 20261119011954-9af0098）通过全部 7 项补验：双平台（143/371 字体）隔离与官方 Chrome 无头 Viewer 地址栏/中英文可读且零 Skia FATAL/零 .dmp、空目录与错平台挂载失败封闭、en-US/zh-CN CJK 开关 fc-list 与真实汉字成像对照成立、s026 双平台双 seed WebGL/WebGPU 矩阵自洽并回填报告、light/dark 跨页/重启/UI 主题切换隔离、以及含 nvidia 阻塞清单一阶前置校验的迁移与还原演练

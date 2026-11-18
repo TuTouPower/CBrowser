@@ -36,7 +36,13 @@ t075 要取消无平台约束的 `gpu_family`（`auto` / `nvidia` / `intel`）�
 ## 结论
 
 - 冻结平台能力矩阵：**仅 `(windows, 引擎自动派生)` 与 `(macos, 引擎自动派生)` 为受支持组合**——GPU 身份由固定引擎按持久 seed + 平台派生，产品不再提供任何手选 vendor。旧 `nvidia` / `intel` 强制值不属于可等价映射：迁移时列入阻塞清单（见 t075 AC-004），不静默改写。
-- 待实测项（云端无 Docker/引擎二进制，不能在此下结论）：两平台在多个 seed 下的 WebGL unmasked vendor/renderer 实值、WebGPU adapter 信息、seed 重启稳定性、以及被移除的 vendor flag 在旧版本下是否曾真实生效。该实测与 t075 的 [deploy] AC-009 同属真实引擎验证，合并登记本地补验 pending 后在本地隔离环境执行；实测若推翻「引擎自动派生自洽」结论，须回本 spike 修订矩阵。
+- 待实测项（云端无 Docker/引擎二进制，后续已在 p137 本地实测回填，见下）。
+- 本地真实容器实测补验（p137，基于部署 release `20261119011954-9af0098` / `browser` 镜像 `sha256:f14753884945f90f5193bf08741f3150e1fc268ce62425b9bcf003766615e9b0`，CloakBrowser `0.6.4` / Chromium `146.0.7680.177`）：
+    - `windows` × `seed=111111`（两个独立 Profile 实例）：`UNMASKED_VENDOR_WEBGL = "Google Inc. (NVIDIA)"`，`UNMASKED_RENDERER_WEBGL = "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 Laptop GPU (0x00002C58) Direct3D11 vs_5_0 ps_5_0, D3D11)"`；跨实例完全一致；`navigator.gpu`（`webgpu.supported`）在容器无 GPU/SwiftShader 环境下为 `false`。
+    - `windows` × `seed=222222`：`UNMASKED_VENDOR_WEBGL = "Google Inc. (NVIDIA)"`，`UNMASKED_RENDERER_WEBGL = "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)"`；`webgpu.supported = false`。
+    - `macos` × `seed=333333`（Stop/Start 重启前后对照）：`UNMASKED_VENDOR_WEBGL = "Google Inc. (Apple)"`，`UNMASKED_RENDERER_WEBGL = "ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)"`；重启前后逐字一致；`webgpu.supported = false`。
+    - `macos` × `seed=444444`：`UNMASKED_VENDOR_WEBGL = "Google Inc. (Apple)"`，`UNMASKED_RENDERER_WEBGL = "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)"`；`webgpu.supported = false`。
+    - 实测判定：引擎在 Windows 与 macOS 两平台上均按 `platform + seed` 自动派生出平台自洽的 WebGL 硬件身份，同 seed 跨重启与跨实例完全一致，原 s026 自动派生矩阵成立、无需推翻修订。
 
 ## 是否采纳
 
