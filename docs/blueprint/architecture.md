@@ -97,6 +97,8 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 
 字体集是发布后不可变的资源（ADR 030）：受信发布者经导入 CLI 完整验证后以内容寻址 set_id 原子发布进 fonts 卷；API（唯一 DB 写者）在启动接管与显式审计时把验证结论持久化到资产目录 `font_set_assets`（平台、来源/版本、内容身份、文件数、detection 覆盖、验证状态/时间、资源修订 `revision` 与审计围栏 `state_seq`）。runtime REST/SSE、字体列表、默认集选择与 Profile 绑定校验只读目录记录，成本与字体字节数无关；审计有界并发（2）、同集去重、回执按 `state_seq` 围栏条件写入，迟到回执不覆盖已应用的新回执/接管（发布/修复只写文件、经后续审计生效）。运行状态的字体口径以运行实例绑定的配置版本为准。Supervisor 对实际挂入集的启动验证每实例只执行一次（见 supervisor.md），细节与旧实时扫描契约的废止见 ADR 030。
 
+（t075 补充，ADR 040）Profile 的字体绑定改后端托管：服务在创建、克隆与切换平台时按目录默认规则写定绑定，字体根已配置时（一切真实部署）平台无 verified 集则写入前失败，生产数据库中不再产生无绑定的新 Profile（未配置字体根的进程创建可暂无绑定，但启动/就绪失败封闭，真实部署不可达）；迁移 `0013_profile_identity.py` 把存量行与历史快照一次性改写到新形状（删 `gpu_family`、配色收敛 light/dark、按旧有效暴露派生 `include_cjk_fonts`、未绑定行补默认集），不可等价映射在改写前整体阻塞。实例级字体就绪由 Runner 在启动前对实际挂载做一次真实验证（manifest/哈希 + `fc-list` 枚举）并把结论持久化进 `runner_info`，Agent 与 API 只读结论；Supervisor 构造字体挂载时校验源目录存在，杜绝空挂载零字体启动。
+
 ### 3.3 环境恢复点（t066）
 
 环境级备份恢复的唯一契约是恢复点（`scripts/restore_point.py`，经 `deploy.sh env-backup` / `env-restore` 以一次性 API 镜像容器挂载 named volume `db` 与数据根运行）：一个恢复点 = 同一静默时刻的控制面 DB（SQLite 在线 backup + integrity_check + schema stamp）与全部 Profile 用户数据目录（逐文件 SHA-256 manifest），外加只记文件名/大小的凭据前提清单。备份在 DB 记录存在实际写者时拒绝。恢复先把整套内容 staging 到目标旁并全量校验（哈希/完整性/版本一致/空间），再按 journal 逐项 rename 成套切换；跨介质（DB 卷与数据根）的切换不是单一原子事务，靠 journal + 旧集保留（`.pre-restore-<switch-id>`）保证任一中断点收敛为完整旧集或完整新集，下一次调用先回滚未完成切换。旧的「tar data/instance + db_restore.py 直覆」不构成环境恢复（tar 漏 named volume DB、直覆不校验），仅保留 db_backup/db_restore 作发布流程的 DB 单件备份。契约细节见 `docs/specs/release_deployment.md` 的 t066 节。

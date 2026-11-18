@@ -35,6 +35,16 @@ LOGGER = logging.getLogger(__name__)
 
 FONTS_DIR_ENV = "CBROWSER_FONTS_DIR"
 PLATFORMS: tuple[str, ...] = ("windows", "macos")
+
+# Detection-font labels that count as a platform's coverage surface:
+# a windows profile is judged against the core windows set plus the
+# office set, a macos profile against the macos set.  Single source
+# shared by the API coordinator, the runtime Agent and the t075
+# instance font verification.
+PLATFORM_DETECTION_LABELS: dict[str, tuple[str, ...]] = {
+    "windows": ("windows", "office"),
+    "macos": ("macos",),
+}
 FONT_EXTENSIONS = {".ttf", ".ttc", ".otf", ".otc"}
 SET_ID_PATTERN = re.compile(r"^[a-f0-9]{32,64}$")
 HEX64_PATTERN = re.compile(r"^[a-f0-9]{64}$")

@@ -36,11 +36,13 @@ from cloakbrowser.browser import seed_widevine_hint
 from .cdp_guard import CdpGuard
 from .event_storage import EventStorage, atomic_write_json
 from .fontconfig import (
+    FONT_SET_MOUNT_ROOT,
     FONT_SET_UNAVAILABLE,
     FontConfigUnavailableError,
     profile_font_dirs,
     prepare_profile_fontconfig,
 )
+from .font_verification import verify_mounted_font_set
 from .profile_defaults import (
     SEARCH_DEFAULTS_RETRY_FILE,
     run_search_defaults_initialization,
@@ -139,6 +141,7 @@ class BrowserRunner:
         self.runner_info_file = self.run_dir / "runner_info.json"
 
         self.fontconfig_path: Path | None = None
+        self.font_verification: dict | None = None
         self.xvfb_proc: subprocess.Popen[Any] | None = None
         self.openbox_proc: subprocess.Popen[Any] | None = None
         self.chrome_pid: int | None = None
@@ -522,18 +525,34 @@ class BrowserRunner:
 
         self.user_data_dir.mkdir(parents=True, exist_ok=True)
         self.run_dir.mkdir(parents=True, exist_ok=True)
+        # t075: the bound set is verified where it is consumed — the
+        # actual mount inside this container, through the Profile's own
+        # generated fontconfig — before the browser launches.  Any
+        # failure (missing binding or mount, broken manifest, platform
+        # mismatch, missing files, an empty filtered view, or a CJK
+        # capability mismatch) fails closed with font_set_unavailable;
+        # the browser is never launched on unusable fonts and there is
+        # no base-fonts fallback.  The verdict is kept for runner_info
+        # so the Agent's health answer is this instance's conclusion.
         font_dirs = profile_font_dirs(
             cfg.fingerprint_platform, cfg.font_set_id
         )
         self.fontconfig_path = prepare_profile_fontconfig(
-            self.run_dir, font_dirs, locale=cfg.locale
+            self.run_dir,
+            font_dirs,
+            include_cjk_fonts=cfg.include_cjk_fonts,
         )
-        if cfg.font_set_id and self.fontconfig_path is None:
-            # A18: a bound font set whose fontconfig cannot be generated
-            # fails closed. The browser is never launched, so no system
-            # font is ever visible to the Profile. The terminal error
-            # state carries the stable reason for the Agent/Supervisor
-            # observation path.
+        verdict: dict | None = None
+        if self.fontconfig_path is not None:
+            verdict = await asyncio.to_thread(
+                verify_mounted_font_set,
+                mount_root=FONT_SET_MOUNT_ROOT,
+                platform=cfg.fingerprint_platform,
+                font_set_id=cfg.font_set_id,
+                include_cjk_fonts=cfg.include_cjk_fonts,
+                fontconfig_path=self.fontconfig_path,
+            )
+        if verdict is None or verdict["status"] != "verified":
             self.event_storage.save_state(
                 RuntimeStateRecord(
                     profile_id=self.profile_id,
@@ -545,6 +564,7 @@ class BrowserRunner:
                 )
             )
             raise FontConfigUnavailableError()
+        self.font_verification = verdict
         # SDK capability/proxy selection uses the real build version. Seed CDM
         # metadata with the real binary before the process-observation wrapper
         # changes the SDK executable path. The SDK remains the only launch path.
@@ -596,11 +616,10 @@ class BrowserRunner:
         if cfg.fingerprint_seed:
             extra_args.append(f"--fingerprint={cfg.fingerprint_seed}")
 
-        # Translate domain config options matching CloakBrowser and legacy semantics
-        if cfg.gpu_family == "nvidia":
-            extra_args.append("--fingerprint-gpu-vendor=NVIDIA")
-        elif cfg.gpu_family == "intel":
-            extra_args.append("--fingerprint-gpu-vendor=Intel")
+        # t075: no GPU vendor flag is ever passed.  The fixed engine
+        # derives GPU identity from the persistent seed + platform
+        # (spike s026); the old hand-picked vendor flag was passed
+        # through with no validation and is abolished.
 
         if cfg.allow_3p_cookies:
             extra_args.append("--fingerprint-allow-3p-cookies")
@@ -739,6 +758,7 @@ class BrowserRunner:
             "engine_artifact": self.engine_artifact_info,
             "browser_product": browser_product,
             "browser_user_agent": browser_user_agent,
+            "font_verification": self.font_verification,
         }
         self.event_storage.save_state(
             RuntimeStateRecord(

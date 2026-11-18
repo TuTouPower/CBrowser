@@ -364,6 +364,22 @@ bash scripts/run_automation_probe.sh
 |AC-008|镜像层与 git 仓库无平台字体；部署 / 发布脚本不复制字体目录；task worktree 经 `.worktreeinclude` 共享同一字体目录|`docker save` 镜像层扫描 + 仓库扫描 + 脚本静态检查|
 |AC-009|`font_bundle` 字段、镜像字体包、代码与文档引用一并删除，扫描为空|全仓 grep 为空 + 增量迁移 `0002_fingerprint_platform.py` 删除列|
 
+## t075 运行身份与真实就绪验收映射
+
+下表把 t075 的 AC-001~009 映射到测试与证据入口；契约全文见 `docs/tasks/t075_profile_identity_assets_and_readiness/task.md`，需求级 spec 见 `docs/specs/fingerprint_platform.md`。云端无 Docker/真实引擎：AC-009 与 GPU 动态实测顺延本地补验 p137，不得记为已验。
+
+|AC|行为|测试 / 证据|
+|---|---|---|
+|AC-001|字体绑定后端托管：创建绑定平台默认集、已配置字体根而无集时创建失败、请求拒绝手选字段|unit `test_t075_profile_identity.py` + OpenAPI 导出比对|
+|AC-002|克隆保留已验证绑定、切平台重绑、无集切平台失败且原配置不变；GPU 字段与透传 flag 删除|unit `test_t075_profile_identity.py`；全仓 grep `gpu_family` 为空；同 seed 重启前后 WebGL 实值一致性为动态实测，待 p137 本地补验|
+|AC-003|配色只剩 light/dark、默认 light、请求拒绝第三态|unit `test_t075_profile_identity.py` + 前端 `ProfileForm` 用例|
+|AC-004|迁移 0013 改写行与快照、不可等价映射改写前阻塞、幂等、备份恢复演练|unit `test_t075_migration.py`（真实 SQLite + alembic）|
+|AC-005|字体源目录不存在时 Supervisor 挂载构造失败|unit `test_t075_supervisor_fonts.py`|
+|AC-006|挂载空/manifest 损坏/内容不符（逐文件 sha256 复核）/无必需字形时验证失败且健康不就绪；Runner 接缝真实验证后才启动|unit `test_t075_font_verification.py` + `test_t075_runner_fonts.py` + `test_t041_font_runtime.py` 就绪门禁|
+|AC-007|CJK 关时中文字体不可见、开时中文面可枚举（真实 fc-list）且中文字形经 FreeType 真实光栅化证明|unit `test_t075_fontconfig.py` / `test_t075_font_verification.py` / `test_t075_glyph_render.py`（宿主真实字体）；Chrome 引擎内渲染待 p137|
+|AC-008|可选探测缺口与必需失败在结论中区分；普通配置变更不触碰会话存储|unit `test_t075_font_verification.py`；`test_t075_profile_identity.py::test_ordinary_config_change_keeps_user_data_and_binding` 断言用户数据目录字节不变；配置版本分类（`include_cjk_fonts` 为 runtime 字段）|
+|AC-009|[deploy] 真实编排双平台隔离与中英文可读、错误挂载对照不就绪|云端不可验，顺延本地补验 p137|
+
 ## t051 运行时与部署可靠性验收映射
 
 下表把 t051 的 AC-001~021 映射到测试与证据入口；契约全文见 `docs/tasks/t051_runtime_deploy_reliability/task.md`，需求级 spec 见 `docs/specs/runtime_lifecycle.md` / `release_deployment.md` / `fingerprint_platform.md` / `access_control.md`。本机无 Docker、无真实部署环境：AC-013 真实部署、AC-014 双实例真实 Docker、AC-015 真实 Docker 挂起三项按链口径跳过按 pass 计，替代验证见表内，真实环境验证须在用户机按 t032 演练补验，不得记为已验。
@@ -522,6 +538,7 @@ bash scripts/run_automation_probe.sh
 ## 字体资产目录零读取与审计故障矩阵（t081）
 
 `tests/unit/test_t081_font_catalog.py` 以生产 helper 计数（`check_font_set` 与 `_sha256_file` 包装）锁定读路径契约：100 次 runtime 解析 + 100 次列表查询的字体正文打开/哈希恒为零，结果仍正确呈现绑定、覆盖与验证状态；集合使用明显大于小型假字体的合成集（20 文件 × 64 KB 级），不用字符串扫描冒充 I/O 证明。故障矩阵覆盖：发布后未接管不可绑定、接管恢复中断发布（staging 残留永不接管）与重复接管幂等、显式审计发现删改/额外文件/manifest 异常并撤销可用、受控修复以新修订恢复、迟到审计回执被 `state_seq` 围栏丢弃、审计并发上限（2）与同集去重、审计阻塞期间普通读取仍推进、Supervisor 每实例验证一次、运行状态按实例绑定配置版本报告、宿主导入源变更不泄漏进目录。旧语义测试 `test_a5_font_scan_offload.py`（每请求审计）与 `test_t053_coordinator_font_runtime.py`（实时读取/禁止缓存）已整体删除，理由见 ADR 030；离线与有界两条属性在审计引擎上重新证明。真实容器链路（现场规模集导入、共用绑定实例 10 分钟持续读取零字体正文、审计负例/修复正例留证）属 [deploy] 验证，云端不可执行，登记 pending 本地补验。
+
 ## 常驻 Policy Agent 协议、生命周期与隔离收敛（t082）
 
 - 协议与状态机以单元验证（`tests/unit/test_t082_policy_agent.py`）：身份全等校验与伪造拒绝、install/inspect 幂等、旧修订重放与同修订异 spec 的围栏拒绝、刷新 replace、fail-close 确认语义、resolve 输入校验（URL/凭据/注入拒绝）、畸形与超大请求拒绝、真实 UDS 客户端往返与不可达类型化错误；协议 schema 由 `scripts/export_policy_agent_protocol.py --check` 纳入门禁漂移检查。

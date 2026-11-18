@@ -165,7 +165,7 @@ async def test_start_stream_container_enforces_0600_permissions(tmp_path: Path) 
 @pytest.mark.asyncio
 @pytest.mark.asyncio
 async def test_supervisor_core_start_profile_provisions_selkies_tokens(
-    tmp_path: Path,
+    tmp_path: Path, fixture_font_set: str
 ) -> None:
     root = tmp_path / "data"
     engine = root / "engine_cache"
@@ -263,7 +263,9 @@ async def test_supervisor_core_start_profile_provisions_selkies_tokens(
             gateway_control=mock_gw,
         )
 
-        session = await core.start_profile("p1", ProfileConfig(name="p1"))
+        session = await core.start_profile(
+            "p1", ProfileConfig(name="p1", font_set_id=fixture_font_set)
+        )
 
         # Verify the per-instance credentials file is 0600 and outside runtime
         call_kwargs = adapter.start_stream_container.call_args.kwargs

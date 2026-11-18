@@ -80,7 +80,7 @@ def sanitize_config_summary(config: ProfileConfig) -> dict[str, Any]:
         "timezone": config.timezone,
         "screen_width": config.screen_width,
         "screen_height": config.screen_height,
-        "gpu_family": config.gpu_family,
+        "include_cjk_fonts": config.include_cjk_fonts,
         "fingerprint_seed": config.fingerprint_seed,
         "geoip": config.geoip,
         "humanize": config.humanize,

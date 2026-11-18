@@ -143,7 +143,6 @@ class ProfileModel(Base):
     locale: Mapped[str | None] = mapped_column(String(64), nullable=True)
     screen_width: Mapped[int] = mapped_column(Integer, default=1920, nullable=False)
     screen_height: Mapped[int] = mapped_column(Integer, default=1080, nullable=False)
-    gpu_family: Mapped[str] = mapped_column(String(32), default="auto", nullable=False)
     humanize: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="1", nullable=False
     )
@@ -153,12 +152,19 @@ class ProfileModel(Base):
     geoip: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     clipboard_sync: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     auto_launch: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    color_scheme: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # t075: exactly "light" / "dark"; migration 0013 backfills legacy
+    # null / "no-preference" rows to "light" before tightening.
+    color_scheme: Mapped[str] = mapped_column(
+        String(32), default="light", server_default="light", nullable=False
+    )
     fingerprint_platform: Mapped[str] = mapped_column(
         String(16), default="windows", nullable=False
     )
     font_set_id: Mapped[str | None] = mapped_column(
         String(64), nullable=True
+    )
+    include_cjk_fonts: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="1", nullable=False
     )
     launch_args: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     extension_paths: Mapped[str] = mapped_column(Text, default="[]", nullable=False)

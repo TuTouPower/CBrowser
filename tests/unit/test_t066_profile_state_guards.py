@@ -151,13 +151,13 @@ async def test_config_save_preserves_browser_state_directory(
                 "screen_height": 900,
                 "locale": "en-US",
                 "timezone": "America/New_York",
-                "gpu_family": "nvidia",
+                "include_cjk_fonts": False,
                 "humanize": False,
             },
         )
         assert updated.config.notes == "changed"
         assert updated.config.proxy_id == proxy_id
-        assert updated.config.gpu_family == "nvidia"
+        assert updated.config.include_cjk_fonts is False
         assert updated.config.screen_width == 1280
         assert updated.config.screen_height == 900
         assert updated.config.locale == "en-US"

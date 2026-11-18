@@ -22,7 +22,6 @@ from .preview_capture import (
     PREVIEW_MOUNT_DIR,
     PreviewCaptureLoop,
 )
-from .fontconfig import FONT_SET_MOUNT_ROOT, PLATFORM_FONTS_UNCONFIGURED
 from .dialog_attendant import DialogAttendantService
 from .tunnel_filter import TunnelFilter
 from .download_reconciler import scan_completed_downloads
@@ -49,11 +48,6 @@ from .socket_root import (
 from .subsystems import check_audio, check_browser, check_display
 
 logger = logging.getLogger("cbrowser.runtime_agent.agent")
-
-_PLATFORM_DETECTION_LABELS: dict[str, tuple[str, ...]] = {
-    "windows": ("windows", "office"),
-    "macos": ("macos",),
-}
 
 
 def _validated_runner_info(runner_info: dict[str, Any]) -> dict[str, Any]:
@@ -95,13 +89,10 @@ def create_agent_app(
     default_download_dir: Path | str,
     events_dir: Path | str | None = None,
     cdp_proxy: CdpProxyManager | None = None,
-    font_set_root: Path | str | None = None,
     preview_loop: PreviewCaptureLoop | None = None,
 ) -> FastAPI:
     """Create FastAPI application configured for UDS control and CDP proxying."""
     r_dir = Path(run_dir)
-    font_root = Path(font_set_root) if font_set_root is not None else FONT_SET_MOUNT_ROOT
-    font_runtime_cache: dict[tuple[str, str], tuple[str | None, list[str]]] = {}
     storage = EventStorage(Path(events_dir) if events_dir else r_dir)
     active_cdp_proxy = cdp_proxy
     # t031: resident dialog attendant (one per Agent process). Armed on
@@ -182,50 +173,35 @@ def create_agent_app(
         except Exception:  # noqa: BLE001 - malformed status is reported as unknown
             return None
 
-    def _font_runtime() -> tuple[str | None, list[str]]:
-        """Bound font set id plus its missing detection fonts for /health.
+    def _font_verdict(
+        runner_info: dict[str, Any] | None,
+    ) -> tuple[str | None, list[str], bool, dict | None]:
+        """This instance's font verdict, recorded by the Runner (t075).
 
-        The font set is content-addressed and immutable, so the integrity/
-        detection scan (which hashes every font file) is cached per
-        (platform, set_id) instead of running on every health probe. A null
-        binding reports the "platform fonts not configured" state as
-        ``(None, [PLATFORM_FONTS_UNCONFIGURED])``.
+        The Runner verifies the mounted set inside the container before
+        launch and persists the verdict in runner_info; health reads
+        that conclusion — it never re-scans or re-hashes font bytes,
+        and an instance without a verified verdict is not font-ready.
+        Returns (font_set_id, missing_optional, font_ok, verdict).
         """
-        try:
-            snapshot = json.loads(
-                (r_dir / "snapshot.json").read_text(encoding="utf-8")
-            )
-            cfg = snapshot.get("config") if isinstance(snapshot, dict) else None
-        except (OSError, ValueError):
-            return None, []
-        if not isinstance(cfg, dict):
-            return None, []
-        font_set_id = cfg.get("font_set_id")
-        if not font_set_id:
-            return None, [PLATFORM_FONTS_UNCONFIGURED]
-        platform = cfg.get("fingerprint_platform", "windows")
-        if platform not in _PLATFORM_DETECTION_LABELS:
-            return str(font_set_id), []
-        key = (str(platform), str(font_set_id))
-        if key not in font_runtime_cache:
-            from cbrowser import font_sets
-
-            directory = font_root / str(platform) / str(font_set_id)
-            detection = font_sets.check_font_set(directory).get("detection", {})
-            missing = sorted(
-                {
-                    name
-                    for label in _PLATFORM_DETECTION_LABELS[platform]
-                    for name in detection.get(label, {}).get("missing", [])
-                }
-            )
-            font_runtime_cache[key] = (str(font_set_id), missing)
-        return font_runtime_cache[key]
+        verdict = runner_info.get("font_verification") if runner_info else None
+        if not isinstance(verdict, dict):
+            return None, [], False, None
+        font_set_id = verdict.get("font_set_id")
+        missing = verdict.get("missing_optional")
+        return (
+            str(font_set_id) if font_set_id else None,
+            [str(name) for name in missing] if isinstance(missing, list) else [],
+            verdict.get("status") == "verified",
+            verdict,
+        )
 
     @app.get("/health", response_model=HealthResponse)
     async def get_health() -> HealthResponse:
-        font_set_id, missing_fonts = _font_runtime()
         runner_info = _read_runner_info()
+        font_set_id, missing_fonts, font_ok, font_verdict = _font_verdict(
+            runner_info
+        )
         state = _state_for_context(runner_info)
         if state is None and runner_info is None:
             raise HTTPException(status_code=503, detail="Runtime is not initialized")
@@ -316,6 +292,7 @@ def create_agent_app(
                         "browser_user_agent": None,
                         "font_set_id": font_set_id,
                         "missing_fonts": missing_fonts,
+                        "font_verification": font_verdict,
                         "preview_captured_at": preview_loop.last_captured_at
                         if preview_loop
                         else None,
@@ -345,7 +322,10 @@ def create_agent_app(
             and active_cdp_proxy.capture_alive
         )
 
-        ready = bool(display_ok and audio_ok and browser_ok and cdp_ok)
+        # t075: fonts gate readiness — an instance whose mounted set
+        # failed verification (or has no verdict) is never "ready",
+        # however healthy display/audio/browser/CDP look.
+        ready = bool(display_ok and audio_ok and browser_ok and cdp_ok and font_ok)
         status = (
             "ok" if ready else ("degraded" if (display_ok or audio_ok) else "error")
         )
@@ -371,6 +351,7 @@ def create_agent_app(
                 "browser_user_agent": r_info.get("browser_user_agent"),
                 "font_set_id": font_set_id,
                 "missing_fonts": missing_fonts,
+                "font_verification": font_verdict,
                 "preview_captured_at": preview_loop.last_captured_at
                 if preview_loop
                 else None,

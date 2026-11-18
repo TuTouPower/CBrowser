@@ -1,12 +1,12 @@
-/** Profile locale, timezone, proxy, and font-set auto-alignment rules (t053+).
+/** Profile locale, timezone, and proxy auto-alignment rules (t053+).
 
 Mirrors the backend domain module `cbrowser/domain/profile_locale.py`:
 the same Chinese-region timezone set and the same timezone -> locale
-rule, plus automatic alignment between proxy location, timezone,
-language, and platform font sets.
+rule, plus automatic alignment between proxy location, timezone, and
+language.  Font-set selection is no longer a form concern (t075): the
+backend binds the platform font set, and the form only carries the
+CJK-inclusion switch whose default follows the language.
 */
-
-import type { FontSetInfo } from "../../shared/api/types";
 
 export const SUPPORTED_LOCALES = ["zh-CN", "en-US"] as const;
 export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
@@ -152,50 +152,15 @@ export function timezoneForProxy(
   return COUNTRY_TIMEZONES[cc] ?? null;
 }
 
-export function isCjkFontSet(
-  item: Pick<FontSetInfo, "set_id" | "source" | "source_version">,
-): boolean {
-  const hay = `${item.set_id} ${item.source ?? ""} ${item.source_version ?? ""}`.toLowerCase();
-  return (
-    hay.includes("cjk") ||
-    hay.includes("office") ||
-    hay.includes("zh") ||
-    hay.includes("yahei") ||
-    hay.includes("pingfang")
-  );
-}
-
-export function selectFontSetForLocaleAndPlatform(
-  fontSets: readonly FontSetInfo[],
-  platform: "windows" | "macos",
+/**
+ * Default for the CJK font inclusion switch (t075): a Chinese-language
+ * profile includes Chinese fonts, an English one does not.  Mirrors
+ * `default_include_cjk_fonts` in the backend domain module.
+ */
+export function defaultIncludeCjkForLocale(
   locale: string | null | undefined,
-  defaultFontSetId: Record<string, string | null | undefined>,
-): string | null {
-  const candidates = fontSets.filter(
-    (item) => item.platform === platform && item.integrity.ok,
-  );
-  if (candidates.length === 0) {
-    return defaultFontSetId[platform] ?? null;
-  }
-  const preferredDefaultId = defaultFontSetId[platform];
-  const backendDefault = preferredDefaultId
-    ? candidates.find((item) => item.set_id === preferredDefaultId)
-    : undefined;
-
-  if (locale === "zh-CN") {
-    if (backendDefault && isCjkFontSet(backendDefault)) {
-      return backendDefault.set_id;
-    }
-    const cjk = candidates.find((item) => isCjkFontSet(item));
-    if (cjk) return cjk.set_id;
-  } else if (locale === "en-US") {
-    if (backendDefault && !isCjkFontSet(backendDefault)) {
-      return backendDefault.set_id;
-    }
-    const core = candidates.find((item) => !isCjkFontSet(item));
-    if (core) return core.set_id;
-  }
-  return backendDefault?.set_id ?? candidates[0]?.set_id ?? null;
+): boolean {
+  return locale === "zh-CN";
 }
 
 let cachedTimezones: readonly string[] | null = null;

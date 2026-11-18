@@ -7643,16 +7643,6 @@
             "title": "Screen Height",
             "default": 1080
           },
-          "gpu_family": {
-            "type": "string",
-            "enum": [
-              "auto",
-              "nvidia",
-              "intel"
-            ],
-            "title": "Gpu Family",
-            "default": "auto"
-          },
           "humanize": {
             "type": "boolean",
             "title": "Humanize",
@@ -7683,20 +7673,13 @@
             "default": false
           },
           "color_scheme": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "light",
-                  "dark",
-                  "no-preference"
-                ]
-              },
-              {
-                "type": "null"
-              }
+            "type": "string",
+            "enum": [
+              "light",
+              "dark"
             ],
-            "title": "Color Scheme"
+            "title": "Color Scheme",
+            "default": "light"
           },
           "fingerprint_platform": {
             "type": "string",
@@ -7706,16 +7689,16 @@
             ],
             "title": "Fingerprint Platform"
           },
-          "font_set_id": {
+          "include_cjk_fonts": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "boolean"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Font Set Id"
+            "title": "Include Cjk Fonts"
           },
           "launch_args": {
             "items": {
@@ -8058,11 +8041,6 @@
             "title": "Screen Height",
             "default": 1080
           },
-          "gpu_family": {
-            "type": "string",
-            "title": "Gpu Family",
-            "default": "auto"
-          },
           "humanize": {
             "type": "boolean",
             "title": "Humanize",
@@ -8089,15 +8067,9 @@
             "default": false
           },
           "color_scheme": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Color Scheme"
+            "type": "string",
+            "title": "Color Scheme",
+            "default": "light"
           },
           "fingerprint_platform": {
             "type": "string",
@@ -8113,6 +8085,11 @@
               }
             ],
             "title": "Font Set Id"
+          },
+          "include_cjk_fonts": {
+            "type": "boolean",
+            "title": "Include Cjk Fonts",
+            "default": true
           },
           "launch_args": {
             "items": {
@@ -8693,22 +8670,6 @@
             ],
             "title": "Screen Height"
           },
-          "gpu_family": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "auto",
-                  "nvidia",
-                  "intel"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Gpu Family"
-          },
           "humanize": {
             "anyOf": [
               {
@@ -8774,8 +8735,7 @@
                 "type": "string",
                 "enum": [
                   "light",
-                  "dark",
-                  "no-preference"
+                  "dark"
                 ]
               },
               {
@@ -8799,16 +8759,16 @@
             ],
             "title": "Fingerprint Platform"
           },
-          "font_set_id": {
+          "include_cjk_fonts": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "boolean"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Font Set Id"
+            "title": "Include Cjk Fonts"
           },
           "launch_args": {
             "anyOf": [

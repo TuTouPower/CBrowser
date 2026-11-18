@@ -141,10 +141,12 @@ def test_profile_font_dirs_bound_set_exposes_only_the_platform_set() -> None:
     assert BASE_FONTS_DIR not in profile_font_dirs("macos", set_id)
 
 
-def test_profile_font_dirs_null_falls_back_to_base_fonts() -> None:
-    """AC-006: with no platform font set bound, the browser must still have
-    fonts. The base open-source set is the documented fallback."""
+def test_profile_font_dirs_null_is_empty_since_t075() -> None:
+    """t075 replaced the AC-006 base-fonts fallback: an unbound Profile
+    whitelists nothing, and the Runner fails closed instead of exposing
+    the Linux base fonts (p125). The base directory remains an image
+    install fact, never a Profile font source."""
     from cbrowser.runtime_agent.fontconfig import profile_font_dirs
 
-    assert profile_font_dirs("windows", None) == [BASE_FONTS_DIR]
-    assert profile_font_dirs("macos", None) == [BASE_FONTS_DIR]
+    assert profile_font_dirs("windows", None) == []
+    assert profile_font_dirs("macos", None) == []

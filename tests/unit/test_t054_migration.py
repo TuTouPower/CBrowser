@@ -32,6 +32,7 @@ REVISION_0008 = "3751fed02a4a"
 # that deletes the network rows.
 REVISION_0011 = "c41d9a02e6b7"
 REVISION_0012 = "c81f0a11b001"
+REVISION_0013 = "d75a0013f001"
 
 NETWORK_KEYS = (
     "network.pending_config",
@@ -54,10 +55,10 @@ def _revision_of_head(tmp_path: Path) -> str:
     return heads[0]
 
 
-def test_head_is_0012_and_single(tmp_path: Path) -> None:
-    """Replaces ``test_head_is_0011_and_single``: t081 0012 is the new
-    single head; asserting 0010 would lock an obsolete migration head."""
-    assert _revision_of_head(tmp_path) == REVISION_0012
+def test_head_is_0013_and_single(tmp_path: Path) -> None:
+    """Replaces ``test_head_is_0012_and_single``: t075 0013 is the new
+    single head; asserting 0012 would lock an obsolete migration head."""
+    assert _revision_of_head(tmp_path) == REVISION_0013
 
 
 def test_upgrade_deletes_all_network_settings_rows(tmp_path: Path) -> None:

@@ -4,8 +4,10 @@
   (atomic replacement); an intact set is left untouched.
 - A20: usage counts are per (platform, set_id); a list entry whose
   manifest platform disagrees with its directory is an integrity failure.
-- A16: the service only applies the backend default font set when the
-  caller did not supply font_set_id at all; an explicit null stays null.
+- A16 (superseded by t075): the binding is backend-managed — creation
+  always binds the platform default, and an explicit null no longer
+  stays unbound.  The A16 tests below were rewritten to the t075
+  semantics; the A19/A20 tests are unchanged.
 """
 
 from __future__ import annotations
@@ -174,9 +176,12 @@ async def _adopted_service(db_context):
 
 
 @pytest.mark.asyncio
-async def test_create_applies_default_only_when_font_set_omitted(
+async def test_create_always_binds_platform_default(
     db_context, font_source: Path, tmp_path: Path, monkeypatch
 ) -> None:
+    """t075 rewrite of the A16 test: the abolished rule honored an
+    explicit null as "no font set"; now every creation binds the
+    platform default, supplied-null included."""
     root = tmp_path / "fonts"
     result = import_font_set("windows", [str(font_source)], "v1", root=str(root))
     monkeypatch.setenv("CBROWSER_FONTS_DIR", str(root))
@@ -191,9 +196,8 @@ async def test_create_applies_default_only_when_font_set_omitted(
     explicit_none = await service.create_profile(
         config=ProfileConfig(name="ExplicitNone"),
         req_payload={"name": "ExplicitNone", "font_set_id": None},
-        font_set_id_supplied=True,
     )
-    assert explicit_none.config.font_set_id is None
+    assert explicit_none.config.font_set_id == result["set_id"]
 
 
 @pytest.mark.asyncio
@@ -207,6 +211,5 @@ async def test_create_with_supplied_set_keeps_it(
     profile = await service.create_profile(
         config=ProfileConfig(name="Bound", font_set_id=result["set_id"]),
         req_payload={"name": "Bound", "font_set_id": result["set_id"]},
-        font_set_id_supplied=True,
     )
     assert profile.config.font_set_id == result["set_id"]

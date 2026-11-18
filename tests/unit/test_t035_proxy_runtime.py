@@ -528,7 +528,9 @@ async def test_report_observed_422_is_final_and_never_degrades(
 # ---- Browser container mount + egress policy (AC-007 / AC-008) ----------
 
 
-async def test_start_profile_with_proxy_end_to_end(tmp_path: Path) -> None:
+async def test_start_profile_with_proxy_end_to_end(
+    tmp_path: Path, fixture_font_set: str
+) -> None:
     from unittest.mock import AsyncMock, MagicMock
 
     from cbrowser.supervisor.path_validator import PathValidator
@@ -640,7 +642,10 @@ async def test_start_profile_with_proxy_end_to_end(tmp_path: Path) -> None:
             gateway_control=gateway,
         )
         session = await core.start_profile(
-            "p1", ProfileConfig(name="p1", proxy_id="px1")
+            "p1",
+            ProfileConfig(
+                name="p1", proxy_id="px1", font_set_id=fixture_font_set
+            ),
         )
     assert session.observed_state == "running"
 
@@ -655,7 +660,9 @@ async def test_start_profile_with_proxy_end_to_end(tmp_path: Path) -> None:
     ).proxy_url == "socks5://u:pw@proxy.example.com:1080"
 
 
-async def test_start_profile_surfaces_proxy_credentials_changed(tmp_path: Path) -> None:
+async def test_start_profile_surfaces_proxy_credentials_changed(
+    tmp_path: Path, fixture_font_set: str
+) -> None:
     from unittest.mock import AsyncMock, MagicMock
 
     from cbrowser.supervisor.path_validator import PathValidator
@@ -720,7 +727,10 @@ async def test_start_profile_surfaces_proxy_credentials_changed(tmp_path: Path) 
         core.report_terminal_observation = AsyncMock(return_value=True)  # type: ignore[method-assign]
         with pytest.raises(SupervisorProxyChanged) as exc:
             await core.start_profile(
-                "p1", ProfileConfig(name="p1", proxy_id="px1")
+                "p1",
+                ProfileConfig(
+                    name="p1", proxy_id="px1", font_set_id=fixture_font_set
+                ),
             )
         assert str(exc.value) == SUP_PROXY_CHANGED
         assert "pw" not in str(exc.value)

@@ -93,15 +93,19 @@ def test_font_sets_lists_integrity_and_used_by_count(api_client) -> None:
     assert after["items"][0]["used_by_count"] == 1
 
 
-def test_create_with_explicit_null_font_set_stays_null(api_client) -> None:
-    """t053 A16: an explicit null font_set_id is honored, never replaced
-    by the backend default."""
+def test_create_font_set_binding_is_backend_managed(api_client) -> None:
+    """t075 (replaces the t053 A16 explicit-null semantic): font_set_id
+    is no longer a user input at all — sending it is a 422 — and a
+    create without it binds the platform default set managed by the
+    backend."""
     client, fonts = api_client
-    created = client.post(
+    rejected = client.post(
         "/api/v1/profiles", json={"name": "none", "font_set_id": None}
     )
+    assert rejected.status_code == 422, rejected.text
+    created = client.post("/api/v1/profiles", json={"name": "auto"})
     assert created.status_code == 201, created.text
-    assert created.json()["font_set_id"] is None
+    assert created.json()["font_set_id"] == fonts["set_id"]
 
 
 def _audit_until_failed(client, set_id: str) -> dict:

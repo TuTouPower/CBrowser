@@ -328,6 +328,20 @@ def create_app(
         # never hash font bytes.
         font_catalog = service.font_catalog()
         app.state.font_catalog = font_catalog
+        # t075 code f003: a process with no font root configured can
+        # create profiles with no font binding, and those profiles can
+        # never start (Runner fails closed).  Real deployments always
+        # set CBROWSER_FONTS_DIR; say so loudly at startup instead of
+        # letting the gap surface only as a failed profile creation.
+        # Deliberately a warning, not a hard refusal: integration
+        # fixtures run the API without a font root on purpose.
+        if not font_catalog.root_configured():
+            logging.getLogger("cbrowser.api").warning(
+                "CBROWSER_FONTS_DIR is not configured: profiles created "
+                "by this process have no font binding and cannot start "
+                "(t075 AC-005 exemption for font-subsystem-less "
+                "processes, e.g. test fixtures)"
+            )
         adopt_task = asyncio.create_task(font_catalog.adopt_all())
         app.state.font_adopt_task = adopt_task
 

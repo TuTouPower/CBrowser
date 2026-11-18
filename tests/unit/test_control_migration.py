@@ -38,6 +38,33 @@ from cbrowser.adapters.database.repository import ProfileRepository
 from cbrowser.services.control_service import ProfileControlService
 
 
+REVISION_0012 = "c81f0a11b001"
+
+
+def _bind_fixture_font_set(conn: sqlite3.Connection) -> None:
+    """t075: migration 0013 refuses to rewrite profiles that have no
+    font binding and no verified set to bind.  Tests that park bare
+    profile rows at an old revision and then upgrade to head seed one
+    verified windows asset at the 0012 stage and bind the rows to it,
+    so the chain can complete; the behavior under test in each case
+    (older migrations' backfills) is unaffected."""
+    set_id = "b" * 64
+    conn.execute(
+        "INSERT INTO font_set_assets (platform, set_id, source,"
+        " source_version, file_count, total_bytes, integrity, state,"
+        " revision, state_seq, verified_at, audited_at, created_at,"
+        " updated_at) VALUES ('windows', ?, 'fixture', 'v1', 1, 1,"
+        " '{}', 'verified', 1, 1, '2026-01-01T00:00:00+00:00', NULL,"
+        " '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')",
+        (set_id,),
+    )
+    conn.execute(
+        "UPDATE profiles SET font_set_id = ? WHERE font_set_id IS NULL",
+        (set_id,),
+    )
+    conn.commit()
+
+
 async def _seed(db_path):
     run_database_migrations(db_path)
     engine, maker = create_engine_and_maker(db_path)
@@ -166,7 +193,14 @@ async def test_upgrade_from_0002_era_old_db_to_head(tmp_path: Path) -> None:
         conn.commit()
     finally:
         conn.close()
-    # Upgrade through 0003 + 0004 to the current head.
+    # Upgrade to 0012 first so the fixture row can be bound (see
+    # _bind_fixture_font_set), then through to the current head.
+    command.upgrade(cfg, REVISION_0012)
+    conn = sqlite3.connect(db)
+    try:
+        _bind_fixture_font_set(conn)
+    finally:
+        conn.close()
     run_database_migrations(db)
     conn = sqlite3.connect(db)
     try:
@@ -228,6 +262,12 @@ def test_0005_backfills_display_numbers_in_creation_order(tmp_path: Path) -> Non
                 (pid, pid, f"/data/profiles/{pid}/profile", created, created),
             )
         conn.commit()
+    finally:
+        conn.close()
+    command.upgrade(cfg, REVISION_0012)
+    conn = sqlite3.connect(db)
+    try:
+        _bind_fixture_font_set(conn)
     finally:
         conn.close()
     command.upgrade(cfg, "head")

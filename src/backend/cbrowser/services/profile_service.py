@@ -318,9 +318,14 @@ class ProfileService:
         """t081: reject a binding the catalog does not record as a
         verified published set for the platform.  Reads catalog metadata
         only — font bytes are verified by import/adoption/audit, never
-        on the binding path."""
+        on the binding path.
+
+        t075: a missing binding is itself invalid — every profile must
+        be bound to a verified platform set."""
         if font_set_id is None:
-            return
+            raise InvalidFontSetBindingError(
+                f"profile is not bound to a {platform} font set"
+            )
         record = await self.font_catalog().get_asset(platform, font_set_id)
         if record is None:
             raise InvalidFontSetBindingError(
@@ -495,20 +500,33 @@ class ProfileService:
         profile_id: str | None = None,
         operation_id: str | None = None,
         req_payload: dict[str, Any] | None = None,
-        font_set_id_supplied: bool = False,
     ) -> Profile:
-        # A16: the backend default font set applies only when the caller
-        # did not supply font_set_id at all. An explicit null ("no font
-        # set") is honored and never silently replaced by the default.
-        if config.font_set_id is None and not font_set_id_supplied:
-            default = await self.font_catalog().default_set_id(
-                config.fingerprint_platform
-            )
-            if default is not None:
+        # t075: the font binding is backend-managed, never user-chosen.
+        # A config that already carries a binding (clone/duplicate keeps
+        # the source identity) is validated as-is; otherwise the
+        # platform's catalog default is bound.  When a font root is
+        # configured (every real deployment) a platform with no verified
+        # set fails creation outright — a profile never starts life
+        # unbound on Linux base fonts (AC-005).  A process with no font
+        # root configured has the font subsystem out of scope (test
+        # harnesses run that way deliberately): creation proceeds
+        # unbound, and the Supervisor/Runner fail-closed checks still
+        # refuse to start such a profile.
+        if config.font_set_id is None:
+            if self.font_catalog().root_configured():
+                default = await self.font_catalog().default_set_id(
+                    config.fingerprint_platform
+                )
+                if default is None:
+                    raise InvalidFontSetBindingError(
+                        f"no available {config.fingerprint_platform} font set; "
+                        "import and verify a font set for the platform first"
+                    )
                 config = config.model_copy(update={"font_set_id": default})
-        await self._validate_font_set_binding(
-            config.fingerprint_platform, config.font_set_id
-        )
+        if config.font_set_id is not None:
+            await self._validate_font_set_binding(
+                config.fingerprint_platform, config.font_set_id
+            )
         await self._validate_references(config.group_id, config.proxy_id)
         try:
             return await self._repo.create_profile(
@@ -595,22 +613,58 @@ class ProfileService:
             if isinstance(patch_data, ProfileConfig)
             else dict(patch_data)
         )
-        if "font_set_id" in patch_dict or "fingerprint_platform" in patch_dict:
+        if "fingerprint_platform" in patch_dict or "font_set_id" in patch_dict:
             current = await self._repo.get_profile(profile_id)
             if current is not None:
                 platform = patch_dict.get(
                     "fingerprint_platform", current.config.fingerprint_platform
                 )
-                font_set_id = patch_dict.get(
+                if platform != current.config.fingerprint_platform:
+                    # t075: switching platform rebinds the profile to
+                    # the new platform's catalog default set.  With a
+                    # font root configured, the switch fails before
+                    # anything is written when the target platform has
+                    # no verified set, so a profile can never land on a
+                    # platform whose fonts it cannot use.  With no font
+                    # root configured (font subsystem out of scope for
+                    # the process), the stale cross-platform binding is
+                    # dropped instead.
+                    if self.font_catalog().root_configured():
+                        default = await self.font_catalog().default_set_id(
+                            platform
+                        )
+                        if default is None:
+                            raise InvalidFontSetBindingError(
+                                f"no available {platform} font set; import and "
+                                "verify a font set for the platform first"
+                            )
+                    else:
+                        default = None
+                    patch_dict["font_set_id"] = default
+                    if isinstance(patch_data, ProfileConfig):
+                        patch_data = patch_data.model_copy(
+                            update={"font_set_id": default}
+                        )
+                    if default is not None:
+                        await self._validate_font_set_binding(platform, default)
+                elif patch_dict.get(
                     "font_set_id", current.config.font_set_id
-                )
-                await self._validate_font_set_binding(platform, font_set_id)
+                ) != current.config.font_set_id:
+                    await self._validate_font_set_binding(
+                        platform, patch_dict.get("font_set_id")
+                    )
         # t056 A28: only keys present in the patch are validated; an
         # explicit null clears the reference and needs no lookup.
         if "group_id" in patch_dict or "proxy_id" in patch_dict:
             await self._validate_references(
                 patch_dict.get("group_id"), patch_dict.get("proxy_id")
             )
+        if not isinstance(patch_data, ProfileConfig):
+            # The font-binding branch above may have rewritten
+            # patch_dict (platform-switch rebind); a dict patch must
+            # reach the repository in that enriched form, not as the
+            # caller's original dict.
+            patch_data = patch_dict
         try:
             profile = await self._repo.update_profile(
                 profile_id=profile_id,

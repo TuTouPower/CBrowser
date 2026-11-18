@@ -248,7 +248,6 @@ class ProfileRepository:
                     locale=config.locale,
                     screen_width=config.screen_width,
                     screen_height=config.screen_height,
-                    gpu_family=config.gpu_family,
                     humanize=config.humanize,
                     human_preset=config.human_preset,
                     geoip=config.geoip,
@@ -257,6 +256,7 @@ class ProfileRepository:
                     color_scheme=config.color_scheme,
                     fingerprint_platform=config.fingerprint_platform,
                     font_set_id=config.font_set_id,
+                    include_cjk_fonts=config.include_cjk_fonts,
                     launch_args=json.dumps(config.launch_args),
                     extension_paths=json.dumps(config.extension_paths),
                     allow_3p_cookies=config.allow_3p_cookies,
@@ -683,7 +683,6 @@ class ProfileRepository:
                     "locale": p_model.locale,
                     "screen_width": p_model.screen_width,
                     "screen_height": p_model.screen_height,
-                    "gpu_family": p_model.gpu_family,
                     "humanize": p_model.humanize,
                     "human_preset": p_model.human_preset,
                     "geoip": p_model.geoip,
@@ -692,6 +691,7 @@ class ProfileRepository:
                     "color_scheme": p_model.color_scheme,
                     "fingerprint_platform": p_model.fingerprint_platform,
                     "font_set_id": p_model.font_set_id,
+                    "include_cjk_fonts": p_model.include_cjk_fonts,
                     "launch_args": json.loads(p_model.launch_args)
                     if p_model.launch_args
                     else [],
@@ -734,7 +734,6 @@ class ProfileRepository:
                 p_model.locale = merged_cfg.locale
                 p_model.screen_width = merged_cfg.screen_width
                 p_model.screen_height = merged_cfg.screen_height
-                p_model.gpu_family = merged_cfg.gpu_family
                 p_model.humanize = merged_cfg.humanize
                 p_model.human_preset = merged_cfg.human_preset
                 p_model.geoip = merged_cfg.geoip
@@ -743,6 +742,7 @@ class ProfileRepository:
                 p_model.color_scheme = merged_cfg.color_scheme
                 p_model.fingerprint_platform = merged_cfg.fingerprint_platform
                 p_model.font_set_id = merged_cfg.font_set_id
+                p_model.include_cjk_fonts = merged_cfg.include_cjk_fonts
                 p_model.launch_args = json.dumps(merged_cfg.launch_args)
                 p_model.extension_paths = json.dumps(merged_cfg.extension_paths)
                 p_model.allow_3p_cookies = merged_cfg.allow_3p_cookies
@@ -1412,7 +1412,6 @@ class ProfileRepository:
             locale=m.locale,
             screen_width=m.screen_width,
             screen_height=m.screen_height,
-            gpu_family=m.gpu_family,  # type: ignore
             humanize=m.humanize,
             human_preset=m.human_preset,  # type: ignore
             geoip=m.geoip,
@@ -1421,6 +1420,7 @@ class ProfileRepository:
             color_scheme=m.color_scheme,  # type: ignore
             fingerprint_platform=m.fingerprint_platform,  # type: ignore
             font_set_id=m.font_set_id,  # type: ignore
+            include_cjk_fonts=m.include_cjk_fonts,
             launch_args=stored_launch_args,
             extension_paths=json.loads(m.extension_paths) if m.extension_paths else [],
             allow_3p_cookies=m.allow_3p_cookies,
@@ -2717,7 +2717,6 @@ class ProfileRepository:
             locale=m.locale,
             screen_width=m.screen_width,
             screen_height=m.screen_height,
-            gpu_family=m.gpu_family,  # type: ignore
             humanize=m.humanize,
             human_preset=m.human_preset,  # type: ignore
             geoip=m.geoip,
@@ -2726,6 +2725,7 @@ class ProfileRepository:
             color_scheme=m.color_scheme,  # type: ignore
             fingerprint_platform=m.fingerprint_platform,  # type: ignore
             font_set_id=m.font_set_id,  # type: ignore
+            include_cjk_fonts=m.include_cjk_fonts,
             launch_args=json.loads(m.launch_args) if m.launch_args else [],
             extension_paths=json.loads(m.extension_paths) if m.extension_paths else [],
             allow_3p_cookies=m.allow_3p_cookies,
