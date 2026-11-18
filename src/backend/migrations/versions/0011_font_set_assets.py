@@ -1,4 +1,9 @@
-"""0011: font set asset catalog (t081).
+"""0011 (branch numbering): font set asset catalog (t081).
+
+Rechained on main after the t081 merge: t078's 0011
+(profile_deletions) already occupies the post-0010 slot and is
+deployed, so this migration follows it (logically 0012). The
+revision id is unchanged.
 
 Font sets become immutable published resources whose verification
 conclusions live in the API-owned catalog instead of being recomputed
@@ -17,7 +22,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "c81f0a11b001"
-down_revision: str | None = "8c3f1d0a7b92"
+down_revision: str | None = "c41d9a02e6b7"
 branch_labels: str | None = None
 depends_on: str | None = None
 

@@ -54,6 +54,19 @@
 - **配置版本三分**：修改分为「元数据」（`name` / `notes` / `sort_order` / `group_id`，即时生效且不生成新版本）、「即时策略」（`capture_preview`，不生成新版本）、「运行配置」（其余字段；值变化才生成新版本，运行中产生待应用版本）。提交与当前值相同的运行配置也不生成。
 - **代理连接变更的联动（t056 A17 修订）**：`update_proxy` 改连接字段（scheme/host/port/username/password）时，在同一事务内只为**当前配置**引用它的 Profile 生成新版本并广播 SSE；只改 name/region/notes 不生成。仅被运行中绑定版本引用（当前配置已改绑他处）的 Profile 不生成新版本，只收到运行事件。快照中的 `proxy_credential_revision` 与代理库 `credential_revision` 对齐，Runner 据此判定凭据是否变更并失败封闭 `proxy_credentials_changed`。**冻结修订取实际引用者**：绑定快照冻结的修订号取该快照实际引用的代理的当前修订，不是被改代理的修订；凭据变更后旧绑定版本重启仍按冻结修订校验、失败封闭，应用新版本后启动成功。
 
+## 集合查询与代理引用并集（t076）
+
+- **集合投影**：环境 / 代理 / 分组列表由服务端集合页提供（搜索、筛选、稳定排序、总数、有界分页）；`CollectionPage` 的 `total` 计全量筛选集，`page_size` 钳制 1..100。有界候选按名称检索，`limit` 钳制 1..50；国家→城市范围以后端聚合为准，键为稳定国家代码，聚合口径与集合筛选一致：每代理只取最新且仍有效的观测（过期 ok 行不计入），不聚历史行。
+- **代理引用并集**：一个代理的使用环境 = 当前配置引用 ∪ 运行绑定版本引用，按环境去重，每项标 `current` / `bound` / `both`；计数、明细、导航与删除保护用同一语义。仅被运行绑定版本占用的环境仍计入并阻止删除；运行绑定解除（运行行删除）后即释放。引用聚合一次取 3 条 SELECT，不随规模增长；不通过删除运行绑定引用减少查询。
+- **运行摘要**：`RuntimeSummaryEntry` 是列表渲染所需的运行状态投影（含启停/预览捕获时间与协调器错误），由 `GET /api/v1/profiles/runtime-summary` 一次聚合返回；SSE 事件带 `config_version` 围栏，旧版本/旧实例事件不得覆盖新实例。
+- **集合选择范围**：批量操作目标按稳定 ID 与明确目标快照确定；表头全选只选当前页（`toggleAll` 为当前页语义），不以 DOM 行号或当前页数组下标作为身份。
+
+## 删除意图与批量目标（t078）
+
+- **删除意图**：`ProfileDeletion` 是持久化实体（每目标一行）：`batch_id`（一次确认的批次）、`profile_id`、名称快照、`stage`（`accepted`/`stopping`/`cleaning`/`done`/`failed`）、`failed_stage`、`error`、`detail`（分步清理结果与停止时绑定实例快照）。同一 Profile 同时至多一个未终结意图（由数据库部分唯一索引强制）；重复受理返回既有意图（幂等），失败意图被再次确认即按 retry 从失败阶段恢复并归入新批次，已终结意图保留作审计。
+- **阶段规则**：stopping 只改运行意愿并等待写者消失，不动数据；cleaning 先做实例围栏复核（绑定实例与停止时快照不一致即失败），再按 Artifact→目录→预览→数据库行顺序清理，任一步失败整体失败且数据库行保留；失败只能经 retry 从失败阶段继续，不重复已完成步骤的破坏效果。
+- **批量目标**：批量删除的目标是确认时冻结的明确 ID 集合，逐项独立成败；成功项与失败项分别处置，部分失败不报全部成功。目标集合不由 DOM 位置、当前页或筛选状态推导。
+
 ## 代理链接录入与出口观测（t052）
 
 - **链接为唯一录入**：`ProxyCreateRequest` / `ProxyUpdateRequest` 只接受 `proxy_url`（`extra="forbid"`，平铺字段与 `country_code` 一律 422）。四种格式：标准 URL `scheme://user:pass@host:port`、无协议 `host:port`（默认 http）、`host:port:user:pass`、`user:pass@host:port`；scheme 白名单 http/https/socks5、IPv6 必须括号、端口 1..65535、密码 percent-decode 且非法转义报错；裸 IPv6 与三段无协议形式判 ambiguous。`ProxyResponse` 返回脱敏链接（不含密码）与派生只读字段（scheme/host/port/username），密码永不进响应。
@@ -95,3 +108,8 @@
 - **时区 → 语言规则**：中文地区时区集合 `{Asia/Shanghai, Asia/Chongqing, Asia/Urumqi, Asia/Harbin, Asia/Hong_Kong, Asia/Macau, Asia/Taipei}` → `zh-CN`，其余合法时区 → `en-US`；时区为空时语言保持当前值。规则由后端 `domain/profile_locale.py` 的 `locale_for_timezone` 定义，前端 `features/profiles/profile_locale.ts` 逐项镜像，两侧单测保证一致（同一规则来源的两种实现，不存在第三份真相）。
 - **新建默认值**：`humanize` 与 `portable_cookies` 默认开启；其余高级选项默认值不变——`transparent_proxy` / `auto_launch` 关闭，`allow_3p_cookies` / `set_google_default` / `clipboard_sync` / `restore_session` / `capture_preview` 开启。三端一致：后端 `ProfileConfig` / `ProfileCreateRequest` / `ProfileResponse`、ORM（Python 默认 + `server_default`）、前端 `DEFAULT_PROFILE_CREATE_VALUES`；由后端单测与前端提交单测固定。迁移 `0007` 只改 server default，不改写既有 Profile 的已存值。
 - **语言属运行配置**：`locale` 变更生成新 `ProfileConfigVersion`，重启后字体可见性与 `navigator.language` 按新语言生效。`geoip` 默认开启，但语言恒为显式值，不被出口 IP 推断覆盖（CloakBrowser 显式 `locale` 是否优先于出口 IP 推断，仍待真实引擎验证，见 t053 未知契约清单）。
+
+## 状态同步围栏与最小协调字段（t083）
+
+- **state_revision**：`profile_runtimes.state_revision` 为每 Profile 单调修订，ORM `before_update` 事件在任意运行时行更新时统一自增（迁移 0013），是 Supervisor 状态同步的版本围栏；与 API 进程 `api_epoch`（进程启动生成、随每份快照与通知携带）共同决定一份状态是否可信：跨 epoch 不比 revision、未完整读完的快照不是权威、迟到通知按 revision 丢弃。
+- **最小协调字段**：跨 API→Supervisor 的协调只允许 `SupervisorProfileState` 的字段集（意愿、绑定实例/配置版本、终态事件、重试/封锁、display_number、修订与更新时间）；字体覆盖、transport、search-defaults、control 与 UI 投影永不进入协调协议，观测新鲜度由缓存权威窗口（40 秒）与「未确认标未知」表达，读取路径不因观测缺失改写意愿。

@@ -15,9 +15,9 @@ tasks: [baseline, t080]
 
 ## 验收而非假成功
 
-- 发布与回退都以同一验收收尾：先有界 `docker compose up -d --no-build --wait`（服务健康），再经 `docker compose exec` 把 `scripts/supervisor_readiness_probe.py` 喂入 Supervisor 容器执行——探针调用唯一的 `reconcile_all` 收敛入口并轮询 `readiness`，宿主机不持有 Supervisor 密钥、不新增发布端口，脚本不自行做网络编排或停止 Browser。
+- 发布与回退都以同一验收收尾：`docker compose up -d --no-build` 后，先经 `docker compose exec` 把 `scripts/service_readiness_probe.py` 喂入 Supervisor 容器，在单一截止时间内确认 API/Gateway/Supervisor 三服务真实 readiness（t083：Compose 无 Docker healthcheck，进程已启动不等于就绪，未知/未就绪显式失败），再以 `scripts/supervisor_readiness_probe.py` 做 Profile 收敛验收——探针调用唯一的 `reconcile_all` 收敛入口并轮询 `readiness`，宿主机不持有 Supervisor 密钥、不新增发布端口，脚本不自行做网络编排或停止 Browser。
 - 任一 desired=running Profile 未收敛、服务不健康或超过截止时间：脚本非零退出并输出脱敏的逐 Profile 诊断（仅 profile id、ready 标志与诊断码），不打印成功、不移动指针。
-- API、Gateway、Supervisor 均有与能力匹配的 compose 健康检查：API `/api/v1/health`、Gateway `/gateway/v1/health`（t027 新增，无鉴权存活）、Supervisor `/supervisor/v1/health`（检查在容器内读已挂载的 token 文件执行）。Supervisor 控制面在初始扫描之前启动，存活判定不被初始扫描阻塞。
+- Compose 不再声明 Docker healthcheck（t083 已删除三处 healthcheck）；三服务健康由各自控制组件观察——API `/api/v1/health`、Gateway `/gateway/v1/health`（t027 新增，无鉴权存活）、Supervisor `/supervisor/v1/readiness`（控制面读已维护的状态缓存，未知显式未就绪）——deploy 以 `service_readiness_probe.py` 在单一截止时间内确认。Supervisor 控制面在初始扫描之前启动，存活判定不被初始扫描阻塞。
 
 ## 幂等与最小重建
 

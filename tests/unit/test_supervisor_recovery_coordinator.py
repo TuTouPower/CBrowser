@@ -52,7 +52,32 @@ def mock_core():
     core.stop_profile = AsyncMock()
     core.start_profile = AsyncMock()
     core._reconcile_instance_observation = AsyncMock(return_value=None)
+    # t083: recovery reads the core's minimal state cache view; the
+    # default is unauthoritative (None), tests install state below.
+    core._state_entries = AsyncMock(return_value=None)
+    core._state_entry = AsyncMock(return_value=None)
     return core
+
+
+def _install_state(mock_core, profiles, runtime, version=None):
+    """Install cached state on the mock core (t083).
+
+    ``profiles`` are the profile list entries and ``runtime`` the
+    single runtime dict for the (one) profile under test; entries in
+    the batch view merge both, mirroring the state cache's dicts.
+    ``api.get`` keeps serving only config-version snapshots.
+    """
+    entries = [{**p, **runtime} for p in profiles]
+
+    async def _entry(profile_id):
+        return runtime if runtime.get("profile_id") == profile_id else None
+
+    mock_core._state_entries = AsyncMock(return_value=entries)
+    mock_core._state_entry = AsyncMock(side_effect=_entry)
+    if version is not None:
+        mock_core.api.get.side_effect = _api_handler(
+            profiles, runtime, version
+        )
 
 
 async def _wait_until(predicate, timeout: float = 3.0) -> None:
@@ -169,7 +194,8 @@ def _api_handler(profiles, runtime, version=None):
 @pytest.mark.asyncio
 async def test_api_unreachable_or_error_safely_ignored(mock_core):
     """An unreachable API pauses recovery without starting or stopping work."""
-    mock_core.api.get.side_effect = Exception("Network connection refused")
+    # t083: an unreachable API leaves the state cache unauthoritative.
+    mock_core._state_entries = AsyncMock(return_value=None)
     coordinator = RecoveryCoordinator(mock_core)
 
     await coordinator.tick()
@@ -182,10 +208,7 @@ async def test_api_unreachable_or_error_safely_ignored(mock_core):
 @pytest.mark.asyncio
 async def test_brand_new_profile_not_auto_started(mock_core):
     """A running desire with no prior failure is handled without auto-starting."""
-    mock_core.api.get.side_effect = [
-        DummyResponse(200, [_profile()]),
-        DummyResponse(200, _runtime()),
-    ]
+    _install_state(mock_core, [_profile()], _runtime())
     coordinator = RecoveryCoordinator(mock_core)
     await coordinator.tick()
 
@@ -198,15 +221,12 @@ async def test_brand_new_profile_not_auto_started(mock_core):
 async def test_manual_unblock_triggers_immediate_recovery(mock_core):
     """A prior manual exit event triggers exactly one immediate recovery start."""
     cfg_data = ProfileConfig(name="Profile 1").model_dump()
-    mock_core.api.get.side_effect = [
-        DummyResponse(200, [_profile()]),
-        DummyResponse(200, _runtime(last_exit_event_id="manual_prev_exit")),
-        DummyResponse(200, _runtime(last_exit_event_id="manual_prev_exit")),
-        DummyResponse(
-            200,
-            {"profile_id": "p1", "version": 1, "config": cfg_data},
-        ),
-    ]
+    _install_state(
+        mock_core,
+        [_profile()],
+        _runtime(last_exit_event_id="manual_prev_exit"),
+        {"profile_id": "p1", "version": 1, "config": cfg_data},
+    )
     started = asyncio.Event()
 
     async def on_start(**kwargs):
@@ -228,18 +248,16 @@ async def test_manual_unblock_triggers_immediate_recovery(mock_core):
 @pytest.mark.asyncio
 async def test_restart_blocked_profile_is_not_retried(mock_core):
     """Restart-blocked intent is handled by leaving recovery idle."""
-    mock_core.api.get.side_effect = [
-        DummyResponse(200, [_profile()]),
-        DummyResponse(
-            200,
-            _runtime(
-                runtime_instance_id=None,
-                failure_count=4,
-                restart_blocked=True,
-                last_exit_event_id="exit_4",
-            ),
+    _install_state(
+        mock_core,
+        [_profile()],
+        _runtime(
+            runtime_instance_id=None,
+            failure_count=4,
+            restart_blocked=True,
+            last_exit_event_id="exit_4",
         ),
-    ]
+    )
     coordinator = RecoveryCoordinator(mock_core)
     await coordinator.tick()
 
@@ -250,17 +268,15 @@ async def test_restart_blocked_profile_is_not_retried(mock_core):
 @pytest.mark.asyncio
 async def test_desired_stopped_does_not_retry(mock_core):
     """Stopped intent is handled by not scheduling any retry."""
-    mock_core.api.get.side_effect = [
-        DummyResponse(200, [_profile()]),
-        DummyResponse(
-            200,
-            _runtime(
-                desired_state="stopped",
-                failure_count=1,
-                last_exit_event_id="exit_1",
-            ),
+    _install_state(
+        mock_core,
+        [_profile()],
+        _runtime(
+            desired_state="stopped",
+            failure_count=1,
+            last_exit_event_id="exit_1",
         ),
-    ]
+    )
     coordinator = RecoveryCoordinator(mock_core)
     await coordinator.tick()
 
@@ -286,18 +302,12 @@ async def test_browser_exit_reports_error_observation_with_api_fencing(mock_core
     mock_container.attrs = {"State": {"ExitCode": 137}}
     mock_core.docker.client.containers.get.return_value = mock_container
 
-    responses = [
-        DummyResponse(200, []),
-        DummyResponse(
-            200,
-            {
-                "profile_id": "p1",
-                "desired_state": "running",
-                "runtime_instance_id": "inst_xyz",
-            },
-        ),
-    ]
-    mock_core.api.get.side_effect = responses
+    fence_runtime = {
+        "profile_id": "p1",
+        "desired_state": "running",
+        "runtime_instance_id": "inst_xyz",
+    }
+    _install_state(mock_core, [], fence_runtime)
 
     coordinator = RecoveryCoordinator(mock_core)
     await coordinator.tick()
@@ -307,17 +317,6 @@ async def test_browser_exit_reports_error_observation_with_api_fencing(mock_core
     )
     assert mock_core.events.emit_event.call_count == 0
 
-    mock_core.api.get.side_effect = [
-        DummyResponse(200, []),
-        DummyResponse(
-            200,
-            {
-                "profile_id": "p1",
-                "desired_state": "running",
-                "runtime_instance_id": "inst_xyz",
-            },
-        ),
-    ]
     await coordinator.tick()
     assert mock_core.report_terminal_observation.await_count == 1
 
@@ -337,17 +336,15 @@ async def test_browser_exit_fencing_ignores_already_stopped_or_exited(mock_core)
         }
     ]
     # API says profile is already stopped
-    mock_core.api.get.side_effect = [
-        DummyResponse(200, []),
-        DummyResponse(
-            200,
-            {
-                "profile_id": "p1",
-                "desired_state": "stopped",
-                "runtime_instance_id": None,
-            },
-        ),
-    ]
+    _install_state(
+        mock_core,
+        [],
+        {
+            "profile_id": "p1",
+            "desired_state": "stopped",
+            "runtime_instance_id": None,
+        },
+    )
     coordinator = RecoveryCoordinator(mock_core)
     await coordinator.tick()
 
@@ -384,7 +381,7 @@ async def test_cleanup_failure_cooldown_prevents_busy_loop(mock_core, fake_clock
         last_exit_event_id="prev_exit",
         updated_at="2020-01-01T00:00:00+00:00",
     )
-    mock_core.api.get.side_effect = _api_handler([_profile()], runtime)
+    _install_state(mock_core, [_profile()], runtime, _version())
     mock_core.docker.scan_active_containers.return_value = containers
 
     coordinator = RecoveryCoordinator(mock_core)
@@ -414,13 +411,15 @@ async def test_close_cancels_in_flight_tasks_without_killing_runtime(
 ):
     """close() cancels a waiting retry without stopping containers."""
     fake_clock.block_sleeps = True
-    mock_core.api.get.side_effect = _api_handler(
+    _install_state(
+        mock_core,
         [_profile()],
         _runtime(
             failure_count=1,
             last_exit_event_id="prev_exit",
             updated_at=datetime.now(UTC).isoformat(),
         ),
+        _version(),
     )
     mock_core.docker.scan_active_containers.return_value = []
     coordinator = RecoveryCoordinator(mock_core)
@@ -468,9 +467,7 @@ async def test_error_observation_with_live_containers_schedules_retry(
         last_exit_event_id="observed_error:inst_dead_browser",
         updated_at="2020-01-01T00:00:00+00:00",
     )
-    mock_core.api.get.side_effect = _api_handler(
-        [_profile()], runtime, _version()
-    )
+    _install_state(mock_core, [_profile()], runtime, _version())
     started = asyncio.Event()
 
     async def on_start(**kwargs):
@@ -503,7 +500,7 @@ async def test_dead_instance_tracking_is_pruned_after_generation_ends(mock_core)
     mock_container.attrs = {"State": {"ExitCode": 137}}
     mock_core.docker.client.containers.get.return_value = mock_container
     runtime = _runtime(runtime_instance_id="inst_old", failure_count=0)
-    mock_core.api.get.side_effect = _api_handler([_profile()], runtime)
+    _install_state(mock_core, [_profile()], runtime, _version())
     coordinator = RecoveryCoordinator(mock_core)
 
     await coordinator.tick(containers=[dead])
@@ -531,7 +528,8 @@ async def test_recovery_uses_failed_instance_bound_config_version(
         last_exit_event_id="observed_error:inst_failed",
         updated_at="2020-01-01T00:00:00+00:00",
     )
-    mock_core.api.get.side_effect = _api_handler(
+    _install_state(
+        mock_core,
         [_profile(current_config_version=2)],
         runtime_state,
         _version(version=1),

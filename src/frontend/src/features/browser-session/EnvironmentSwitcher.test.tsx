@@ -145,6 +145,19 @@ function makeStub(
       getRuntime: vi.fn(
         async (id: string) => runtimes[id] ?? runtime(id, "stopped"),
       ),
+      getRuntimeSummary: vi.fn(async () => ({
+        entries: Object.values(runtimes).map((r) => ({
+          profile_id: r.profile_id,
+          desired_state: r.desired_state,
+          observed_state: r.observed_state,
+          config_version: r.config_version,
+          runtime_instance_id: r.runtime_instance_id,
+          last_coordinator_error: r.last_coordinator_error ?? null,
+        })),
+        running_count: Object.values(runtimes).filter(
+          (r) => r.observed_state === "running",
+        ).length,
+      })),
     },
   } as unknown as ApiClient;
 }
@@ -203,9 +216,15 @@ describe("EnvironmentSwitcher", () => {
     fireEvent.click(trigger);
     const firstItem = await screen.findByTestId(sessId("switcher-item", "p1"));
     await waitFor(() =>
-      expect(firstItem.textContent).toContain(en.sessRunning),
+      expect(firstItem.textContent).toContain(en.statusRunning),
     );
-    expect(trigger.textContent).not.toContain(en.sessRunning);
+    // t079 AC-003: no duplicate right-side badge on items; the status
+    // is carried by the leading dot plus an accessible text label.
+    expect(firstItem).toHaveAttribute(
+      "aria-label",
+      `Alpha (${en.statusRunning})`,
+    );
+    expect(trigger.textContent).not.toContain(en.statusRunning);
 
     const search = await screen.findByTestId(SESS_SWITCHER_SEARCH);
 
@@ -303,5 +322,30 @@ describe("EnvironmentSwitcher", () => {
     expect(
       screen.getByTestId("sess-switcher-trigger-dot").className,
     ).not.toContain("bg-accent");
+  });
+
+  // t076 AC-002 (p121): a closed switcher must not fan out runtime
+  // reads: only the current profile is read (trigger dot); the batched
+  // summary is fetched only once the popover opens.
+  it("关闭时不为全部环境拉取 runtime，打开后只读一次批量摘要", async () => {
+    const props = fixture();
+    const client = makeStub({ p1: runtime("p1", "running") });
+    renderSwitcher(props, client);
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("sess-switcher-trigger-dot").className,
+      ).toContain("bg-success"),
+    );
+    expect(vi.mocked(client.profiles.getRuntime)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(client.profiles.getRuntimeSummary)).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId(SESS_SWITCHER_TRIGGER));
+    await screen.findByTestId(SESS_SWITCHER_SEARCH);
+    await waitFor(() =>
+      expect(
+        vi.mocked(client.profiles.getRuntimeSummary),
+      ).toHaveBeenCalledTimes(1),
+    );
+    expect(vi.mocked(client.profiles.getRuntime)).toHaveBeenCalledTimes(1);
   });
 });

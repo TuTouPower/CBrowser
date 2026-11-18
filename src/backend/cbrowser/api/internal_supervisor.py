@@ -15,6 +15,12 @@ from cbrowser.domain.models import (
 )
 from cbrowser.preview import clear_preview
 from cbrowser.secret_files import read_secret_file
+from cbrowser.api.state_projection import profile_state_from_runtime
+from cbrowser.shared.state_protocol import (
+    API_EPOCH,
+    MAX_STATE_BATCH,
+    StateSnapshot,
+)
 from cbrowser.service_errors import ServiceNotConfiguredError
 from cbrowser.services.profile_service import ProfileNotFoundError, ProfileService
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -62,22 +68,47 @@ def supervisor_rpc_health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@supervisor_router.get(
+    "/state/snapshot",
+    response_model=StateSnapshot,
+    include_in_schema=False,
+)
+async def get_state_snapshot(
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+    cursor: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=MAX_STATE_BATCH)] = MAX_STATE_BATCH,
+) -> StateSnapshot:
+    """One keyset batch of the minimal Supervisor state protocol.
+
+    One SELECT per batch regardless of Profile count; the caller
+    follows ``next_cursor`` until it is null, and only a fully read
+    snapshot of one epoch may act as the coordination authority.
+    """
+    runtimes = await service.list_runtime_batch(
+        after_profile_id=cursor, limit=limit
+    )
+    states = [profile_state_from_runtime(rt) for rt in runtimes]
+    next_cursor = (
+        states[-1].profile_id if len(states) == limit and states else None
+    )
+    return StateSnapshot(
+        api_epoch=API_EPOCH, profiles=states, next_cursor=next_cursor
+    )
+
+
 # Reuse the canonical API handlers and their service transactions. This service
 # surface grants configuration reads, runtime intent and reports, never Profile CRUD.
+# t083: the former GET /profiles (rich list) and GET /profiles/{id}/runtime
+# (UI aggregate) routes are deleted — Supervisor coordination consumes
+# only the minimal batch state protocol below (GET /state/snapshot plus
+# pushed StateChangeNotice), never the UI runtime response.
 for path, method, endpoint, response_model in (
-    ("/profiles", "GET", runtime_api.list_profiles, list[ProfileResponse]),
     ("/profiles/{profile_id}", "GET", runtime_api.get_profile, ProfileResponse),
     (
         "/profiles/{profile_id}/versions/{version}",
         "GET",
         runtime_api.get_version,
         ConfigVersionResponse,
-    ),
-    (
-        "/profiles/{profile_id}/runtime",
-        "GET",
-        runtime_api.get_profile_runtime,
-        ProfileRuntimeResponse,
     ),
     (
         "/profiles/{profile_id}/runtime/desired-state",

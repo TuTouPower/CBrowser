@@ -78,6 +78,7 @@ def test_profile_runtime_status_event_exposes_font_set_state():
         "desired_state": "running",
         "observed_state": "stopped",
         "runtime_instance_id": None,
+        "config_version": 1,  # t076 AC-003: SSE fencing version
         "failure_count": 1,
         "restart_blocked": False,
         "last_started_at": None,

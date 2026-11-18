@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useApiClient } from '../../shared/api/client_context';
 import type { GroupResponse } from '../../shared/api/types';
-import { groupKeys, useReorderGroupsMutation } from './useProfilesQuery';
+import { groupKeys, invalidateGroupLists, useReorderGroupsMutation } from './useProfilesQuery';
 
 export function useGroupReorder(groups: GroupResponse[] | undefined) {
   const client = useApiClient();
@@ -23,7 +23,9 @@ export function useGroupReorder(groups: GroupResponse[] | undefined) {
     try {
       await mutation.mutateAsync({ orderedIds });
     } finally {
-      await queryClient.invalidateQueries({ queryKey: groupKeys.lists() });
+      // t076 review f003: a reorder also moves rows in the paged
+      // group collection, not just the legacy full list.
+      await invalidateGroupLists(queryClient);
     }
   }
 

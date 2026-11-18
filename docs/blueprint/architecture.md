@@ -109,6 +109,7 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 |**Control API**|`cbrowser-api` 容器（常驻）|HTTP 接口、用户鉴权、Profile CRUD、Artifact 文件服务；viewer 握手时经内部边缘解析端点复用 `AuthService.authorize_viewer` 作唯一会话/Origin/Profile 判定，并签发短期 viewer grant。**系统唯一 SQLite 写入者**（开启 WAL 模式，`busy_timeout=5000`）。**严格禁止挂载 Docker Socket**，禁止直接访问 Browser Runtime 私有网络|
 |**Runtime Supervisor**|`cbrowser-supervisor` 容器（常驻）|**宿主机唯一持有 Docker Socket 的服务**。仅响应内部受限认证 RPC，负责 Profile 双容器生命周期、网络与 UDP 端口分配；通过受控 UDS 代理 CDP 与事件回传。**严格禁止读写或挂载 SQLite**|
 |**Policy Agent**|每目标 netns 一个容器（常驻，t082 / ADR 039）|与 Browser/Stream 目标同 netns 的受限策略执行与观测进程：仅 NET_ADMIN、只读根、无 Docker Socket 与用户数据挂载，只经版本化 UDS 协议接受 Supervisor 的 health/resolve/install/inspect/fail_close 指令，身份在创建时绑定且运行期不可变|
+|**状态协调**|API ↔ Supervisor（t083 / ADR 040）|最小批量状态协议：API 以服务鉴权提供仅含协调字段的快照（键集分批）与推送通知（epoch + state_revision 围栏），Supervisor 以状态缓存为唯一意愿视图（单飞快照、30 秒兜底、40 秒权威窗口）；runtime GET/列表/SSE 只读已维护观测，健康观察归各服务控制组件，Compose 无 Docker healthcheck|
 |**Stream Gateway**|`cbrowser-stream-gateway` 容器（常驻）|独立信令网关。维护 Stream Agent 动态注册表；viewer 握手只在本地验证 API 签发的短期 grant、Profile 绑定与 Origin，不接收或解析管理会话 Cookie；为每个外部 ViewerConnection 建立隔离信令隧道双向转发 SDP 与 ICE；进程异常重启不影响底层浏览器进程运行|
 |**Browser Runtime**|`browser-runtime-{id}` 容器（动态）|特定 Profile 的核心运行沙箱。以非 root 运行真实 CloakBrowser、Xvfb、Openbox、PulseAudio 服务（48000 Hz）与 Browser Agent。作为 IPC 供体显式开启 `HostConfig.IpcMode=shareable` 与 1 GiB `/dev/shm`；代理凭据文件以只读挂载进本容器，CloakBrowser 通过 SDK `proxy=`、WebRTC/QUIC 加固参数及有代理 `OUTPUT -j DROP` 网络策略直连上游代理（ADR 038）|
 |**Stream Runtime**|`stream-runtime-{id}` 容器（动态）|特定 Profile 的远程显示沙箱。加入对应 Browser Runtime 的专属 IPC 命名空间，通过 XShm 共享内存捕获画面；负责音频/视频编码与 WebRTC 传输；分配独立 UDP mux 端口。**严格禁止挂载浏览器用户数据目录**|
@@ -186,6 +187,18 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 - Caddy 只把 API 回注的 authorized Profile 与 grant 复制到待代理握手，并删除整个 Cookie 头；Gateway 使用同一 `cbrowser/shared/viewer_grants.py` 在本地验签、验期与验 Profile 绑定，再检查 Agent 与 runtime 就绪。每次新握手都重走 `forward_auth`，登出或撤销在下一次握手生效。直连 Gateway、伪造授权头或只有 Cookie 的请求都没有有效 grant，不能越权。
 - 边缘解析端点只存在于内部 schema 与服务网络：渲染后的 Caddyfile 对外部 `/api/v1/internal/*` 显式 404，Caddy 的 `forward_auth` 子请求直达 API upstream、不重入外部站点路由。`/stream/agent/register` 不套用 viewer 授权，继续使用独立 Agent 凭证与 API runtime 绑定校验。
 - CDP 本体只由 Browser 容器以临时端口监听 `127.0.0.1`，端口不发布且不向普通 viewer 披露。唯一外部自动化入口仍是带 automation token 与控制权围栏的 `/api/v1/automation/profiles/{profileId}/cdp`；管理会话经专用 Automation 状态端点才可看到 `cdp_ws_path`，普通 Profile 响应不含该字段或 token。引擎内以域名 Host 发起的回环请求（DNS rebinding 的可观察形态）与跨 Origin CDP WebSocket 必须由真实引擎负向测试拒绝。
+
+### 5.8 集合读取投影与全局摘要（t076）
+
+- 列表读是服务端集合投影，不是全量拉取后客户端拼装：`GET /api/v1/profiles|proxies|groups/collection` 在持久层完成搜索 / 筛选 / 稳定排序 / 总数 / 有界分页（`page_size` 钳制 1..100）；有界候选 `…/candidates`（`limit` 钳制 1..50）与代理国家→城市范围 `GET /api/v1/proxies/countries`（键为稳定国家代码）供后续交互使用。
+- 代理引用聚合一次取 3 条 SELECT（当前引用、全部运行行、绑定配置版本 `IN` 查询），与代理数 × 运行绑定数无关；`list_proxies` 在 20/100/1000 规模下 SELECT 数恒定。
+- 运行状态只读一次批量摘要 `GET /api/v1/profiles/runtime-summary`（全部环境状态 + 运行总数）；SSE `runtime_state` 事件带 `config_version` 围栏，旧版本/旧实例迟到事件丢弃，重复事件无副作用且不触发列表重取，有效事件原地更新运行缓存与摘要缓存——摘要更新不依赖单环境运行缓存，围栏按两份缓存中现有的那份判定。环境集合页的行自带分组名/颜色与代理名（服务端按页批量查名），筛选选项读有界候选；任何变更路径失效列表键时同步失效集合键前缀。前端缓存职责：列表只读集合页与摘要，详情按需单读，批量操作目标按稳定 ID 与明确目标快照确定，当前页全选与全部匹配项语义分开。
+
+### 5.9 停止后删除协调与故障恢复（t078）
+
+- 删除由 API 内 `ProfileService` 编排（不新增进程/服务）：删除意图落 `profile_deletions` 表后由进程内驱动器推进，推进全程持有该 Profile 的生命周期锁，与启停、配置更新串行；驱动器对同一意图单飞，进程重启后由 lifespan 恢复未终结意图（与 Artifact 删除意图恢复同一模式）。
+- 协调边界：stopping 阶段只经既有运行意愿通道置 stopped 并轮询观测/写者状态，不直接操作 Docker（Supervisor 唯一持有者边界不变）；超时即失败，不强行清理。cleaning 阶段先复核实例围栏（停止时快照 vs 当前绑定），再调用 Artifact 服务、文件系统与仓储完成清理；每步结果写入意图 `detail`，失败保留在失败阶段等待重试。
+- 恢复语义：意图是删除结果的唯一事实来源，客户端断开不影响推进；查询端点（批次/单项）只读意图表。旧单删端点同步驱动同一状态机，不存在第二条删除路径。
 
 ## 6. 安全、网络与端口矩阵
 

@@ -7,6 +7,7 @@ import {
   DropdownMenu,
   IconButton,
   Popover,
+  RegionBadge,
   SearchField,
   StatusBadge,
   ToastProvider,
@@ -219,5 +220,21 @@ describe("t073 UI primitives", () => {
     expect(dialog.className).toContain("max-h-dialog-height");
     expect(dialog.className).toContain("flex-col");
     expect(dialog.querySelector(".overflow-y-auto")).not.toBeNull();
+  });
+});
+
+describe("RegionBadge (t079 AC-005)", () => {
+  it("renders flag + name for a known region", () => {
+    render(
+      <RegionBadge code="US" name="United States" unknownLabel="Unknown region" />,
+    );
+    expect(screen.getByText("United States")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "United States" })).toHaveTextContent("🇺🇸");
+  });
+
+  it("renders the placeholder, never a fabricated flag, for unassigned codes", () => {
+    render(<RegionBadge code="XX" unknownLabel="Unknown region" />);
+    expect(screen.getByRole("img", { name: "Unknown region" })).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("🇽🇽");
   });
 });

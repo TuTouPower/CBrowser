@@ -95,6 +95,35 @@ async def test_one_profile_failure_does_not_block_another_restore(
         }
 
     def runtime_response(request: httpx.Request) -> httpx.Response:
+        # t083: intent is read through the minimal batch snapshot,
+        # which carries every profile in one response.
+        if request.url.path.endswith("/state/snapshot"):
+            states = [
+                {
+                    "profile_id": pid,
+                    "display_number": 1,
+                    "desired_state": "running",
+                    "observed_state": "running",
+                    "runtime_instance_id": f"i-{pid}",
+                    "config_version": 1,
+                    "failure_count": 0,
+                    "restart_blocked": False,
+                    "last_exit_event_id": None,
+                    "backoff_started_at": None,
+                    "next_retry_at": None,
+                    "updated_at": "2026-01-01T00:00:00+00:00",
+                    "state_revision": 1,
+                }
+                for pid in ("bad", "good")
+            ]
+            return httpx.Response(
+                200,
+                json={
+                    "api_epoch": "fences-test-epoch",
+                    "profiles": states,
+                    "next_cursor": None,
+                },
+            )
         profile_id = request.url.path.split("/")[6]
         return httpx.Response(
             200,

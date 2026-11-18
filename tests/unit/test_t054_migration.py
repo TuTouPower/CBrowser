@@ -24,11 +24,16 @@ from cbrowser.adapters.database.migrations import (
 REVISION_0007 = "1a8db6b91744"
 REVISION_0008 = "3751fed02a4a"
 # t056 adds 0009 (display_number NOT NULL); t074 adds 0010
-# (country_name/city/latency_ms on proxy_egress_observations); t081 adds
-# 0011 (font_set_assets catalog), which is the current single head. The
-# 0008 assertions below still target 0008 as the revision that deletes
-# the network rows.
-REVISION_0011 = "c81f0a11b001"
+# (country_name/city/latency_ms on proxy_egress_observations); t078 adds
+# 0011 (durable profile deletion intents); t081 adds 0012
+# (font_set_assets catalog; numbered 0011 on its branch and
+# rechained to 0012 at merge time); t083 adds 0013
+# (state_revision on profile_runtimes), which is the current single
+# head. The 0008 assertions below still target 0008 as the revision
+# that deletes the network rows.
+REVISION_0011 = "c41d9a02e6b7"
+REVISION_0012 = "c81f0a11b001"
+REVISION_0013 = "d83a2c12b083"
 
 NETWORK_KEYS = (
     "network.pending_config",
@@ -51,10 +56,10 @@ def _revision_of_head(tmp_path: Path) -> str:
     return heads[0]
 
 
-def test_head_is_0011_and_single(tmp_path: Path) -> None:
-    """Replaces ``test_head_is_0010_and_single``: t081 0011 is the new
-    single head; asserting 0010 would lock an obsolete migration head."""
-    assert _revision_of_head(tmp_path) == REVISION_0011
+def test_head_is_0013_and_single(tmp_path: Path) -> None:
+    """Replaces ``test_head_is_0012_and_single``: t083 0013 is the new
+    single head; asserting 0012 would lock an obsolete migration head."""
+    assert _revision_of_head(tmp_path) == REVISION_0013
 
 
 def test_upgrade_deletes_all_network_settings_rows(tmp_path: Path) -> None:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from cbrowser.domain.models import utc_now_iso
 from sqlalchemy import (
     Boolean,
@@ -12,7 +14,9 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
+from sqlalchemy import event
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -273,6 +277,12 @@ class ProfileRuntimeModel(Base):
     backoff_started_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
     next_retry_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
     preview_captured_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # t083: per-Profile monotonic revision fencing the Supervisor's
+    # minimal state protocol; incremented by the mapper event below on
+    # every ORM update of this row.
+    state_revision: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
     updated_at: Mapped[str] = mapped_column(
         String(64), default=utc_now_iso, onupdate=utc_now_iso, nullable=False
     )
@@ -280,6 +290,19 @@ class ProfileRuntimeModel(Base):
     profile: Mapped[ProfileModel] = relationship(
         "ProfileModel", back_populates="runtime"
     )
+
+
+@event.listens_for(ProfileRuntimeModel, "before_update", propagate=True)
+def _increment_runtime_state_revision(
+    mapper: Any, connection: Any, target: ProfileRuntimeModel
+) -> None:
+    """Every runtime row update advances its state revision (t083).
+
+    Centralised on the mapper so no repository write path can forget
+    the fence: bind, observed reports, desired-state changes and event
+    consumption all mutate this row through the ORM.
+    """
+    target.state_revision = (target.state_revision or 0) + 1
 
 
 class ArtifactModel(Base):
@@ -440,6 +463,53 @@ class ProfileControlModel(Base):
     )
     updated_at: Mapped[str] = mapped_column(
         String(64), default=utc_now_iso, nullable=False
+    )
+
+
+class ProfileDeletionModel(Base):
+    """Durable profile deletion intent (t078).
+
+    One row per deletion target. The intent is persisted before any
+    stop or cleanup work happens, so an interrupted deletion (client
+    closed, service restarted) can be queried and resumed instead of
+    being lost. ``stage`` walks accepted -> stopping -> cleaning ->
+    done, or lands in failed with ``failed_stage``/``error`` recorded;
+    ``detail`` is a JSON object with the per-step cleanup outcomes and
+    the runtime instance bound when the stop stage began, which fences
+    the cleaning stage against deleting a *new* instance.
+    """
+
+    __tablename__ = "profile_deletions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    batch_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    profile_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    profile_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    stage: Mapped[str] = mapped_column(
+        String(32), default="accepted", nullable=False
+    )
+    failed_stage: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str] = mapped_column(
+        String(64), default=utc_now_iso, nullable=False
+    )
+    updated_at: Mapped[str] = mapped_column(
+        String(64), default=utc_now_iso, onupdate=utc_now_iso, nullable=False
+    )
+
+    __table_args__ = (
+        Index("idx_profile_deletions_batch", "batch_id"),
+        Index("idx_profile_deletions_profile", "profile_id"),
+        # One open intent per profile at most (t078 AC-004); only
+        # ``done`` closes an intent, so the partial index covers every
+        # non-done stage including failed-and-retryable.
+        Index(
+            "uq_profile_deletions_open_profile",
+            "profile_id",
+            unique=True,
+            sqlite_where=text("stage != 'done'"),
+        ),
     )
 
 

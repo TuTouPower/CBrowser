@@ -1,7 +1,7 @@
 ---
 slug: runtime_persistence
 status: active
-tasks: [baseline]
+tasks: [baseline, t076]
 ---
 # 需求规范：运行时状态与持久化契约 (runtime_persistence)
 
@@ -97,6 +97,12 @@ tasks: [baseline]
     - 字段由严格白名单过滤，`exit_reason` 经由安全枚举白名单清洗，未知非白名单原因归一化为 `custom_reason`；
     - 系统日志、标准输出以及 HTTP 4xx/5xx 错误响应体中严禁泄漏注入的密码、Token、Cookie、剪贴板文本或私密笔记文本；
     - 全局异常处理器不输出带参数的 SQL 跟踪日志。
+
+### 2.7 集合查询与引用聚合（t076，AC-001 ~ AC-007）
+
+- **集合页**：`GET /api/v1/profiles/collection`、`GET /api/v1/proxies/collection`、`GET /api/v1/groups/collection` 在服务端完成搜索 / 筛选 / 稳定排序 / 总数 / 有界分页（`page_size` 钳制 1..100，`total` 计全量筛选集）；有界候选 `…/candidates`（`limit` 钳制 1..50）与代理国家→城市范围 `GET /api/v1/proxies/countries`（键为稳定国家代码）。环境页大小越界不返回全量，分页无重复遗漏。
+- **引用聚合**：代理引用查询一次取 3 条 SELECT（当前引用、全部运行行、绑定配置版本 `IN` 查询），不随代理数 × 运行绑定数增长；`list_proxies` 在 20/100/1000 代理规模下 SELECT 数恒定（≤8）。代理使用计数与明细取当前配置 ∪ 运行绑定版本的并集，按环境去重并标 `current` / `bound` / `both`；仅运行绑定占用仍阻止删除。
+- **运行摘要**：`GET /api/v1/profiles/runtime-summary` 一次返回全部环境运行状态与运行总数；SSE 事件带 `config_version` 围栏，旧版本/旧实例迟到事件丢弃，重复事件无副作用且不触发列表重取。
 
 ## 3. 运维与验证命令
 

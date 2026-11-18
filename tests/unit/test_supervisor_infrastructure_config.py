@@ -147,6 +147,34 @@ async def test_start_profile_stream_gateway_url_selection(tmp_path: Path):
     mock_gateway_control.has_foreground_viewers = AsyncMock(return_value=False)
 
     async def mock_handler(request: httpx.Request) -> httpx.Response:
+        # t083: start intent is read through the minimal batch snapshot.
+        if request.url.path.endswith("/state/snapshot"):
+            states = [
+                {
+                    "profile_id": pid,
+                    "display_number": 1,
+                    "desired_state": "running",
+                    "observed_state": "stopped",
+                    "runtime_instance_id": None,
+                    "config_version": 1,
+                    "failure_count": 0,
+                    "restart_blocked": False,
+                    "last_exit_event_id": None,
+                    "backoff_started_at": None,
+                    "next_retry_at": None,
+                    "updated_at": "2026-01-01T00:00:00+00:00",
+                    "state_revision": 1,
+                }
+                for pid in ("prof_test", "prof_test2")
+            ]
+            return httpx.Response(
+                200,
+                json={
+                    "api_epoch": "infra-test-epoch",
+                    "profiles": states,
+                    "next_cursor": None,
+                },
+            )
         if request.url.path.endswith("/runtime"):
             return httpx.Response(
                 200,

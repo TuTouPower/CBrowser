@@ -1,22 +1,21 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { ChevronDown } from "lucide-react";
-import { useQueries } from "@tanstack/react-query";
 import { useI18n } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";
 import type {
   GroupResponse,
   ProfileResponse,
-  ProfileRuntimeResponse,
 } from "../../shared/api/types";
 import {
   Popover,
   SearchField,
-  StatusBadge,
   type StatusTone,
 } from "../../shared/ui";
+import { environmentStatusDescriptor } from "../../shared/presentation";
 import {
-  profileKeys,
+  useProfileRuntimeQuery,
+  useRuntimeSummaryQuery,
 } from "../profiles/useProfilesQuery";
 import {
   SESS_SWITCHER_GROUP,
@@ -43,18 +42,10 @@ export function currentStatus(
   observed: string | undefined,
   t: ReturnType<typeof useI18n>["t"],
 ): { tone: StatusTone; label: string } {
-  switch (observed) {
-    case "running":
-      return { tone: "running", label: t("sessRunning") };
-    case "starting":
-      return { tone: "transition", label: t("statusStarting") };
-    case "stopping":
-      return { tone: "transition", label: t("statusStopping") };
-    case "error":
-      return { tone: "error", label: t("statusError") };
-    default:
-      return { tone: "stopped", label: t("sessStopped") };
-  }
+  // t079 AC-002/AC-003: one shared status vocabulary; an unloaded or
+  // unknown state reads "unknown", never a disguised "stopped".
+  const descriptor = environmentStatusDescriptor(observed);
+  return { tone: descriptor.tone, label: t(descriptor.label) };
 }
 
 export function statusDotClass(tone: StatusTone): string {
@@ -81,22 +72,21 @@ export function EnvironmentSwitcher({
   const [open, setOpen] = useState(false);
 
   const current = profiles.find((profile) => profile.id === currentProfileId);
-  const itemRuntimes = useQueries({
-    queries: profiles.map((profile) => ({
-      queryKey: profileKeys.runtime(profile.id),
-      queryFn: () => client.profiles.getRuntime(profile.id),
-      enabled: profiles.length > 0,
-      staleTime: 5000,
-    })),
-  });
+  // t076 AC-002 (p121): a closed switcher issues no per-profile runtime
+  // requests. The trigger only needs the current profile (one read);
+  // the item list reads one batched summary, and only while open.
+  const { data: currentRuntime } = useProfileRuntimeQuery(
+    currentProfileId,
+    client,
+  );
+  const { data: summary } = useRuntimeSummaryQuery(client, { enabled: open });
   const observedById = new Map<string, string | undefined>();
-  profiles.forEach((profile, index) => {
-    observedById.set(
-      profile.id,
-      (itemRuntimes[index]?.data as ProfileRuntimeResponse | undefined)
-        ?.observed_state,
-    );
-  });
+  for (const entry of summary?.entries ?? []) {
+    observedById.set(entry.profile_id, entry.observed_state);
+  }
+  if (currentRuntime) {
+    observedById.set(currentProfileId, currentRuntime.observed_state);
+  }
 
   const currentItemStatus = currentStatus(
     observedById.get(currentProfileId),
@@ -197,7 +187,8 @@ export function EnvironmentSwitcher({
                           data-testid={sessId("switcher-item", profile.id)}
                           to={`/session/${encodeURIComponent(profile.id)}`}
                           onClick={() => setOpen(false)}
-                          className="flex items-center justify-between gap-sm rounded-sm px-sm py-xs font-ui text-body-md text-on-surface hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                          aria-label={`${profile.name} (${itemStatus.label})`}
+                          className="flex items-center gap-sm rounded-sm px-sm py-xs font-ui text-body-md text-on-surface hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
                         >
                           <span className="flex min-w-none items-center gap-sm truncate">
                             <span
@@ -206,11 +197,11 @@ export function EnvironmentSwitcher({
                               className={statusDotClass(itemStatus.tone)}
                             />
                             <span className="truncate">{profile.name}</span>
+                            {/* t079 AC-003: no duplicate right-side badge;
+                                the status stays available to assistive
+                                tech as text, not color alone. */}
+                            <span className="sr-only">{itemStatus.label}</span>
                           </span>
-                          <StatusBadge
-                            tone={itemStatus.tone}
-                            label={itemStatus.label}
-                          />
                         </Link>
                       </li>
                     );

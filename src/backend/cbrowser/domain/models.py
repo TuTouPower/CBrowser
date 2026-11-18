@@ -6,7 +6,7 @@ import datetime
 from enum import Enum
 import hashlib
 import random
-from typing import Any, Literal
+from typing import Any, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -319,6 +319,14 @@ class Profile(BaseModel):
     current_config_version: int = 1
     created_at: str
     updated_at: str
+    # t076 review f006: the collection page carries the row's group /
+    # proxy display names (plus the group colour the chip renders), so
+    # list pages never fetch the whole group/proxy tables just to name
+    # a row. Only the collection path fills these; other readers leave
+    # them None.
+    group_name: str | None = None
+    group_color: GROUP_COLORS | None = None
+    proxy_name: str | None = None
 
 
 class ConfigVersionSnapshot(BaseModel):
@@ -347,6 +355,8 @@ class ProfileRuntime(BaseModel):
     backoff_started_at: str | None = None
     next_retry_at: str | None = None
     preview_captured_at: str | None = None
+    # t083: monotonic per-Profile revision fencing state sync.
+    state_revision: int = 0
     updated_at: str
 
 
@@ -612,6 +622,9 @@ class ProfileResponse(BaseModel):
     fingerprint_seed: int
     group_id: str | None = None
     proxy_id: str | None = None
+    group_name: str | None = None
+    group_color: GROUP_COLORS | None = None
+    proxy_name: str | None = None
     timezone: str | None = None
     locale: ProfileLocale | None = None
     screen_width: int = 1920
@@ -650,6 +663,9 @@ class ProfileResponse(BaseModel):
             fingerprint_seed=cfg.fingerprint_seed,
             group_id=cfg.group_id,
             proxy_id=cfg.proxy_id,
+            group_name=p.group_name,
+            group_color=p.group_color,
+            proxy_name=p.proxy_name,
             timezone=cfg.timezone,
             locale=cfg.locale,
             screen_width=cfg.screen_width,
@@ -852,6 +868,9 @@ class ProfileRuntimeStatusEvent(BaseModel):
     desired_state: DesiredState
     observed_state: ObservedState
     runtime_instance_id: str | None = None
+    # t076 AC-003: the bound config version travels with every event so
+    # consumers can fence stale events from an old instance/config.
+    config_version: int = 1
     failure_count: int = 0
     restart_blocked: bool = False
     last_started_at: str | None = None
@@ -868,6 +887,103 @@ class ProfileRuntimeStatusEvent(BaseModel):
 
 
 ProfileRuntimeEventData = ProfileRuntimeStatusEvent
+
+
+T = TypeVar("T")
+
+
+class CollectionPage(BaseModel, Generic[T]):
+    """One bounded page of a collection query (t076 AC-001).
+
+    ``page_size`` is clamped server-side to 1..100; ``total`` counts the
+    whole filtered set, never just the returned page, so clients can
+    page without re-reading the full collection.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    items: list[T] = Field(default_factory=list)
+    total: int = 0
+    page: int = 1
+    page_size: int = 50
+
+
+class CandidateEntry(BaseModel):
+    """One bounded name-search candidate (t076 AC-006)."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    name: str
+
+
+class ProxyCandidateEntry(CandidateEntry):
+    country_code: str | None = None
+    country_name: str | None = None
+    city: str | None = None
+
+
+ProxyReferenceKind = Literal["current", "bound", "both"]
+
+
+class ProxyUsedByEntry(BaseModel):
+    """One profile referencing a proxy, with the reference kind (t076
+    AC-004): ``current`` (live config), ``bound`` (running bound
+    version only), ``both`` (same profile references it both ways)."""
+
+    model_config = ConfigDict(extra="forbid")
+    profile_id: str
+    name: str
+    kind: ProxyReferenceKind
+
+
+class ProxyUsedByResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    proxy_id: str
+    # Required, not defaulted: a default would drop the field from the
+    # schema's `required` list and the generated client would type it
+    # optional, forcing every caller to re-check for undefined.
+    entries: list[ProxyUsedByEntry]
+
+
+class RuntimeSummaryEntry(BaseModel):
+    """One profile's runtime state for the batched summary (t076 AC-002):
+    list pages read this single payload instead of one HTTP request
+    per profile.  It carries every field the list rows render, so no
+    per-row read is needed."""
+
+    model_config = ConfigDict(extra="forbid")
+    profile_id: str
+    desired_state: DesiredState
+    observed_state: ObservedState
+    config_version: int = 1
+    runtime_instance_id: str | None = None
+    failure_count: int = 0
+    restart_blocked: bool = False
+    last_started_at: str | None = None
+    last_stopped_at: str | None = None
+    preview_captured_at: str | None = None
+    last_coordinator_error: str | None = None
+    updated_at: str = ""
+
+
+class RuntimeSummaryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # Required, not defaulted: see ProxyUsedByResponse above — a default
+    # drops the field from the schema's `required` list and the
+    # generated client types it optional.
+    entries: list[RuntimeSummaryEntry]
+    running_count: int = 0
+
+
+class ProxyCountryRange(BaseModel):
+    """Stable country -> city range from egress observations (t076
+    AC-006): the country key is the stable country code, never a
+    display name."""
+
+    model_config = ConfigDict(extra="forbid")
+    country_code: str
+    country_name: str | None = None
+    # Required, not defaulted: see ProxyUsedByResponse above.
+    cities: list[str]
 
 
 class ProfileRuntimeEvent(BaseModel):
@@ -949,3 +1065,40 @@ class ProfilePreviewEvent(BaseModel):
     captured_at: str
 
 
+
+
+# --- Profile deletion lifecycle (t078) ---
+
+DeletionStage = Literal[
+    "accepted", "stopping", "cleaning", "done", "failed"
+]
+
+
+class ProfileDeletionRequest(BaseModel):
+    """Explicit target set for one deletion batch (t078 AC-005).
+
+    The IDs are the whole contract: execution acts on exactly these
+    profiles, never on a page position or a later filter result.
+    """
+
+    profile_ids: list[str] = Field(min_length=1)
+
+
+class ProfileDeletionOperation(BaseModel):
+    """One durable deletion intent and its observable stage."""
+
+    id: str
+    batch_id: str
+    profile_id: str
+    profile_name: str
+    stage: DeletionStage
+    failed_stage: str | None = None
+    error: str | None = None
+    detail: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+    updated_at: str
+
+
+class ProfileDeletionBatchResponse(BaseModel):
+    batch_id: str
+    operations: list[ProfileDeletionOperation]

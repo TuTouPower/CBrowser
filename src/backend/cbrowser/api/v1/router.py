@@ -27,10 +27,15 @@ from cbrowser.api.v1.runtime_views import (
 )
 from cbrowser.auth.dependencies import require_csrf_and_origin, require_user_session
 from cbrowser.domain.models import (
+    CandidateEntry,
+    CollectionPage,
     ConfigVersionResponse,
     ErrorResponse,
     ProfileConfig,
     ProfileCreateRequest,
+    ProfileDeletionBatchResponse,
+    ProfileDeletionOperation,
+    ProfileDeletionRequest,
     ProfileDuplicateRequest,
     ProfileResetRequest,
     ProfileResponse,
@@ -44,6 +49,8 @@ from cbrowser.domain.models import (
     RuntimeEventResponse,
     RuntimeInstanceBindRequest,
     RuntimeObservedReportRequest,
+    RuntimeSummaryEntry,
+    RuntimeSummaryResponse,
     ValidationErrorResponse,
 )
 from cbrowser.services.profile_service import (
@@ -51,6 +58,7 @@ from cbrowser.services.profile_service import (
     DatabaseLockError,
     InvalidFontSetBindingError,
     InvalidProfileNameError,
+    ProfileDeletionFailedError,
     ProfileNotFoundError,
     ProfileOperationConflictError,
     ProfileRunningError,
@@ -201,6 +209,7 @@ async def subscribe_runtime_events(
                         desired_state=rt.desired_state,
                         observed_state=rt.observed_state,
                         runtime_instance_id=rt.runtime_instance_id,
+                        config_version=rt.config_version,
                         failure_count=rt.failure_count,
                         restart_blocked=rt.restart_blocked,
                         last_started_at=rt.last_started_at,
@@ -334,6 +343,98 @@ async def list_profiles(
 
 
 @profile_router.get(
+    "/profiles/collection",
+    response_model=CollectionPage[ProfileResponse],
+    responses={
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "model": ErrorResponse,
+            "description": "Database busy (retryable)",
+        },
+    },
+)
+async def list_profiles_collection(
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+    search: Annotated[str | None, Query(max_length=255)] = None,
+    group_id: Annotated[str | None, Query()] = None,
+    proxy_id: Annotated[str | None, Query()] = None,
+    status: Annotated[str | None, Query(pattern="^(all|running|running_exact|stopped|error)$")] = None,
+    platform: Annotated[str | None, Query(pattern="^(all|windows|macos)$")] = None,
+    sort: Annotated[str, Query(pattern="^(default|manual|name|recent|created)$")] = "default",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=1000)] = 50,
+):
+    """t076 AC-001: bounded server-side profile page (search/filter/sort
+    run against the full set; page_size is clamped to 1..100)."""
+    return await service.list_profiles_page(
+        search=search,
+        group_id=group_id,
+        proxy_id=proxy_id,
+        status=status,
+        platform=platform,
+        sort=sort,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@profile_router.get(
+    "/profiles/candidates",
+    response_model=list[CandidateEntry],
+)
+async def list_profile_candidates(
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+    search: Annotated[str, Query(max_length=255)] = "",
+    limit: Annotated[int, Query(ge=1, le=500)] = 20,
+):
+    """t076 AC-006: bounded name search over profiles."""
+    return await service.list_profile_candidates(search=search, limit=limit)
+
+
+@profile_router.get(
+    "/profiles/runtime-summary",
+    response_model=RuntimeSummaryResponse,
+)
+async def get_runtime_summary(
+    request: Request,
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+):
+    """t076 AC-002: one batched read of every profile's runtime state.
+
+    List pages consume this single payload instead of issuing one
+    runtime HTTP request per profile.
+    """
+    runtimes = await service.list_runtimes()
+    coordinator = getattr(request.app.state, "coordinator", None)
+    entries = [
+        RuntimeSummaryEntry(
+            profile_id=rt.profile_id,
+            desired_state=rt.desired_state,
+            observed_state=rt.observed_state,
+            config_version=rt.config_version,
+            runtime_instance_id=rt.runtime_instance_id,
+            failure_count=rt.failure_count,
+            restart_blocked=rt.restart_blocked,
+            last_started_at=rt.last_started_at,
+            last_stopped_at=rt.last_stopped_at,
+            preview_captured_at=rt.preview_captured_at,
+            last_coordinator_error=(
+                coordinator.get_last_error(rt.profile_id, runtime=rt)
+                if coordinator is not None
+                else None
+            ),
+            updated_at=rt.updated_at,
+        )
+        for rt in runtimes
+    ]
+    return RuntimeSummaryResponse(
+        entries=entries,
+        running_count=sum(
+            1 for e in entries if e.observed_state == "running"
+        ),
+    )
+
+
+@profile_router.get(
     "/profiles/{profile_id}",
     response_model=ProfileResponse,
     responses={
@@ -455,32 +556,98 @@ async def update_profile(
 )
 async def delete_profile(
     profile_id: str,
-    request: Request,
     service: Annotated[ProfileService, Depends(get_profile_service)],
 ):
+    # t078: DELETE drives the durable deletion lifecycle synchronously
+    # (stop-then-delete); artifact cleanup happens inside the lifecycle
+    # via the wired cleaner and its outcome is part of the operation
+    # record, never silently swallowed here.
     try:
         await service.delete_profile(profile_id)
-        artifact_service = getattr(request.app.state, "artifact_service", None)
-        if artifact_service is not None:
-            try:
-                await artifact_service.remove_profile(profile_id)
-            except Exception as exc:  # noqa: BLE001 - profile is already deleted
-                logger.warning(
-                    "Artifact cleanup after profile deletion failed: "
-                    "profile=%s error_type=%s",
-                    profile_id,
-                    type(exc).__name__,
-                )
         return
     except ProfileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Profile {profile_id} not found",
         )
-    except ProfileRunningError as exc:
+    except ProfileDeletionFailedError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "profile_running", "message": str(exc)},
+            detail={
+                "code": "profile_deletion_failed",
+                "stage": exc.operation.failed_stage,
+                "message": str(exc),
+            },
+        )
+
+
+@profile_router.post(
+    "/profile-deletions",
+    response_model=ProfileDeletionBatchResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def create_profile_deletions(
+    payload: ProfileDeletionRequest,
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+):
+    batch_id, operations = await service.request_deletions(
+        payload.profile_ids
+    )
+    return ProfileDeletionBatchResponse(
+        batch_id=batch_id, operations=operations
+    )
+
+
+@profile_router.get(
+    "/profile-deletions/batches/{batch_id}",
+    response_model=ProfileDeletionBatchResponse,
+)
+async def get_profile_deletion_batch(
+    batch_id: str,
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+):
+    operations = await service.list_deletion_batch(batch_id)
+    if not operations:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Deletion batch {batch_id} not found",
+        )
+    return ProfileDeletionBatchResponse(
+        batch_id=batch_id, operations=operations
+    )
+
+
+@profile_router.get(
+    "/profile-deletions/{operation_id}",
+    response_model=ProfileDeletionOperation,
+)
+async def get_profile_deletion(
+    operation_id: str,
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+):
+    operation = await service.get_deletion(operation_id)
+    if operation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Deletion operation {operation_id} not found",
+        )
+    return operation
+
+
+@profile_router.post(
+    "/profile-deletions/{operation_id}/retry",
+    response_model=ProfileDeletionOperation,
+)
+async def retry_profile_deletion(
+    operation_id: str,
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+):
+    try:
+        return await service.retry_deletion(operation_id)
+    except ProfileNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Deletion operation {operation_id} not found",
         )
 
 
@@ -702,10 +869,10 @@ async def get_profile_runtime(
     try:
         rt = await service.get_runtime(profile_id)
         coord = getattr(request.app.state, "coordinator", None)
-        if coord is not None and hasattr(coord, "refresh_search_defaults"):
-            await coord.refresh_search_defaults(profile_id)
-        if coord is not None and hasattr(coord, "refresh_transport"):
-            await coord.refresh_transport(profile_id)
+        # t083: this read is pure — it projects maintained observations
+        # only.  Transport/search-defaults refresh happens in the
+        # coordinator's bounded background loop, never synchronously
+        # on a GET (no downstream RPC, font hashing or Docker work).
         return await make_runtime_response(rt, coord)
     except ProfileNotFoundError:
         raise HTTPException(

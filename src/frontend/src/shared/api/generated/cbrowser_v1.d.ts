@@ -56,6 +56,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/profiles/collection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Profiles Collection
+         * @description t076 AC-001: bounded server-side profile page (search/filter/sort
+         *     run against the full set; page_size is clamped to 1..100).
+         */
+        get: operations["list_profiles_collection_api_v1_profiles_collection_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/profiles/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Profile Candidates
+         * @description t076 AC-006: bounded name search over profiles.
+         */
+        get: operations["list_profile_candidates_api_v1_profiles_candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/profiles/runtime-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Runtime Summary
+         * @description t076 AC-002: one batched read of every profile's runtime state.
+         *
+         *     List pages consume this single payload instead of issuing one
+         *     runtime HTTP request per profile.
+         */
+        get: operations["get_runtime_summary_api_v1_profiles_runtime_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/profiles/{profile_id}": {
         parameters: {
             query?: never;
@@ -74,6 +138,74 @@ export interface paths {
         head?: never;
         /** Update Profile */
         patch: operations["update_profile_api_v1_profiles__profile_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/profile-deletions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Profile Deletions */
+        post: operations["create_profile_deletions_api_v1_profile_deletions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/profile-deletions/batches/{batch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Profile Deletion Batch */
+        get: operations["get_profile_deletion_batch_api_v1_profile_deletions_batches__batch_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/profile-deletions/{operation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Profile Deletion */
+        get: operations["get_profile_deletion_api_v1_profile_deletions__operation_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/profile-deletions/{operation_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Profile Deletion */
+        post: operations["retry_profile_deletion_api_v1_profile_deletions__operation_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/profiles/{profile_id}/duplicate": {
@@ -230,6 +362,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/groups/collection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Groups Collection
+         * @description t076 AC-001: bounded server-side group page.
+         */
+        get: operations["list_groups_collection_api_v1_groups_collection_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/groups/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Group Candidates
+         * @description t076 AC-006: bounded name search over groups.
+         */
+        get: operations["list_group_candidates_api_v1_groups_candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/groups/{group_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Group
+         * @description t076 review f006: one group by id, for echoing a selected
+         *     filter value that falls outside the bounded candidate page.
+         */
+        get: operations["get_group_api_v1_groups__group_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Group */
+        delete: operations["delete_group_api_v1_groups__group_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Group */
+        patch: operations["update_group_api_v1_groups__group_id__patch"];
+        trace?: never;
+    };
     "/api/v1/groups/reorder": {
         parameters: {
             query?: never;
@@ -247,24 +442,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/groups/{group_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete Group */
-        delete: operations["delete_group_api_v1_groups__group_id__delete"];
-        options?: never;
-        head?: never;
-        /** Update Group */
-        patch: operations["update_group_api_v1_groups__group_id__patch"];
-        trace?: never;
-    };
     "/api/v1/proxies": {
         parameters: {
             query?: never;
@@ -277,6 +454,88 @@ export interface paths {
         put?: never;
         /** Create Proxy */
         post: operations["create_proxy_api_v1_proxies_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/proxies/collection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Proxies Collection
+         * @description t076 AC-001/AC-006: bounded server-side proxy page; country/city
+         *     filter by the stable country code from egress observations.
+         */
+        get: operations["list_proxies_collection_api_v1_proxies_collection_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/proxies/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Proxy Candidates
+         * @description t076 AC-006: bounded name/host search over proxies.
+         */
+        get: operations["list_proxy_candidates_api_v1_proxies_candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/proxies/countries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Proxy Countries
+         * @description t076 AC-006: stable country -> city ranges from observations.
+         */
+        get: operations["list_proxy_countries_api_v1_proxies_countries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/proxies/{proxy_id}/used-by": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Proxy Used By
+         * @description t076 AC-004: used-by detail with kind labels, same union as the
+         *     count and delete protection.
+         */
+        get: operations["get_proxy_used_by_api_v1_proxies__proxy_id__used_by_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -808,6 +1067,76 @@ export interface components {
             /** Opened At */
             opened_at: string;
         };
+        /**
+         * CandidateEntry
+         * @description One bounded name-search candidate (t076 AC-006).
+         */
+        CandidateEntry: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** CollectionPage[GroupResponse] */
+        CollectionPage_GroupResponse_: {
+            /** Items */
+            items?: components["schemas"]["GroupResponse"][];
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+            /**
+             * Page
+             * @default 1
+             */
+            page: number;
+            /**
+             * Page Size
+             * @default 50
+             */
+            page_size: number;
+        };
+        /** CollectionPage[ProfileResponse] */
+        CollectionPage_ProfileResponse_: {
+            /** Items */
+            items?: components["schemas"]["ProfileResponse"][];
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+            /**
+             * Page
+             * @default 1
+             */
+            page: number;
+            /**
+             * Page Size
+             * @default 50
+             */
+            page_size: number;
+        };
+        /** CollectionPage[ProxyResponse] */
+        CollectionPage_ProxyResponse_: {
+            /** Items */
+            items?: components["schemas"]["ProxyResponse"][];
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+            /**
+             * Page
+             * @default 1
+             */
+            page: number;
+            /**
+             * Page Size
+             * @default 50
+             */
+            page_size: number;
+        };
         /** ConfigVersionResponse */
         ConfigVersionResponse: {
             /** Id */
@@ -1191,6 +1520,55 @@ export interface components {
              */
             sort_order: number;
         };
+        /** ProfileDeletionBatchResponse */
+        ProfileDeletionBatchResponse: {
+            /** Batch Id */
+            batch_id: string;
+            /** Operations */
+            operations: components["schemas"]["ProfileDeletionOperation"][];
+        };
+        /**
+         * ProfileDeletionOperation
+         * @description One durable deletion intent and its observable stage.
+         */
+        ProfileDeletionOperation: {
+            /** Id */
+            id: string;
+            /** Batch Id */
+            batch_id: string;
+            /** Profile Id */
+            profile_id: string;
+            /** Profile Name */
+            profile_name: string;
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "accepted" | "stopping" | "cleaning" | "done" | "failed";
+            /** Failed Stage */
+            failed_stage?: string | null;
+            /** Error */
+            error?: string | null;
+            /** Detail */
+            detail?: {
+                [key: string]: unknown;
+            };
+            /** Created At */
+            created_at: string;
+            /** Updated At */
+            updated_at: string;
+        };
+        /**
+         * ProfileDeletionRequest
+         * @description Explicit target set for one deletion batch (t078 AC-005).
+         *
+         *     The IDs are the whole contract: execution acts on exactly these
+         *     profiles, never on a page position or a later filter result.
+         */
+        ProfileDeletionRequest: {
+            /** Profile Ids */
+            profile_ids: string[];
+        };
         /** ProfileDuplicateRequest */
         ProfileDuplicateRequest: {
             /**
@@ -1223,6 +1601,12 @@ export interface components {
             group_id?: string | null;
             /** Proxy Id */
             proxy_id?: string | null;
+            /** Group Name */
+            group_name?: string | null;
+            /** Group Color */
+            group_color?: ("slate" | "blue" | "teal" | "green" | "amber" | "orange" | "red" | "violet") | null;
+            /** Proxy Name */
+            proxy_name?: string | null;
             /** Timezone */
             timezone?: string | null;
             /** Locale */
@@ -1395,6 +1779,11 @@ export interface components {
             /** Runtime Instance Id */
             runtime_instance_id?: string | null;
             /**
+             * Config Version
+             * @default 1
+             */
+            config_version: number;
+            /**
              * Failure Count
              * @default 0
              */
@@ -1480,6 +1869,33 @@ export interface components {
             notes?: string | null;
             /** Sort Order */
             sort_order?: number | null;
+        };
+        /** ProxyCandidateEntry */
+        ProxyCandidateEntry: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Country Code */
+            country_code?: string | null;
+            /** Country Name */
+            country_name?: string | null;
+            /** City */
+            city?: string | null;
+        };
+        /**
+         * ProxyCountryRange
+         * @description Stable country -> city range from egress observations (t076
+         *     AC-006): the country key is the stable country code, never a
+         *     display name.
+         */
+        ProxyCountryRange: {
+            /** Country Code */
+            country_code: string;
+            /** Country Name */
+            country_name?: string | null;
+            /** Cities */
+            cities: string[];
         };
         /**
          * ProxyCreateRequest
@@ -1587,6 +2003,30 @@ export interface components {
             /** Notes */
             notes?: string | null;
         };
+        /**
+         * ProxyUsedByEntry
+         * @description One profile referencing a proxy, with the reference kind (t076
+         *     AC-004): ``current`` (live config), ``bound`` (running bound
+         *     version only), ``both`` (same profile references it both ways).
+         */
+        ProxyUsedByEntry: {
+            /** Profile Id */
+            profile_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "current" | "bound" | "both";
+        };
+        /** ProxyUsedByResponse */
+        ProxyUsedByResponse: {
+            /** Proxy Id */
+            proxy_id: string;
+            /** Entries */
+            entries: components["schemas"]["ProxyUsedByEntry"][];
+        };
         /** RuntimeDesiredStateRequest */
         RuntimeDesiredStateRequest: {
             /**
@@ -1594,6 +2034,67 @@ export interface components {
              * @enum {string}
              */
             desired_state: "stopped" | "running";
+        };
+        /**
+         * RuntimeSummaryEntry
+         * @description One profile's runtime state for the batched summary (t076 AC-002):
+         *     list pages read this single payload instead of one HTTP request
+         *     per profile.  It carries every field the list rows render, so no
+         *     per-row read is needed.
+         */
+        RuntimeSummaryEntry: {
+            /** Profile Id */
+            profile_id: string;
+            /**
+             * Desired State
+             * @enum {string}
+             */
+            desired_state: "stopped" | "running";
+            /**
+             * Observed State
+             * @enum {string}
+             */
+            observed_state: "stopped" | "starting" | "running" | "stopping" | "error";
+            /**
+             * Config Version
+             * @default 1
+             */
+            config_version: number;
+            /** Runtime Instance Id */
+            runtime_instance_id?: string | null;
+            /**
+             * Failure Count
+             * @default 0
+             */
+            failure_count: number;
+            /**
+             * Restart Blocked
+             * @default false
+             */
+            restart_blocked: boolean;
+            /** Last Started At */
+            last_started_at?: string | null;
+            /** Last Stopped At */
+            last_stopped_at?: string | null;
+            /** Preview Captured At */
+            preview_captured_at?: string | null;
+            /** Last Coordinator Error */
+            last_coordinator_error?: string | null;
+            /**
+             * Updated At
+             * @default
+             */
+            updated_at: string;
+        };
+        /** RuntimeSummaryResponse */
+        RuntimeSummaryResponse: {
+            /** Entries */
+            entries: components["schemas"]["RuntimeSummaryEntry"][];
+            /**
+             * Running Count
+             * @default 0
+             */
+            running_count: number;
         };
         /**
          * SearchDefaultsStatusData
@@ -1970,6 +2471,177 @@ export interface operations {
             };
         };
     };
+    list_profiles_collection_api_v1_profiles_collection_get: {
+        parameters: {
+            query?: {
+                search?: string | null;
+                group_id?: string | null;
+                proxy_id?: string | null;
+                status?: string | null;
+                platform?: string | null;
+                sort?: string;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CollectionPage_ProfileResponse_"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Database busy (retryable) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_profile_candidates_api_v1_profiles_candidates_get: {
+        parameters: {
+            query?: {
+                search?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CandidateEntry"][];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_runtime_summary_api_v1_profiles_runtime_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeSummaryResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     get_profile_api_v1_profiles__profile_id__get: {
         parameters: {
             query?: never;
@@ -2262,6 +2934,267 @@ export interface operations {
                 };
             };
             /** @description Database busy (retryable) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_profile_deletions_api_v1_profile_deletions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileDeletionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileDeletionBatchResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_profile_deletion_batch_api_v1_profile_deletions_batches__batch_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileDeletionBatchResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_profile_deletion_api_v1_profile_deletions__operation_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileDeletionOperation"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    retry_profile_deletion_api_v1_profile_deletions__operation_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileDeletionOperation"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -3018,18 +3951,18 @@ export interface operations {
             };
         };
     };
-    reorder_groups_api_v1_groups_reorder_post: {
+    list_groups_collection_api_v1_groups_collection_get: {
         parameters: {
-            query?: never;
+            query?: {
+                search?: string | null;
+                page?: number;
+                page_size?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["GroupReorderRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -3037,7 +3970,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["GroupResponse"][];
+                    "application/json": components["schemas"]["CollectionPage_GroupResponse_"];
                 };
             };
             /** @description Authentication required */
@@ -3051,6 +3984,132 @@ export interface operations {
             };
             /** @description Authorization or CSRF check failed */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_group_candidates_api_v1_groups_candidates_get: {
+        parameters: {
+            query?: {
+                search?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CandidateEntry"][];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_group_api_v1_groups__group_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3224,6 +4283,66 @@ export interface operations {
             };
         };
     };
+    reorder_groups_api_v1_groups_reorder_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupReorderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupResponse"][];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     list_proxies_api_v1_proxies_get: {
         parameters: {
             query?: never;
@@ -3309,6 +4428,243 @@ export interface operations {
             };
             /** @description Authorization or CSRF check failed */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_proxies_collection_api_v1_proxies_collection_get: {
+        parameters: {
+            query?: {
+                search?: string | null;
+                country_code?: string | null;
+                city?: string | null;
+                scheme?: string | null;
+                sort?: string;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CollectionPage_ProxyResponse_"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_proxy_candidates_api_v1_proxies_candidates_get: {
+        parameters: {
+            query?: {
+                search?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProxyCandidateEntry"][];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_proxy_countries_api_v1_proxies_countries_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProxyCountryRange"][];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_proxy_used_by_api_v1_proxies__proxy_id__used_by_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proxy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProxyUsedByResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

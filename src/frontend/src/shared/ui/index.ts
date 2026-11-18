@@ -13,7 +13,7 @@ export {
   StatusBadge,
   GroupChip,
   ProtocolChip,
-  RegionCode,
+  RegionBadge,
   WarningIcon,
 } from "./StatusBadge";
 export type { StatusTone, GroupHue } from "./StatusBadge";

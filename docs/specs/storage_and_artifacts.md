@@ -1,7 +1,7 @@
 ---
 slug: storage_and_artifacts
 status: active
-tasks: [baseline, t080]
+tasks: [baseline, t078, t080]
 ---
 # 需求规范：数据持久化、迁移与文件交换 (storage_and_artifacts)
 
@@ -24,6 +24,7 @@ tasks: [baseline, t080]
     - `profile_runtimes`：期望状态与真实观测状态，含起停时间戳与浏览器版本字段（t035）
     - `runtime_events`：运行事件去重与退出事件记录（随 Profile 级联删除）
     - `artifacts`：上传与下载文件元数据
+    - `profile_deletions`：删除意图与阶段结果（t078；每目标一行，含名称快照、失败阶段与分步清理明细，终结后保留作审计）
     - `audit_events`：生命周期操作审计（无外键，不随 Profile 删除）
     - `settings`：系统级键值配置
 - 排他控制租约、控制会话与 StreamTicket 已废弃（ADR 007）；数据库不包含 `control_sessions`、`control_leases` 或 `stream_tickets` 表。
@@ -60,6 +61,11 @@ tasks: [baseline, t080]
 - 容器挂载一律是 volume + 精确 subpath 的 typed mount：Browser 只得自身 Profile 子树，Stream 不得任何 Profile/Artifact/字体，字体对 Browser 只读且只给绑定集合；挂载来源缺失/越界/符号链接逃逸在创建前拒绝，不创建空宿主源替代。
 - 宿主旧布局经 `scripts/storage_migration.py` 一次性迁入：只读盘点/dry-run、实际写者与容量/归属校验、环境恢复点可恢复验证、staging 拷贝与逐文件 SHA-256 校验、journal 分阶段切换、幂等恢复与回退；源目录只读保留、不自动删除。迁移后 UUID、seed、配置版本、字体 set_id、Profile 文件摘要与 Artifact 引用保持一致。
 - 克隆、重置、删除、上传/下载、预览与恢复点在新存储中保持 2.3/2.5 与 t066 的既有语义；重置不删 Artifact，克隆不复制活动锁/socket。
+
+## 删除数据清理语义（t078）
+
+- Profile 删除按固定顺序清理：Artifact 服务移除该 Profile 的全部文件与元数据 → 删除 Profile 数据目录与运行时目录 → 清理预览图 → 最后删除数据库行（级联配置版本、运行态与运行事件）。任一步失败即删除整体失败：不静默吞错、不删数据库行，已完成步骤记入删除意图的 `detail.steps`，重试时对已清理步骤幂等跳过。
+- 删除失败不影响其他 Profile 的数据与运行实例；`profile_deletions` 行在终结（done/failed）后保留，作为删除结果的长期追踪记录，不随 Profile 行删除而消失。
 
 ## 3. 验收标准
 

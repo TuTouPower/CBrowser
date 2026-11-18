@@ -237,12 +237,38 @@ async def test_supervisor_core_start_profile_provisions_selkies_tokens(
     )
     ports = PortAllocator(30000, 30010)
 
-    transport = httpx.MockTransport(
-        lambda req: httpx.Response(
+    def _handler(req: httpx.Request) -> httpx.Response:
+        # t083: start intent is read through the minimal batch snapshot.
+        if req.url.path.endswith("/state/snapshot"):
+            state = {
+                "profile_id": "p1",
+                "display_number": 1,
+                "desired_state": "running",
+                "observed_state": "stopped",
+                "runtime_instance_id": None,
+                "config_version": 1,
+                "failure_count": 0,
+                "restart_blocked": False,
+                "last_exit_event_id": None,
+                "backoff_started_at": None,
+                "next_retry_at": None,
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "state_revision": 1,
+            }
+            return httpx.Response(
+                200,
+                json={
+                    "api_epoch": "selkies-test-epoch",
+                    "profiles": [state],
+                    "next_cursor": None,
+                },
+            )
+        return httpx.Response(
             200,
             json={"status": "ok", "desired_state": "running", "restart_blocked": False},
         )
-    )
+
+    transport = httpx.MockTransport(_handler)
 
     mock_gw = SimpleNamespace(
         has_foreground_viewers=AsyncMock(return_value=True),

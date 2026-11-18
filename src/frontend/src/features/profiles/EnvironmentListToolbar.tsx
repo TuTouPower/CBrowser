@@ -1,6 +1,5 @@
 import { FolderCog, LayoutGrid, List, Plus } from "lucide-react";
 import { useI18n } from "../../i18n";
-import type { GroupResponse, ProxyResponse } from "../../shared/api/types";
 import {
   Button,
   SearchField,
@@ -24,8 +23,10 @@ export interface EnvironmentListToolbarProps {
   setLayout: (layout: EnvironmentLayout) => void;
   onNew: () => void;
   onManageGroups: () => void;
-  groups: GroupResponse[];
-  proxies: ProxyResponse[];
+  /** t076 review f006: filter options come from the bounded candidate
+   * endpoints — only id and name are needed here. */
+  groups: Array<{ id: string; name: string }>;
+  proxies: Array<{ id: string; name: string }>;
   onClearFilters: () => void;
 }
 
@@ -46,9 +47,9 @@ export function EnvironmentListToolbar({
 
   const statusOptions: SelectOption[] = [
     { value: "all", label: t("envFilterAll") },
-    { value: "running", label: t("envFilterRunning") },
-    { value: "stopped", label: t("envFilterStopped") },
-    { value: "error", label: t("envFilterError") },
+    { value: "running", label: t("statusRunning") },
+    { value: "stopped", label: t("statusStopped") },
+    { value: "error", label: t("statusError") },
   ];
   const groupOptions: SelectOption[] = [
     { value: "all", label: t("envFilterAllGroups") },

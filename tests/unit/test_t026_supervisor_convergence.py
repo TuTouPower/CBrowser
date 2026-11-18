@@ -48,9 +48,12 @@ class _FakeAdapter:
         self.stream_policy_ok = True
         self.browser_policy_ok = True
         self.calls: list[str] = []
+        self.fail_profiles: set[str] = set()
 
     # -- inspection -------------------------------------------------
     def inspect_media_network(self, profile_id: str) -> dict:
+        if profile_id in self.fail_profiles:
+            raise RuntimeError(f"docker inspect failed for {profile_id}")
         return {
             "exists": True,
             "conforms": self.conforms,
@@ -465,7 +468,9 @@ async def test_readiness_unknown_when_api_unavailable(tmp_path):
 
     assert result.ready is False
     assert result.reason is not None
-    assert result.reason.startswith("api_unavailable")
+    # t083: readiness reads maintained observations; an unreachable API
+    # leaves the state cache unauthoritative, reported as unknown.
+    assert result.reason == "api_state_unknown"
 
 
 def test_runtime_pair_active_requires_registration_when_known():
@@ -517,17 +522,54 @@ async def test_gateway_missing_aborts_replacement_before_teardown(tmp_path):
 
 
 def _core_with_runtime_api(tmp_path, adapter, gateway, runtime_by_profile):
+    # t083: the fake API serves the minimal batch state snapshot; the
+    # per-Profile payloads below are projected onto the minimal DTO.
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
-        if path == "/api/v1/internal/supervisor/profiles":
-            return httpx.Response(
-                200, json=[{"id": pid} for pid in runtime_by_profile]
-            )
-        for pid, payload in runtime_by_profile.items():
-            if path.endswith(f"/profiles/{pid}/runtime"):
+        if path == "/api/v1/internal/supervisor/state/snapshot":
+            states = []
+            for pid, payload in runtime_by_profile.items():
                 if isinstance(payload, Exception):
                     raise payload
-                return httpx.Response(200, json=payload)
+                states.append(
+                    {
+                        "profile_id": pid,
+                        "display_number": payload.get("display_number", 1),
+                        "desired_state": payload.get(
+                            "desired_state", "stopped"
+                        ),
+                        "observed_state": payload.get(
+                            "observed_state", "stopped"
+                        ),
+                        "runtime_instance_id": payload.get(
+                            "runtime_instance_id"
+                        ),
+                        "config_version": payload.get("config_version", 1),
+                        "failure_count": payload.get("failure_count", 0),
+                        "restart_blocked": payload.get(
+                            "restart_blocked", False
+                        ),
+                        "last_exit_event_id": payload.get(
+                            "last_exit_event_id"
+                        ),
+                        "backoff_started_at": payload.get(
+                            "backoff_started_at"
+                        ),
+                        "next_retry_at": payload.get("next_retry_at"),
+                        "updated_at": payload.get(
+                            "updated_at", "2026-01-01T00:00:00Z"
+                        ),
+                        "state_revision": payload.get("state_revision", 1),
+                    }
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "api_epoch": "test-epoch",
+                    "profiles": states,
+                    "next_cursor": None,
+                },
+            )
         return httpx.Response(404)
 
     api = httpx.AsyncClient(
@@ -776,21 +818,47 @@ async def test_readiness_registration_unverifiable_is_not_ready(tmp_path):
 
 @pytest.mark.asyncio
 async def test_readiness_one_profile_runtime_failure_isolated(tmp_path):
+    # t083 rewrite: the batch state protocol has no per-Profile read to
+    # fail — state arrives as one snapshot.  The isolation property now
+    # lives in the per-Profile readiness evaluation: one Profile whose
+    # checks cannot confirm readiness (no session/containers for its
+    # bound instance) must not poison another Profile's verdict, and a
+    # Profile whose Docker inspection raises must be reported with its
+    # own diagnostic while the healthy Profile still reads ready.
     adapter = _FakeAdapter(tmp_path)
+    adapter.fail_profiles = {"prof_slow"}
     gateway = _FakeGatewayControl()
     runtime = {
         "desired_state": "running",
         "runtime_instance_id": INSTANCE,
         "config_version": 1,
     }
+    bad_runtime = {
+        "desired_state": "running",
+        "runtime_instance_id": "inst_missing",
+        "config_version": 1,
+    }
+    slow_runtime = {
+        "desired_state": "running",
+        "runtime_instance_id": "inst_slow",
+        "config_version": 1,
+    }
     core = _core_with_runtime_api(
         tmp_path,
         adapter,
         gateway,
-        {PROFILE: runtime, "prof_bad": httpx.ConnectError("down")},
+        {
+            PROFILE: runtime,
+            "prof_bad": bad_runtime,
+            "prof_slow": slow_runtime,
+        },
     )
     core._sessions[PROFILE] = ActiveSession(
         PROFILE, INSTANCE, 1, 30005, "c_browser", "c_stream",
+        desired_state="running", observed_state="running",
+    )
+    core._sessions["prof_slow"] = ActiveSession(
+        "prof_slow", "inst_slow", 1, 30006, "c_browser", "c_stream",
         desired_state="running", observed_state="running",
     )
 
@@ -800,7 +868,11 @@ async def test_readiness_one_profile_runtime_failure_isolated(tmp_path):
     by_id = {entry.profile_id: entry for entry in result.profiles}
     assert by_id[PROFILE].ready is True
     assert by_id["prof_bad"].ready is False
-    assert by_id["prof_bad"].diagnostics[0].startswith("runtime_unavailable")
+    assert "session_instance_mismatch" in by_id["prof_bad"].diagnostics
+    assert by_id["prof_slow"].ready is False
+    assert by_id["prof_slow"].diagnostics == [
+        "readiness_check_failed:RuntimeError"
+    ]
 
 
 # --- Round-3 additions: t026_code_f003(residual)/f009/f011,
@@ -1024,8 +1096,34 @@ async def test_latched_container_exit_error_releases_on_authoritative_running(
 
             observed_posts.append(_json.loads(request.content))
             return httpx.Response(200, json={})
-        if request.url.path.endswith(f"/profiles/{PROFILE}/runtime"):
-            return httpx.Response(200, json=runtime)
+        if request.url.path == "/api/v1/internal/supervisor/state/snapshot":
+            # t083: authoritative state arrives via the batch snapshot.
+            return httpx.Response(
+                200,
+                json={
+                    "api_epoch": "test-epoch",
+                    "profiles": [
+                        {
+                            "profile_id": PROFILE,
+                            "display_number": 1,
+                            "desired_state": runtime["desired_state"],
+                            "observed_state": "running",
+                            "runtime_instance_id": runtime[
+                                "runtime_instance_id"
+                            ],
+                            "config_version": runtime["config_version"],
+                            "failure_count": 0,
+                            "restart_blocked": False,
+                            "last_exit_event_id": None,
+                            "backoff_started_at": None,
+                            "next_retry_at": None,
+                            "updated_at": "2026-01-01T00:00:00Z",
+                            "state_revision": 1,
+                        }
+                    ],
+                    "next_cursor": None,
+                },
+            )
         return httpx.Response(404)
 
     core.api = httpx.AsyncClient(

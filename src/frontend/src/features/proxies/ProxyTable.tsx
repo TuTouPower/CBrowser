@@ -5,12 +5,12 @@ import {
   Zap,
 } from "lucide-react";
 import { useI18n } from "../../i18n";
-import type { ProfileResponse, ProxyResponse } from "../../shared/api/types";
+import type { ProxyResponse } from "../../shared/api/types";
 import {
   IconButton,
   MonoValue,
   ProtocolChip,
-  RegionCode,
+  RegionBadge,
   Table,
   TableBody,
   TableCell,
@@ -19,16 +19,18 @@ import {
   TableRow,
   Tooltip,
 } from "../../shared/ui";
+import { proxyProbeErrorLabelKey } from "../../shared/presentation";
 
 export interface ProxyTableProps {
   proxies: ProxyResponse[];
-  usedByProfiles: Record<string, ProfileResponse[]>;
   onEdit: (proxy: ProxyResponse) => void;
   onDelete: (proxy: ProxyResponse) => void;
   onProbe: (proxy: ProxyResponse) => void;
   probingId?: string | null;
-  onUsedBySingle: (profile: ProfileResponse) => void;
-  onUsedByMany: (proxy: ProxyResponse, profiles: ProfileResponse[]) => void;
+  /** t076 AC-004: the count comes from the backend union; the click
+   * resolves the detail (single -> navigate, many -> popover) in the
+   * page, so the table never derives used-by from current config. */
+  onUsedByClick: (proxy: ProxyResponse) => void;
 }
 
 function usedByLabel(
@@ -42,13 +44,11 @@ function usedByLabel(
 
 export function ProxyTable({
   proxies,
-  usedByProfiles,
   onEdit,
   onDelete,
   onProbe,
   probingId,
-  onUsedBySingle,
-  onUsedByMany,
+  onUsedByClick,
 }: ProxyTableProps) {
   const { t } = useI18n();
 
@@ -76,7 +76,6 @@ export function ProxyTable({
             const blocked = proxy.used_by_count > 0;
             const isTesting =
               probingId === id || proxy.observation_status === "pending";
-            const usedBy = usedByProfiles[id] ?? [];
             const count = proxy.used_by_count;
             const label = usedByLabel(count, t);
 
@@ -110,14 +109,17 @@ export function ProxyTable({
                   <MonoValue>{`${proxy.host}:${proxy.port}`}</MonoValue>
                 </TableCell>
                 <TableCell>
-                  <div className="flex items-center gap-xs">
-                    {proxy.country_code ? (
-                      <RegionCode code={proxy.country_code} />
-                    ) : null}
+                  {proxy.country_code ? (
+                    <RegionBadge
+                      code={proxy.country_code}
+                      name={proxy.country_name}
+                      unknownLabel={t("regionUnknown")}
+                    />
+                  ) : (
                     <span className="font-ui text-body-sm text-on-surface">
-                      {proxy.country_name ?? proxy.country_code ?? "—"}
+                      {"—"}
                     </span>
-                  </div>
+                  )}
                 </TableCell>
                 <TableCell>
                   <span className="font-ui text-body-sm text-on-surface">
@@ -142,8 +144,9 @@ export function ProxyTable({
                     <span
                       data-testid={`proxy-status-${id}`}
                       className="font-ui text-body-sm text-danger"
+                      title={proxy.observation_error_code ?? undefined}
                     >
-                      {proxy.observation_error_code ?? t("proxyProbeFailed")}
+                      {t(proxyProbeErrorLabelKey(proxy.observation_error_code))}
                     </span>
                   ) : (
                     <span className="font-ui text-body-sm text-on-surface-muted">
@@ -152,27 +155,18 @@ export function ProxyTable({
                   )}
                 </TableCell>
                 <TableCell>
-                  {count === 0 || usedBy.length === 0 ? (
+                  {count === 0 ? (
                     <span
                       data-testid={`proxy-used-by-${id}`}
                       className="font-ui text-body-sm text-on-surface-muted"
                     >
                       {label}
                     </span>
-                  ) : usedBy.length === 1 ? (
-                    <button
-                      type="button"
-                      data-testid={`proxy-used-by-${id}`}
-                      onClick={() => onUsedBySingle(usedBy[0]!)}
-                      className="font-ui text-body-sm text-accent hover:underline"
-                    >
-                      {label}
-                    </button>
                   ) : (
                     <button
                       type="button"
                       data-testid={`proxy-used-by-${id}`}
-                      onClick={() => onUsedByMany(proxy, usedBy)}
+                      onClick={() => onUsedByClick(proxy)}
                       className="font-ui text-body-sm text-accent hover:underline"
                     >
                       {label}

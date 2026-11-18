@@ -1,7 +1,7 @@
 ---
 slug: ui_design_system
 status: active
-tasks: [baseline]
+tasks: [baseline, t078, t079]
 ---
 # 需求规范：设计系统与应用外壳 (ui_design_system)
 
@@ -56,6 +56,19 @@ tasks: [baseline]
 - 侧栏左下角「设置」由 `<Link to="/settings">` 改为 `<button>`，直接在 `AppLayout` 内打开 `SettingsDialog`（`Dialog size="lg"`，两列网格分块），不导航、不离开当前页面上下文；`/settings` 路由改为 `<Navigate to="/" replace />`。弹窗收敛主题 / 语言 / 健康状态 / 退出登录 / 只读网络访问摘要 / 平台字体包，信息分区清晰，默认不堆砌 `source_version` 哈希。
 - `theme` / `locale` 持久化于控制面 `settings` 表，经 `GET /api/v1/settings` / `PATCH /api/v1/settings` 读写；`SettingsSync` 置于 `AppProviders` 内（在 `I18nProvider` / `ThemeProvider` 之外）负责登录后 hydrate 与后续写服务端，两个 provider 保持独立、不依赖 auth 与 API client；`localStorage` 仅作 `theme_boot.js` 首帧防闪烁镜像，清缓存或重新登录后偏好保持。
 - 工作台 `audioMuted` 持久化到 `sessionStorage` 的 `cbrowser.session.audio_muted.${profileId}`，刷新本标签页保持静音，双标签页打开同 Profile 互不串扰。
+
+### 2.8 破坏性操作确认与进度反馈（t078）
+
+- 破坏性批量/单项操作统一使用居中模态（共享 Dialog：焦点圈定、Escape 关闭、背景不可误操作），禁止用页面底部浮动条承载确认——长列表与低视口下确认与错误必须始终可见。
+- 确认阶段列明目标名称与不可撤销影响，确认前不发请求；执行阶段在同一模态内逐项呈现阶段与结果，失败项就地显示失败阶段、错误与重试入口，不用一次性 toast 代替结果留存。
+- 行操作区内破坏性入口固定最右并用 danger 样式，与其他动作独立呈现；过渡态不可用时以 title 说明原因，不以无解释的消失/置灰代替。
+
+### 2.9 统一呈现语义（t079）
+
+- 业务状态、错误与地区呈现只有一套语义来源（前端 `src/shared/presentation.ts`）：环境运行状态在列表、卡片、详情、工作台、入口与自动化中用同一组词条（运行中/已停止/启动中/停止中/异常/未知）；未加载或未知状态显式呈「未知」，不回退原始枚举、不伪装成已停止。顶栏环境徽标用同一短文案，传输徽标保留带主语文案与之区分。
+- 工作台环境下拉每项只有前置状态点与名称，不再有右侧重复状态徽标；状态以可访问文本（aria-label 与视觉隐藏文本）承载，不只靠颜色区分。
+- 代理测速错误在表格、卡片、编辑弹窗与详情中用同一映射呈当前语言说明：已知机器码对应准确说明，未知/缺失码回退通用失败说明；主状态不直出机器码，机器码仅作诊断保留（存储/API 与悬停 title）。
+- 地区身份是标准国家代码，呈现为国旗 + 名称（共享 RegionBadge）；未知代码不伪造国旗，用统一占位与完整可访问名称。国家候选按规范英文名 A–Z 排序、城市按同一折叠规则在本国范围内排序，均按身份去重且与接口顺序、界面语言无关；「全部」项固定首位。
 
 ## 3. 验收标准（摘要）
 

@@ -328,9 +328,14 @@ def test_fresh_db_schema_matches_golden_except_intended_changes(
     so the old "only display_number differs" assertion is obsolete. New
     semantic: the only structural deltas vs the golden pre-change dump are
     the A21 display_number NOT NULL change and the t074 0010 columns; no
-    pre-existing column is dropped.  t081 0011 extends the allowed deltas
-    by exactly one new table, ``font_set_assets`` (the font asset
-    catalog); every pre-existing object must still match the golden."""
+    pre-existing column is dropped. t078 0011 extends the registered
+    deltas by exactly one new table (``profile_deletions`` with its two
+    named indexes, primary-key autoindex and the partial unique index
+    that enforces one open intent per profile); t081 0012 extends the
+    allowed deltas by exactly one more new table, ``font_set_assets``
+    (the font asset catalog); t083 0013 extends them by exactly one new
+    column, ``profile_runtimes.state_revision``; nothing else may appear
+    and nothing pre-existing may vanish."""
     db = tmp_path / "fresh.db"
     run_database_migrations(db)
     before = {}
@@ -338,11 +343,16 @@ def test_fresh_db_schema_matches_golden_except_intended_changes(
         type_, name, sql = line.split("|", 2)
         before[(type_, name)] = sql
     after = _dump_schema(db)
+    assert set(before) - set(after) == set()
     assert set(after) - set(before) == {
+        ("table", "profile_deletions"),
+        ("index", "idx_profile_deletions_batch"),
+        ("index", "idx_profile_deletions_profile"),
+        ("index", "sqlite_autoindex_profile_deletions_1"),
+        ("index", "uq_profile_deletions_open_profile"),
         ("table", "font_set_assets"),
         ("index", "sqlite_autoindex_font_set_assets_1"),
     }
-    assert set(before) - set(after) == set()
     catalog_sql = after[("table", "font_set_assets")]
     for column in (
         "platform VARCHAR(32)",
@@ -359,9 +369,28 @@ def test_fresh_db_schema_matches_golden_except_intended_changes(
         if key in (
             ("table", "profiles"),
             ("table", "proxy_egress_observations"),
+            ("table", "profile_runtimes"),
         ):
             continue
         assert after[key] == before[key], key
+    deletions_sql = after[("table", "profile_deletions")]
+    for column in (
+        "batch_id VARCHAR(64) NOT NULL",
+        "profile_id VARCHAR(64) NOT NULL",
+        "profile_name VARCHAR(255) NOT NULL",
+        "stage VARCHAR(32) NOT NULL",
+        "failed_stage VARCHAR(32)",
+        "error TEXT",
+        "detail TEXT",
+        "created_at VARCHAR(64) NOT NULL",
+        "updated_at VARCHAR(64) NOT NULL",
+    ):
+        assert column in deletions_sql, column
+    runtime_sql = after[("table", "profile_runtimes")]
+    assert "state_revision INTEGER DEFAULT '0' NOT NULL" in runtime_sql
+    assert runtime_sql.replace(
+        ", state_revision INTEGER DEFAULT '0' NOT NULL", ""
+    ) == before[("table", "profile_runtimes")]
     before_lines = _normalized_sql_lines(before[("table", "profiles")])
     after_lines = _normalized_sql_lines(after[("table", "profiles")])
     assert sorted(set(after_lines) - set(before_lines)) == [

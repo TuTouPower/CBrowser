@@ -10,7 +10,7 @@ import logging
 import os
 import shutil
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 from typing import Any
@@ -25,10 +25,18 @@ from cbrowser.domain.egress_observation import (
     EgressObservation,
 )
 from cbrowser.domain.models import (
+    CandidateEntry,
+    CollectionPage,
     ConfigVersionSnapshot,
     Profile,
     ProfileConfig,
+    ProfileDeletionOperation,
+    ProfileResponse,
     ProfileRuntime,
+    ProxyCandidateEntry,
+    ProxyCountryRange,
+    ProxyResponse,
+    ProxyUsedByEntry,
     RuntimeEvent,
     UserSettingsResponse,
     UserSettingsUpdateRequest,
@@ -108,6 +116,18 @@ class ProfileRunningError(ProfileServiceError):
     def __init__(self, profile_id: str, operation: str):
         super().__init__(f"Stop profile {profile_id} before {operation}")
         self.profile_id = profile_id
+        self.operation = operation
+
+
+class ProfileDeletionFailedError(ProfileServiceError):
+    """A deletion intent reached ``failed``; carries the final
+    operation so the API can report the exact stage (t078)."""
+
+    def __init__(self, operation: ProfileDeletionOperation):
+        super().__init__(
+            f"Deletion of profile {operation.profile_id} failed at "
+            f"stage {operation.failed_stage}: {operation.error}"
+        )
         self.operation = operation
 
 
@@ -269,6 +289,15 @@ class ProfileService:
         self._locks = ProfileLockRegistry()
         self._egress_probe_runner = egress_probe_runner
         self._probe_tasks: set[asyncio.Task] = set()
+        # t078 deletion lifecycle: background drivers per operation id,
+        # an optional artifact cleaner wired by the app, and a per-op
+        # lock so the async driver and the synchronous DELETE path can
+        # never run the same intent twice.
+        self._deletion_tasks: dict[str, asyncio.Task[None]] = {}
+        self._deletion_locks: dict[str, asyncio.Lock] = {}
+        self._artifact_cleaner: Callable[[str], Awaitable[None]] | None = None
+        self.deletion_stop_timeout_seconds = 120.0
+        self.deletion_poll_interval_seconds = 0.5
         self._font_catalog: FontSetCatalogService | None = None
 
     def set_font_catalog(self, catalog: FontSetCatalogService | None) -> None:
@@ -506,6 +535,51 @@ class ProfileService:
         except DBAPIError as e:
             self._handle_db_error(e)
 
+    async def list_profiles_page(
+        self,
+        *,
+        search: str | None = None,
+        group_id: str | None = None,
+        proxy_id: str | None = None,
+        status: str | None = None,
+        platform: str | None = None,
+        sort: str = "default",
+        page: int = 1,
+        page_size: int = 50,
+    ) -> CollectionPage[ProfileResponse]:
+        """t076 AC-001: bounded server-side profile page."""
+        try:
+            result = await self._repo.list_profiles_page(
+                search=search,
+                group_id=group_id,
+                proxy_id=proxy_id,
+                status=status,
+                platform=platform,
+                sort=sort,
+                page=page,
+                page_size=page_size,
+            )
+        except DBAPIError as e:
+            self._handle_db_error(e)
+        return CollectionPage(
+            items=[ProfileResponse.from_domain(p) for p in result.items],
+            total=result.total,
+            page=result.page,
+            page_size=result.page_size,
+        )
+
+    async def list_profile_candidates(
+        self, search: str = "", limit: int = 20
+    ) -> list[CandidateEntry]:
+        return await self._repo.list_profile_candidates(search, limit)
+
+    async def list_runtimes(self) -> list[ProfileRuntime]:
+        """t076 AC-002: every runtime row in one batched read."""
+        try:
+            return await self._repo.list_runtimes()
+        except DBAPIError as e:
+            self._handle_db_error(e)
+
     async def font_set_usage_counts(self) -> dict[tuple[str, str], int]:
         return await self._repo.font_set_usage_counts()
 
@@ -570,40 +644,453 @@ class ProfileService:
                 type(exc).__name__,
             )
 
-    async def delete_profile(self, profile_id: str) -> bool:
-        """Delete a stopped profile and all of its private directories.
+    # --- Profile deletion lifecycle (t078) ---
+    #
+    # Deletion is one durable state machine, not a refuse-if-running
+    # check: an intent row is persisted first, then the machine walks
+    # stopping (desired=stopped until no writer remains) and cleaning
+    # (artifacts -> directories -> preview -> database row), recording
+    # every step outcome. A failure lands in ``failed`` with its stage
+    # and leaves the profile data untouched unless the failing step is
+    # the database row itself; a retry resumes the same intent. The
+    # instance bound when the stop stage began fences cleaning: a
+    # *different* instance bound later means the profile was started
+    # again, and the deletion fails instead of deleting a live new
+    # instance (AC-004).
 
-        A profile that is desired-running, still observed in a lifecycle
-        transition, or bound to a runtime instance is refused (t035 AC-011).
+    def set_artifact_cleaner(
+        self, cleaner: Callable[[str], Awaitable[None]] | None
+    ) -> None:
+        """Wire artifact cleanup after construction (the artifact
+        service is built after this service in the app lifespan)."""
+        self._artifact_cleaner = cleaner
+
+    async def request_deletions(
+        self, profile_ids: list[str]
+    ) -> tuple[str, list[ProfileDeletionOperation]]:
+        """Accept an explicit target set and return one durable intent
+        per target. A target with an open intent joins it (never a
+        duplicate); a missing profile gets an intent that is already
+        failed at ``accepted`` so the receipt stays uniform."""
+        batch_id = uuid.uuid4().hex
+        operations: list[ProfileDeletionOperation] = []
+        seen: set[str] = set()
+        for profile_id in profile_ids:
+            if profile_id in seen:
+                continue
+            seen.add(profile_id)
+            existing = await self._repo.find_open_deletion(profile_id)
+            if existing is not None:
+                operations.append(
+                    await self._join_deletion(existing, batch_id)
+                )
+                continue
+            profile = await self._repo.get_profile(profile_id)
+            try:
+                operation = await self._repo.create_deletion(
+                    batch_id=batch_id,
+                    profile_id=profile_id,
+                    profile_name=(
+                        profile.config.name if profile else profile_id
+                    ),
+                )
+            except IntegrityError:
+                # A concurrent submission created the open intent
+                # first (the partial unique index rejected ours);
+                # join the winner once its transaction commits.
+                existing = None
+                for _ in range(50):
+                    existing = await self._repo.find_open_deletion(
+                        profile_id
+                    )
+                    if existing is not None:
+                        break
+                    await asyncio.sleep(0.01)
+                if existing is None:
+                    raise
+                operations.append(
+                    await self._join_deletion(existing, batch_id)
+                )
+                continue
+            if profile is None:
+                operation = await self._fail_deletion(
+                    operation, "accepted", "profile_not_found"
+                )
+            else:
+                self._kick_deletion(operation.id)
+            operations.append(operation)
+        return batch_id, operations
+
+    async def _join_deletion(
+        self,
+        existing: ProfileDeletionOperation,
+        batch_id: str,
+    ) -> ProfileDeletionOperation:
+        """Present an already-open intent under the batch that just
+        confirmed it, so the returned receipt and the batch query
+        agree. A failed intent that is confirmed again is a retry:
+        resume it from its failed stage with the failure cleared;
+        an in-flight intent only changes batches. Either way the
+        intent is (re-)driven."""
+        if existing.stage == "failed":
+            resumed = await self._repo.update_deletion(
+                existing.id,
+                stage=existing.failed_stage or "accepted",
+                failed_stage=None,
+                error=None,
+                detail=dict(existing.detail),
+                batch_id=batch_id,
+            )
+            assert resumed is not None
+            existing = resumed
+        elif existing.batch_id != batch_id:
+            moved = await self._repo.update_deletion(
+                existing.id,
+                stage=existing.stage,
+                failed_stage=existing.failed_stage,
+                error=existing.error,
+                detail=dict(existing.detail),
+                batch_id=batch_id,
+            )
+            assert moved is not None
+            existing = moved
+        self._kick_deletion(existing.id)
+        return existing
+
+    async def get_deletion(
+        self, operation_id: str
+    ) -> ProfileDeletionOperation | None:
+        return await self._repo.get_deletion(operation_id)
+
+    async def list_deletion_batch(
+        self, batch_id: str
+    ) -> list[ProfileDeletionOperation]:
+        return await self._repo.list_deletions_for_batch(batch_id)
+
+    async def retry_deletion(
+        self, operation_id: str
+    ) -> ProfileDeletionOperation:
+        operation = await self._repo.get_deletion(operation_id)
+        if operation is None:
+            raise ProfileNotFoundError(operation_id)
+        if operation.stage == "done":
+            return operation
+        if operation.stage != "failed":
+            self._kick_deletion(operation.id)
+            return operation
+        resumed = await self._repo.update_deletion(
+            operation.id,
+            stage=operation.failed_stage or "accepted",
+            failed_stage=None,
+            error=None,
+            detail=dict(operation.detail),
+        )
+        assert resumed is not None
+        self._kick_deletion(resumed.id)
+        return resumed
+
+    async def resume_pending_deletions(self) -> int:
+        """Re-drive in-flight intents after a restart; failed intents
+        keep waiting for an explicit retry."""
+        pending = await self._repo.list_unfinished_deletions()
+        for operation in pending:
+            self._kick_deletion(operation.id)
+        return len(pending)
+
+    async def await_pending_deletions(self) -> None:
+        """Wait for deletion background tasks (tests; production never
+        blocks on deletions)."""
+        tasks = [t for t in self._deletion_tasks.values() if not t.done()]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    def _kick_deletion(self, operation_id: str) -> None:
+        task = self._deletion_tasks.get(operation_id)
+        if task is not None and not task.done():
+            return
+        task = asyncio.get_running_loop().create_task(
+            self._drive_deletion_guarded(operation_id)
+        )
+        self._deletion_tasks[operation_id] = task
+
+    async def _drive_deletion_guarded(self, operation_id: str) -> None:
+        lock = self._deletion_locks.setdefault(operation_id, asyncio.Lock())
+        async with lock:
+            try:
+                await self._drive_deletion(operation_id)
+            except Exception:  # noqa: BLE001 - a driver crash must not
+                # kill the intent silently; record it as a failure.
+                logger.exception(
+                    "Deletion driver crashed: operation=%s", operation_id
+                )
+                operation = await self._repo.get_deletion(operation_id)
+                if operation is not None and operation.stage not in (
+                    "done",
+                    "failed",
+                ):
+                    await self._fail_deletion(
+                        operation,
+                        operation.stage,
+                        "driver_error",
+                    )
+
+    async def _fail_deletion(
+        self,
+        operation: ProfileDeletionOperation,
+        failed_stage: str,
+        error: str,
+    ) -> ProfileDeletionOperation:
+        updated = await self._repo.update_deletion(
+            operation.id,
+            stage="failed",
+            failed_stage=failed_stage,
+            error=error,
+            detail=dict(operation.detail),
+        )
+        assert updated is not None
+        return updated
+
+    async def _drive_deletion(self, operation_id: str) -> None:
+        operation = await self._repo.get_deletion(operation_id)
+        if operation is None or operation.stage == "done":
+            return
+        if operation.stage == "accepted":
+            # An intent that never started against a profile that does
+            # not exist is a failure, not a completed deletion; the
+            # crash-recovery path below only applies once work began.
+            if await self._repo.get_profile(operation.profile_id) is None:
+                await self._fail_deletion(
+                    operation, "accepted", "profile_not_found"
+                )
+                return
+        if operation.stage in ("accepted", "stopping"):
+            operation = await self._deletion_stop_stage(operation)
+            if operation.stage == "failed":
+                return
+        if operation.stage == "cleaning":
+            await self._deletion_clean_stage(operation)
+
+    async def _deletion_stop_stage(
+        self, operation: ProfileDeletionOperation
+    ) -> ProfileDeletionOperation:
+        profile_id = operation.profile_id
+        detail = dict(operation.detail)
+        runtime = await self._repo.get_runtime(profile_id)
+        detail["bound_instance_id"] = (
+            runtime.runtime_instance_id if runtime is not None else None
+        )
+        operation = await self._repo.update_deletion(
+            operation.id,
+            stage="stopping",
+            failed_stage=None,
+            error=None,
+            detail=detail,
+        )
+        assert operation is not None
+        if runtime is None or not _runtime_has_writer(runtime):
+            return await self._advance_deletion(operation, "cleaning")
+        await self.set_desired_state(profile_id, "stopped")
+        deadline = (
+            datetime.datetime.now(datetime.timezone.utc).timestamp()
+            + self.deletion_stop_timeout_seconds
+        )
+        while True:
+            runtime = await self._repo.get_runtime(profile_id)
+            if runtime is None or not _runtime_has_writer(runtime):
+                return await self._advance_deletion(operation, "cleaning")
+            if (
+                datetime.datetime.now(datetime.timezone.utc).timestamp()
+                >= deadline
+            ):
+                return await self._fail_deletion(
+                    operation,
+                    "stopping",
+                    "stop_timeout: observed_state="
+                    f"{runtime.observed_state}, desired_state="
+                    f"{runtime.desired_state}, instance_bound="
+                    f"{runtime.runtime_instance_id is not None}",
+                )
+            await asyncio.sleep(self.deletion_poll_interval_seconds)
+
+    async def _advance_deletion(
+        self, operation: ProfileDeletionOperation, stage: str
+    ) -> ProfileDeletionOperation:
+        updated = await self._repo.update_deletion(
+            operation.id,
+            stage=stage,
+            failed_stage=None,
+            error=None,
+            detail=dict(operation.detail),
+        )
+        assert updated is not None
+        return updated
+
+    async def _deletion_clean_stage(
+        self, operation: ProfileDeletionOperation
+    ) -> None:
+        profile_id = operation.profile_id
+        detail = dict(operation.detail)
+        steps: dict[str, str] = dict(detail.get("steps") or {})
+        detail["steps"] = steps
+        async with self._locks.lock(profile_id):
+            profile = await self._repo.get_profile(profile_id)
+            if profile is None:
+                # The row is already gone (a previous pass deleted it
+                # and crashed before recording ``done``): the intent is
+                # complete, not failed.
+                steps.setdefault("database", "ok")
+                detail["steps"] = steps
+                await self._repo.update_deletion(
+                    operation.id,
+                    stage="done",
+                    failed_stage=None,
+                    error=None,
+                    detail=detail,
+                )
+                return
+            runtime = await self._repo.get_runtime(profile_id)
+            if runtime is not None and runtime.runtime_instance_id is not None:
+                if runtime.runtime_instance_id != detail.get(
+                    "bound_instance_id"
+                ):
+                    await self._fail_deletion(
+                        operation,
+                        "cleaning",
+                        "instance_changed: a new runtime instance was "
+                        "bound after the stop stage; refusing to delete "
+                        "a live instance",
+                    )
+                    return
+                await self._fail_deletion(
+                    operation,
+                    "cleaning",
+                    "instance_still_bound: the stopped instance is "
+                    "still bound; refusing to delete underneath it",
+                )
+                return
+            if steps.get("artifacts") != "ok":
+                if self._artifact_cleaner is not None:
+                    try:
+                        await self._artifact_cleaner(profile_id)
+                        steps["artifacts"] = "ok"
+                    except Exception as exc:  # noqa: BLE001 - recorded
+                        steps["artifacts"] = (
+                            f"error: {type(exc).__name__}: {exc}"
+                        )
+                        detail["steps"] = steps
+                        operation = await self._repo.update_deletion(
+                            operation.id,
+                            stage="cleaning",
+                            failed_stage=None,
+                            error=None,
+                            detail=detail,
+                        )
+                        assert operation is not None
+                        await self._fail_deletion(
+                            operation,
+                            "cleaning",
+                            f"artifact_cleanup_failed: {exc}",
+                        )
+                        return
+                else:
+                    steps["artifacts"] = "not_configured"
+            if steps.get("directories") != "ok":
+                dir_error = await self._remove_profile_directories_strict(
+                    profile_id
+                )
+                if dir_error is not None:
+                    steps["directories"] = f"error: {dir_error}"
+                    detail["steps"] = steps
+                    operation = await self._repo.update_deletion(
+                        operation.id,
+                        stage="cleaning",
+                        failed_stage=None,
+                        error=None,
+                        detail=detail,
+                    )
+                    assert operation is not None
+                    await self._fail_deletion(
+                        operation, "cleaning", dir_error
+                    )
+                    return
+                steps["directories"] = "ok"
+            await self._clear_preview_state(profile_id)
+            steps["preview"] = "ok"
+            deleted = await self._repo.delete_profile(profile_id)
+            if not deleted and await self._repo.get_profile(profile_id):
+                await self._fail_deletion(
+                    operation, "cleaning", "database_delete_failed"
+                )
+                return
+            steps["database"] = "ok"
+        await self._repo.update_deletion(
+            operation.id,
+            stage="done",
+            failed_stage=None,
+            error=None,
+            detail=detail,
+        )
+
+    async def _remove_profile_directories_strict(
+        self, profile_id: str
+    ) -> str | None:
+        """Remove the profile's private directories, returning the
+        first failure instead of only logging it (t078 AC-006)."""
+        if self._data_root is None:
+            return None
+        for sub in ("profiles", "runtime", "runtime-events"):
+            target = self._data_root / sub / profile_id
+            try:
+                await asyncio.to_thread(shutil.rmtree, target)
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                return f"directory_cleanup_failed: {sub}: {exc}"
+        # t080: the per-Profile secret directory lives under
+        # runtime/.secrets (runtime volume); it is private credential
+        # material and is removed with the Profile.
+        secrets = self._data_root / "runtime" / ".secrets" / profile_id
+        try:
+            await asyncio.to_thread(shutil.rmtree, secrets)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            return f"directory_cleanup_failed: runtime/.secrets: {exc}"
+        return None
+
+    async def delete_profile(self, profile_id: str) -> bool:
+        """Delete through the durable lifecycle (t078).
+
+        The old refuse-if-running semantics are gone: a running profile
+        is stopped first, then cleaned. Synchronous callers (the DELETE
+        route) drive the same intent the async batch path uses and get
+        the final stage as an exception on failure.
         """
         try:
-            async with self._locks.lock(profile_id):
-                profile = await self._repo.get_profile(profile_id)
-                if profile is None:
-                    raise ProfileNotFoundError(profile_id)
-                runtime = await self._repo.get_runtime(profile_id)
-                if runtime is not None and _runtime_has_writer(runtime):
-                    raise ProfileRunningError(profile_id, "delete")
-                deleted = await self._repo.delete_profile(profile_id)
-                if not deleted:
-                    raise ProfileNotFoundError(profile_id)
-                if self._data_root is not None:
-                    for sub in ("profiles", "runtime", "runtime-events"):
-                        target = self._data_root / sub / profile_id
-                        await asyncio.to_thread(
-                            self._remove_profile_directory, target, profile_id
-                        )
-                    # t080: the per-Profile secret directory lives under
-                    # runtime/.secrets (runtime volume); it is private
-                    # credential material and is removed with the Profile.
-                    secrets = (
-                        self._data_root / "runtime" / ".secrets" / profile_id
-                    )
-                    await asyncio.to_thread(
-                        self._remove_profile_directory, secrets, profile_id
-                    )
-                await self._clear_preview_state(profile_id)
+            profile = await self._repo.get_profile(profile_id)
+            existing = await self._repo.find_open_deletion(profile_id)
+            if profile is None and existing is None:
+                raise ProfileNotFoundError(profile_id)
+            if existing is not None:
+                operation = existing
+            else:
+                _, operations = await self.request_deletions([profile_id])
+                operation = operations[0]
+            if operation.stage == "failed" and (
+                operation.failed_stage == "accepted"
+                and operation.error == "profile_not_found"
+            ):
+                raise ProfileNotFoundError(profile_id)
+            lock = self._deletion_locks.setdefault(
+                operation.id, asyncio.Lock()
+            )
+            async with lock:
+                await self._drive_deletion(operation.id)
+            final = await self._repo.get_deletion(operation.id)
+            assert final is not None
+            if final.stage == "done":
                 return True
+            raise ProfileDeletionFailedError(final)
         except DBAPIError as e:
             self._handle_db_error(e)
 
@@ -635,6 +1122,17 @@ class ProfileService:
             if not rt:
                 raise ProfileNotFoundError(profile_id)
             return rt
+        except DBAPIError as e:
+            self._handle_db_error(e)
+
+    async def list_runtime_batch(
+        self, *, after_profile_id: str | None, limit: int
+    ) -> list[ProfileRuntime]:
+        """One batch of the Supervisor state snapshot (t083)."""
+        try:
+            return await self._repo.list_runtimes_batch(
+                after_profile_id=after_profile_id, limit=limit
+            )
         except DBAPIError as e:
             self._handle_db_error(e)
 
@@ -921,6 +1419,29 @@ class ProfileService:
     async def list_groups(self):
         return await self._repo.list_groups()
 
+    async def get_group(self, group_id: str):
+        """One group by id (t076 review f006: the list toolbar shows
+        the selected filter value even when it falls outside the first
+        bounded candidate page)."""
+        return await self._repo.get_group(group_id)
+
+    async def list_groups_page(
+        self,
+        *,
+        search: str | None = None,
+        page: int = 1,
+        page_size: int = 50,
+    ):
+        """t076 AC-001: bounded server-side group page."""
+        return await self._repo.list_groups_page(
+            search=search, page=page, page_size=page_size
+        )
+
+    async def list_group_candidates(
+        self, search: str = "", limit: int = 20
+    ) -> list[CandidateEntry]:
+        return await self._repo.list_group_candidates(search, limit)
+
     async def create_group(self, req, *, operation_id: str | None = None):
         return await self._repo.create_group(
             req.name, req.color, req.sort_order, operation_id=operation_id
@@ -980,6 +1501,45 @@ class ProfileService:
 
     async def list_proxies(self):
         return await self._repo.list_proxies()
+
+    async def list_proxies_page(
+        self,
+        *,
+        search: str | None = None,
+        country_code: str | None = None,
+        city: str | None = None,
+        scheme: str | None = None,
+        sort: str = "default",
+        page: int = 1,
+        page_size: int = 50,
+    ):
+        """t076 AC-001/AC-006: bounded server-side proxy page."""
+        return await self._repo.list_proxies_page(
+            search=search,
+            country_code=country_code,
+            city=city,
+            scheme=scheme,
+            sort=sort,
+            page=page,
+            page_size=page_size,
+        )
+
+    async def list_proxy_candidates(
+        self, search: str = "", limit: int = 20
+    ) -> list[ProxyCandidateEntry]:
+        return await self._repo.list_proxy_candidates(search, limit)
+
+    async def proxy_country_ranges(self) -> list[ProxyCountryRange]:
+        return await self._repo.proxy_country_ranges()
+
+    async def get_proxy_used_by(
+        self, proxy_id: str
+    ) -> list[ProxyUsedByEntry] | None:
+        """t076 AC-004: used-by detail in the same union as the count."""
+        proxy = await self._repo.get_proxy(proxy_id)
+        if proxy is None:
+            return None
+        return await self._repo.get_proxy_used_by(proxy_id)
 
     async def get_proxy(self, proxy_id: str):
         return await self._repo.get_proxy(proxy_id)

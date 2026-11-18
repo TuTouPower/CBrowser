@@ -6,11 +6,12 @@ import {
   Dialog,
   FieldLabel,
   Input,
-  RegionCode,
+  RegionBadge,
   Select,
   useToast,
   type SelectOption,
 } from "../../shared/ui";
+import { proxyProbeErrorLabelKey } from "../../shared/presentation";
 import { useI18n, type TranslationKey } from "../../i18n";
 import { ApiError } from "../../shared/api/client";
 import { useApiClient } from "../../shared/api/client_context";
@@ -457,8 +458,11 @@ export function ProxyFormDialog(props: ProxyFormDialogProps): JSX.Element {
     }
     if (proxy.observation_status === "failed") {
       return (
-        <span className="font-ui text-body-sm text-danger">
-          {proxy.observation_error_code ?? t("proxyProbeFailed")}
+        <span
+          className="font-ui text-body-sm text-danger"
+          title={proxy.observation_error_code ?? undefined}
+        >
+          {t(proxyProbeErrorLabelKey(proxy.observation_error_code))}
         </span>
       );
     }
@@ -466,13 +470,12 @@ export function ProxyFormDialog(props: ProxyFormDialogProps): JSX.Element {
       return (
         <span className="flex flex-wrap items-center gap-sm">
           {proxy.country_code ? (
-            <RegionCode code={proxy.country_code} />
+            <RegionBadge
+              code={proxy.country_code}
+              name={proxy.country_name}
+              unknownLabel={t("regionUnknown")}
+            />
           ) : null}
-          {proxy.country_name && (
-            <span className="font-ui text-body-sm text-on-surface">
-              {proxy.country_name}
-            </span>
-          )}
           {proxy.city && (
             <span className="font-ui text-body-sm text-on-surface">
               {proxy.city}

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from wait import wait_until
@@ -76,3 +77,75 @@ async def test_stop_cancels_pending_publish_tasks(profile_service) -> None:
     await coordinator.stop()
 
     assert coordinator.publish_task_count == 0
+
+
+@pytest.mark.asyncio
+async def test_observation_sweep_selects_targets_by_batch(monkeypatch):
+    # t083_code_f004: the 15 s observation sweep must page through
+    # list_runtime_batch (one SELECT per batch), not one runtime read
+    # per Profile.  The fake service deliberately offers no
+    # get_runtime/list_profiles, so any per-Profile read would fail
+    # the sweep instead of refreshing.
+    runtimes = [
+        SimpleNamespace(
+            profile_id=f"p{i:03d}",
+            desired_state="running" if i % 2 == 0 else "stopped",
+            runtime_instance_id=f"inst_{i}" if i % 3 != 0 else None,
+        )
+        for i in range(250)
+    ]
+    calls: list = []
+
+    async def list_runtime_batch(*, after_profile_id, limit):
+        calls.append((after_profile_id, limit))
+        if after_profile_id is None:
+            start = 0
+        else:
+            start = next(
+                i
+                for i, r in enumerate(runtimes)
+                if r.profile_id == after_profile_id
+            ) + 1
+        return runtimes[start : start + limit]
+
+    service = SimpleNamespace(list_runtime_batch=list_runtime_batch)
+    coordinator = RuntimeCoordinator(
+        supervisor_url=None,
+        supervisor_token=None,
+        profile_service=service,
+    )
+    refreshed: list[str] = []
+
+    async def refresh_transport(profile_id: str) -> None:
+        refreshed.append(profile_id)
+
+    async def refresh_search_defaults(profile_id: str) -> None:
+        refreshed.append(profile_id)
+
+    coordinator.refresh_transport = refresh_transport
+    coordinator.refresh_search_defaults = refresh_search_defaults
+    monkeypatch.setattr(
+        RuntimeCoordinator, "OBSERVATION_REFRESH_INTERVAL_SEC", 0.05
+    )
+    coordinator._running = True
+    task = asyncio.create_task(coordinator._observation_refresh_loop())
+    try:
+        await wait_until(
+            lambda: refreshed,
+            timeout=5.0,
+            interval=0.01,
+            description="first observation sweep to refresh",
+        )
+    finally:
+        coordinator._running = False
+        await asyncio.wait_for(task, timeout=5)
+    # 250 runtimes at 200 per batch: exactly two fetches, the second
+    # one keyed after the last Profile of the first batch.
+    assert calls == [(None, 200), ("p199", 200)]
+    expected = sorted(
+        r.profile_id
+        for r in runtimes
+        if r.desired_state == "running"
+        and r.runtime_instance_id is not None
+    )
+    assert sorted(set(refreshed)) == expected

@@ -13,7 +13,7 @@ import pytest
 from cbrowser.adapters.database.models import ProfileConfigVersionModel
 from cbrowser.adapters.database.repository import ProfileRepository
 from cbrowser.domain.models import ProfileConfig
-from cbrowser.services.profile_service import ProfileRunningError, ProfileService
+from cbrowser.services.profile_service import ProfileService
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
@@ -258,11 +258,16 @@ async def test_observed_running_and_terminal_write_timestamps(db_context):
     assert stopped.browser_user_agent is None
 
 
-# ---- AC-011: running delete refused; error without instance deletable ------
+# ---- AC-011 (superseded by t078): delete drives the stop-then-delete
+# lifecycle; the old refuse-if-running semantics are gone. A profile
+# whose intent is running but which has no live writer converges in
+# the stopping stage; an errored profile without an instance deletes
+# directly. Live-instance stop failure is covered in
+# tests/unit/test_t078_deletion_lifecycle.py. ------
 
 
 @pytest.mark.asyncio
-async def test_delete_running_profile_raises_but_error_without_instance_can_delete(
+async def test_delete_running_intent_converges_but_error_without_instance_can_delete(
     db_context,
 ):
     _engine, session_maker = db_context
@@ -271,9 +276,8 @@ async def test_delete_running_profile_raises_but_error_without_instance_can_dele
 
     running_profile = await repo.create_profile(ProfileConfig(name="Running"))
     await repo.set_desired_state(running_profile.id, "running")
-    with pytest.raises(ProfileRunningError):
-        await service.delete_profile(running_profile.id)
-    assert (await repo.get_profile(running_profile.id)) is not None
+    assert await service.delete_profile(running_profile.id) is True
+    assert (await repo.get_profile(running_profile.id)) is None
 
     error_profile = await repo.create_profile(ProfileConfig(name="Errored"))
     await repo.bind_runtime_instance(error_profile.id, "inst_err", config_version=1)
@@ -372,14 +376,17 @@ async def test_delete_profile_removes_private_directories(
 
 
 @pytest.mark.asyncio
-async def test_delete_profile_logs_directory_cleanup_failure(
-    db_context, tmp_path, monkeypatch, caplog
+async def test_delete_profile_directory_cleanup_failure_fails_the_deletion(
+    db_context, tmp_path, monkeypatch
 ) -> None:
-    """AC-011: a failed private-directory cleanup is observable, not
-    silently swallowed."""
+    """t078 AC-006 (supersedes t035 AC-011's log-only behavior): a
+    failed private-directory cleanup fails the deletion at the
+    cleaning stage with the outcome recorded on the intent; the
+    profile row survives so the deletion can be retried."""
     from pathlib import Path
 
     from cbrowser.services import profile_service as ps
+    from cbrowser.services.profile_service import ProfileDeletionFailedError
 
     _engine, session_maker = db_context
     repo = ProfileRepository(session_maker)
@@ -391,6 +398,10 @@ async def test_delete_profile_logs_directory_cleanup_failure(
         raise OSError("simulated cleanup failure")
 
     monkeypatch.setattr(ps.shutil, "rmtree", fail)
-    with caplog.at_level("WARNING", logger="cbrowser.services.profile_service"):
-        assert await service.delete_profile(profile.id) is True
-    assert "Profile directory cleanup failed" in caplog.text
+    with pytest.raises(ProfileDeletionFailedError) as excinfo:
+        await service.delete_profile(profile.id)
+    operation = excinfo.value.operation
+    assert operation.failed_stage == "cleaning"
+    assert "directory_cleanup_failed" in (operation.error or "")
+    assert operation.detail["steps"]["directories"].startswith("error:")
+    assert (await repo.get_profile(profile.id)) is not None

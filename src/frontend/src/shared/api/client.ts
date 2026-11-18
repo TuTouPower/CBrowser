@@ -1,9 +1,14 @@
 import type {
   ArtifactResponse,
   AutomationEndpointResponse,
+  CandidateEntry,
+  GroupCollectionPage,
+  ProfileCollectionPage,
   ProfileControlStateData,
   ProfileResponse,
   ProfileCreateRequest,
+  ProfileDeletionBatchResponse,
+  ProfileDeletionOperation,
   ProfileUpdateRequest,
   ProfileRuntimeResponse,
   LoginRequest,
@@ -13,14 +18,33 @@ import type {
   GroupCreateRequest,
   GroupUpdateRequest,
   GroupReorderRequest,
+  ProxyCandidateEntry,
+  ProxyCollectionPage,
+  ProxyCountryRange,
   ProxyResponse,
   ProxyCreateRequest,
   ProxyUpdateRequest,
+  ProxyUsedByResponse,
+  RuntimeSummaryResponse,
   FontSetListResponse,
   UserSettingsResponse,
   UserSettingsUpdateRequest,
 } from "./types";
 import { resolveSameOriginUrl } from "./same_origin";
+
+/** t076: build a query string from defined params only.
+ * Takes `object` (not a Record): collection param types are interfaces,
+ * which carry no index signature and would otherwise be rejected. */
+export function buildQuery(params: object): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== "") {
+      query.set(key, String(value));
+    }
+  }
+  const text = query.toString();
+  return text ? `?${text}` : "";
+}
 
 export class ApiError extends Error {
   constructor(
@@ -228,6 +252,36 @@ export class ApiClient {
     list: async (): Promise<ProfileResponse[]> => {
       return this.request<ProfileResponse[]>("/api/v1/profiles");
     },
+    /** t076 AC-001: bounded server-side page (search/filter/sort/paging). */
+    listCollection: async (params: {
+      search?: string;
+      group_id?: string;
+      proxy_id?: string;
+      status?: string;
+      platform?: string;
+      sort?: "default" | "manual" | "name" | "recent" | "created";
+      page?: number;
+      page_size?: number;
+    } = {}): Promise<ProfileCollectionPage> => {
+      return this.request<ProfileCollectionPage>(
+        `/api/v1/profiles/collection${buildQuery(params)}`,
+      );
+    },
+    /** t076 AC-006: bounded name search over profiles. */
+    listCandidates: async (
+      search = "",
+      limit = 20,
+    ): Promise<CandidateEntry[]> => {
+      return this.request<CandidateEntry[]>(
+        `/api/v1/profiles/candidates${buildQuery({ search, limit })}`,
+      );
+    },
+    /** t076 AC-002: one batched runtime read for all profiles. */
+    getRuntimeSummary: async (): Promise<RuntimeSummaryResponse> => {
+      return this.request<RuntimeSummaryResponse>(
+        "/api/v1/profiles/runtime-summary",
+      );
+    },
     get: async (profileId: string): Promise<ProfileResponse> => {
       return this.request<ProfileResponse>(`/api/v1/profiles/${encodeURIComponent(profileId)}`);
     },
@@ -250,6 +304,41 @@ export class ApiClient {
         method: "DELETE",
         headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       });
+    },
+    /** t078: accept an explicit deletion target set; returns the
+     * durable per-target operations to poll. */
+    createDeletions: async (
+      profileIds: string[],
+    ): Promise<ProfileDeletionBatchResponse> => {
+      return this.request<ProfileDeletionBatchResponse>(
+        "/api/v1/profile-deletions",
+        {
+          method: "POST",
+          body: JSON.stringify({ profile_ids: profileIds }),
+        },
+      );
+    },
+    getDeletionBatch: async (
+      batchId: string,
+    ): Promise<ProfileDeletionBatchResponse> => {
+      return this.request<ProfileDeletionBatchResponse>(
+        `/api/v1/profile-deletions/batches/${encodeURIComponent(batchId)}`,
+      );
+    },
+    getDeletion: async (
+      operationId: string,
+    ): Promise<ProfileDeletionOperation> => {
+      return this.request<ProfileDeletionOperation>(
+        `/api/v1/profile-deletions/${encodeURIComponent(operationId)}`,
+      );
+    },
+    retryDeletion: async (
+      operationId: string,
+    ): Promise<ProfileDeletionOperation> => {
+      return this.request<ProfileDeletionOperation>(
+        `/api/v1/profile-deletions/${encodeURIComponent(operationId)}/retry`,
+        { method: "POST" },
+      );
     },
     getRuntime: async (profileId: string): Promise<ProfileRuntimeResponse> => {
       return this.request<ProfileRuntimeResponse>(
@@ -425,6 +514,32 @@ export class ApiClient {
     list: async (): Promise<GroupResponse[]> => {
       return this.request<GroupResponse[]>("/api/v1/groups");
     },
+    /** t076 review f006: one group by id, for echoing a selected
+     * filter value outside the bounded candidate page. */
+    get: async (groupId: string): Promise<GroupResponse> => {
+      return this.request<GroupResponse>(
+        `/api/v1/groups/${encodeURIComponent(groupId)}`,
+      );
+    },
+    /** t076 AC-001: bounded server-side page. */
+    listCollection: async (params: {
+      search?: string;
+      page?: number;
+      page_size?: number;
+    } = {}): Promise<GroupCollectionPage> => {
+      return this.request<GroupCollectionPage>(
+        `/api/v1/groups/collection${buildQuery(params)}`,
+      );
+    },
+    /** t076 AC-006: bounded name search over groups. */
+    listCandidates: async (
+      search = "",
+      limit = 20,
+    ): Promise<CandidateEntry[]> => {
+      return this.request<CandidateEntry[]>(
+        `/api/v1/groups/candidates${buildQuery({ search, limit })}`,
+      );
+    },
     create: async (
       data: GroupCreateRequest,
       idempotencyKey?: string,
@@ -473,6 +588,39 @@ export class ApiClient {
   readonly proxies = {
     list: async (): Promise<ProxyResponse[]> => {
       return this.request<ProxyResponse[]>("/api/v1/proxies");
+    },
+    /** t076 AC-001/AC-006: bounded server-side page. */
+    listCollection: async (params: {
+      search?: string;
+      country_code?: string;
+      city?: string;
+      scheme?: string;
+      sort?: "default" | "name";
+      page?: number;
+      page_size?: number;
+    } = {}): Promise<ProxyCollectionPage> => {
+      return this.request<ProxyCollectionPage>(
+        `/api/v1/proxies/collection${buildQuery(params)}`,
+      );
+    },
+    /** t076 AC-006: bounded name/host search over proxies. */
+    listCandidates: async (
+      search = "",
+      limit = 20,
+    ): Promise<ProxyCandidateEntry[]> => {
+      return this.request<ProxyCandidateEntry[]>(
+        `/api/v1/proxies/candidates${buildQuery({ search, limit })}`,
+      );
+    },
+    /** t076 AC-006: stable country -> city ranges. */
+    listCountries: async (): Promise<ProxyCountryRange[]> => {
+      return this.request<ProxyCountryRange[]>("/api/v1/proxies/countries");
+    },
+    /** t076 AC-004: used-by detail in the same union as the count. */
+    getUsedBy: async (proxyId: string): Promise<ProxyUsedByResponse> => {
+      return this.request<ProxyUsedByResponse>(
+        `/api/v1/proxies/${encodeURIComponent(proxyId)}/used-by`,
+      );
     },
     get: async (proxyId: string): Promise<ProxyResponse> => {
       return this.request<ProxyResponse>(

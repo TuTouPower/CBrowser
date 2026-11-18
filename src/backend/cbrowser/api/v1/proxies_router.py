@@ -7,9 +7,14 @@ from typing import Annotated
 from cbrowser.api.v1.deps import get_profile_service
 from cbrowser.auth.dependencies import require_csrf_and_origin
 from cbrowser.domain.models import (
+    CandidateEntry,
+    CollectionPage,
+    ProxyCandidateEntry,
+    ProxyCountryRange,
     ProxyCreateRequest,
     ProxyResponse,
     ProxyUpdateRequest,
+    ProxyUsedByResponse,
 )
 from cbrowser.api.v1.runtime_views import (
     publish_reference_change,
@@ -30,6 +35,59 @@ Service = Annotated[ProfileService, Depends(get_profile_service)]
 @proxy_router.get("", response_model=list[ProxyResponse])
 async def list_proxies(service: Service):
     return await service.list_proxies()
+
+
+@proxy_router.get("/collection", response_model=CollectionPage[ProxyResponse])
+async def list_proxies_collection(
+    service: Service,
+    search: Annotated[str | None, Query(max_length=255)] = None,
+    country_code: Annotated[str | None, Query(max_length=8)] = None,
+    city: Annotated[str | None, Query(max_length=255)] = None,
+    scheme: Annotated[str | None, Query(pattern="^(http|https|socks5)$")] = None,
+    sort: Annotated[str, Query(pattern="^(default|name)$")] = "default",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=1000)] = 50,
+):
+    """t076 AC-001/AC-006: bounded server-side proxy page; country/city
+    filter by the stable country code from egress observations."""
+    return await service.list_proxies_page(
+        search=search,
+        country_code=country_code,
+        city=city,
+        scheme=scheme,
+        sort=sort,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@proxy_router.get("/candidates", response_model=list[ProxyCandidateEntry])
+async def list_proxy_candidates(
+    service: Service,
+    search: Annotated[str, Query(max_length=255)] = "",
+    limit: Annotated[int, Query(ge=1, le=500)] = 20,
+):
+    """t076 AC-006: bounded name/host search over proxies."""
+    return await service.list_proxy_candidates(search=search, limit=limit)
+
+
+@proxy_router.get("/countries", response_model=list[ProxyCountryRange])
+async def list_proxy_countries(service: Service):
+    """t076 AC-006: stable country -> city ranges from observations."""
+    return await service.proxy_country_ranges()
+
+
+@proxy_router.get("/{proxy_id}/used-by", response_model=ProxyUsedByResponse)
+async def get_proxy_used_by(proxy_id: str, service: Service):
+    """t076 AC-004: used-by detail with kind labels, same union as the
+    count and delete protection."""
+    entries = await service.get_proxy_used_by(proxy_id)
+    if entries is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Proxy {proxy_id} not found",
+        )
+    return ProxyUsedByResponse(proxy_id=proxy_id, entries=entries)
 
 
 @proxy_router.post("", response_model=ProxyResponse, status_code=status.HTTP_201_CREATED)

@@ -52,11 +52,33 @@ async def test_manual_reset_preempts_old_backoff_over_real_api(
         base_url=str(server.base_url), headers=headers, trust_env=False
     ) as api:
         locks = {}
+
+        # t083: the coordinator reads intent through the core's minimal
+        # state cache; the fake core serves it from the real snapshot
+        # endpoint, in the same dict shape the production cache returns.
+        async def _state_entries():
+            resp = await api.get(prefix + "/state/snapshot")
+            resp.raise_for_status()
+            entries = []
+            for entry in resp.json()["profiles"]:
+                entry = dict(entry)
+                entry["id"] = entry["profile_id"]
+                entries.append(entry)
+            return entries
+
+        async def _state_entry(profile_id):
+            for entry in await _state_entries():
+                if entry["profile_id"] == profile_id:
+                    return entry
+            return None
+
         core = SimpleNamespace(
             is_profile_locked=lambda pid: locks.setdefault(pid, asyncio.Lock()).locked(),
             has_native_exit=lambda *_: False,
             api=api,
             _auth_headers=lambda: headers,
+            _state_entries=_state_entries,
+            _state_entry=_state_entry,
             docker=SimpleNamespace(
                 validator=PathValidator(tmp_path), scan_active_containers=list
             ),

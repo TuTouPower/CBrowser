@@ -21,6 +21,7 @@ import {
   type StatusTone,
 } from "../../shared/ui";
 import { EnvironmentSwitcher } from "./EnvironmentSwitcher";
+import { environmentStatusDescriptor } from "../../shared/presentation";
 import {
   transportStateTone,
 } from "./transport_state";
@@ -60,23 +61,21 @@ function observedStatus(
   observed: ProfileRuntimeResponse["observed_state"] | undefined,
   t: ReturnType<typeof useI18n>["t"],
 ): { tone: StatusTone; label: string } {
-  switch (observed) {
-    case "running":
-      return { tone: "running", label: t("sessHeaderEnvRunning") };
-    case "starting":
-      return { tone: "transition", label: t("sessHeaderEnvStarting") };
-    case "stopping":
-      return { tone: "transition", label: t("sessHeaderEnvStopping") };
-    case "error":
-      return { tone: "error", label: t("sessHeaderEnvError") };
-    default:
-      return { tone: "stopped", label: t("sessHeaderEnvStopped") };
-  }
+  // t079 AC-002/AC-003: the header uses the same shared status
+  // vocabulary as every other surface (running reads 运行中/Running);
+  // a missing state is an explicit unknown, not a disguised stopped.
+  const descriptor = environmentStatusDescriptor(observed);
+  return { tone: descriptor.tone, label: t(descriptor.label) };
 }
 
 function headerTransportLabelKey(
   state: string | null | undefined,
 ): TranslationKey {
+  // The header transport badge keeps its subject-carrying labels
+  // (数据传输正常 / Data Ready) so transport stays distinguishable from
+  // the environment status beside it (t079 AC-003); the details panel
+  // uses the subject-less set from transport_state.ts under its own
+  // field label. Same vocabulary roots, different surface subjects.
   switch (state) {
     case "ready":
       return "sessHeaderTransportReady";

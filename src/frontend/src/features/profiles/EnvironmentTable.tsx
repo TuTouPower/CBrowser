@@ -13,10 +13,8 @@ import {
 } from "lucide-react";
 import { useI18n, type TranslationKey } from "../../i18n";
 import type {
-  GroupResponse,
   ProfileResponse,
   ProfileRuntimeResponse,
-  ProxyResponse,
 } from "../../shared/api/types";
 import {
   Button,
@@ -31,15 +29,16 @@ import {
   TableHeader,
   TableRow,
   Tooltip,
-  type StatusTone,
+  type GroupHue,
 } from "../../shared/ui";
-import { formatRelativeTime } from "./formatRelativeTime";
 
 export interface EnvironmentRow {
   profile: ProfileResponse;
   runtime?: ProfileRuntimeResponse;
-  group?: GroupResponse;
-  proxy?: ProxyResponse;
+  /** t076 review f006: only the row's display names travel with the
+   * collection page — the row never needs the whole group/proxy row. */
+  group?: { id: string; name: string; color: GroupHue };
+  proxy?: { id: string; name: string };
 }
 
 export type EnvironmentAction =
@@ -51,24 +50,15 @@ export type EnvironmentAction =
   | "duplicate"
   | "delete";
 
-interface StatusDescriptor {
-  tone: StatusTone;
-  label: TranslationKey;
-}
-
-const STATUS_MAP: Record<string, StatusDescriptor> = {
-  starting: { tone: "transition", label: "statusStarting" },
-  stopping: { tone: "transition", label: "statusStopping" },
-  running: { tone: "running", label: "statusRunning" },
-  error: { tone: "error", label: "statusError" },
-  stopped: { tone: "stopped", label: "statusStopped" },
-};
-
-export function statusDescriptor(
-  observed: string | undefined,
-): StatusDescriptor {
-  return STATUS_MAP[observed ?? "stopped"] ?? STATUS_MAP.stopped!;
-}
+/**
+ * t079 AC-002: environment status presentation comes from the single
+ * shared mapping; a missing observed state is an explicit "unknown",
+ * never a disguised "stopped". Re-exported under the historical name
+ * for the card and detail page consumers.
+ */
+import { environmentStatusDescriptor } from "../../shared/presentation";
+export const statusDescriptor = environmentStatusDescriptor;
+export type { StatusDescriptor } from "../../shared/presentation";
 
 export function PlatformIcon({
   platform,
@@ -156,29 +146,32 @@ export function EnvironmentRowActions({
       >
         <Copy aria-hidden="true" className={iconClass} />
       </IconButton>
-      {canStop ? (
+      {/* t078 AC-001: stop and delete are independent entries; delete
+       * is always present, fixed last (rightmost), and danger-styled.
+       * Deleting a running environment is a stop-then-delete on the
+       * server, so the button stays enabled in every state and its
+       * title says what will happen. */}
+      {canStop && (
         <IconButton
           variant="warning"
           label={t("envStop")}
-          title={t("envStop")}
+          title={stopping ? t("envStopHintStopping") : t("envStop")}
           disabled={stopping}
           data-testid={`env-action-stop-${id}`}
           onClick={() => onAction("stop", row)}
         >
           <Square aria-hidden="true" className={iconClass} />
         </IconButton>
-      ) : (
-        <IconButton
-          variant="danger"
-          label={t("envDelete")}
-          title={t("envDelete")}
-          disabled={stopping}
-          data-testid={`env-action-delete-${id}`}
-          onClick={() => onAction("delete", row)}
-        >
-          <Trash2 aria-hidden="true" className={iconClass} />
-        </IconButton>
       )}
+      <IconButton
+        variant="danger"
+        label={t("envDelete")}
+        title={canStop ? t("envDeleteHintRunning") : t("envDelete")}
+        data-testid={`env-action-delete-${id}`}
+        onClick={() => onAction("delete", row)}
+      >
+        <Trash2 aria-hidden="true" className={iconClass} />
+      </IconButton>
     </div>
   );
 }
@@ -195,7 +188,7 @@ export function DirectNetwork({ id }: { id: string }) {
   );
 }
 
-export function ProxyNetwork({ proxy }: { proxy: ProxyResponse }) {
+export function ProxyNetwork({ proxy }: { proxy: { id: string; name: string } }) {
   return (
     <span className="font-ui text-body-sm text-on-surface">
       {proxy.name}
@@ -242,7 +235,6 @@ export function EnvironmentTable({
             <TableHead>{t("envColNetwork")}</TableHead>
             <TableHead>{t("envColFingerprint")}</TableHead>
             <TableHead>{t("envColStatus")}</TableHead>
-            <TableHead>{t("envColLastActive")}</TableHead>
             <TableHead>{t("envColActions")}</TableHead>
           </TableRow>
         </TableHeader>
@@ -250,10 +242,9 @@ export function EnvironmentTable({
           {rows.map((row) => {
             const id = row.profile.id;
             const observed = row.runtime?.observed_state ?? "stopped";
-            const status = statusDescriptor(observed);
+            const status = statusDescriptor(row.runtime?.observed_state);
             const errorReason =
               row.runtime?.last_coordinator_error ?? row.profile.name;
-            const running = observed === "running";
             const platformLabel = formatPlatformLabel(
               row.profile.fingerprint_platform,
               t,
@@ -342,21 +333,6 @@ export function EnvironmentTable({
                       <StatusBadge tone={status.tone} label={t(status.label)} />
                     )}
                   </div>
-                </TableCell>
-                <TableCell>
-                  <span className="font-ui text-body-sm text-on-surface-muted">
-                    {running
-                      ? t("envRunningFor", {
-                          time: formatRelativeTime(
-                            row.runtime?.last_started_at,
-                          ),
-                        })
-                      : t("envLastStopped", {
-                          time: formatRelativeTime(
-                            row.runtime?.last_stopped_at,
-                          ),
-                        })}
-                  </span>
                 </TableCell>
                 <TableCell>
                   <EnvironmentRowActions row={row} onAction={onAction} />

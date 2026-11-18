@@ -111,7 +111,7 @@ CBROWSER_RUN_E2E=1 scripts/run_gates.sh
 项目涉及 OpenAPI 导出及前端类型。
 
 - 触发路径：`src/backend/cbrowser/api/`、`src/backend/cbrowser/domain/models.py`、`scripts/export_openapi.py`。
-- 生成命令：在 `scripts/run_gates.sh` 设置的 TMPDIR / UV_CACHE_DIR 下，运行 `PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with fastapi --with pydantic --with "sqlalchemy[asyncio]" --with aiosqlite --with alembic --with argon2-cffi python scripts/export_openapi.py`，输出 `schemas/openapi/cbrowser_v1.json`。
+- 生成命令：在 `scripts/run_gates.sh` 设置的 TMPDIR / UV_CACHE_DIR 下，运行 `PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with fastapi --with pydantic --with "sqlalchemy[asyncio]" --with aiosqlite --with alembic --with argon2-cffi --with httpx python scripts/export_openapi.py`，输出 `schemas/openapi/cbrowser_v1.json`。（`--with httpx` 必需：应用导入链依赖 httpx，缺它导出报 `ModuleNotFoundError: No module named 'httpx'`；t076 补。）
 - 验证命令：`scripts/run_gates.sh` 的 unit 层运行 `test_exported_openapi_schema_matches_live_app` 深度比较导出与实际应用；integration 层使用导出 JSON schema 校验真实 HTTP 响应。
 - 合并后动作：运行上述验证，确认导出文件随接口实现一同合入。OpenAPI 变更后必须 `npm run generate:api --prefix src/frontend` 重生成 `src/frontend/src/shared/api/generated/cbrowser_v1.d.ts`，禁止手写补充类型。
 - migration 窗口：t002 仅对全新隔离数据库执行 Alembic upgrade head；现有用户库迁移由 t010 验收，不在导出命令中执行迁移。
@@ -122,6 +122,17 @@ CBROWSER_RUN_E2E=1 scripts/run_gates.sh
 - 控制 API 与文件交换的验收必须走真实入口：内部面用真实 HTTP（服务令牌矩阵、未配置 503），协议用导出文档的消息入口逐条校验，文件用例覆盖故障注入（删除中途失败后意图保留、跨重启续跑）与幂等重放（同 operation_id 并发/删后重放）。
 - 密码等慢操作须有事件循环不阻塞探针（慢哈希期间 ticker 推进断言），不接受仅测返回值的覆盖。
 - 政策变更类断言（如内容类型由拒绝改为放行）必须整体替换旧测试并在测试内注明裁决来源，禁止就地把旧预期改成实现输出。
+
+## 集合 0/1/100/1000 矩阵与计数证据（t076）
+
+- 集合查询按 0/1/100/1000 规模矩阵验证：空集与单项、100 代理（SELECT 数与 20 代理规模相等）/120 环境分页无重复遗漏、1000 代理下 `list_proxies` SELECT 数恒定（≤8）/1000 环境分页、搜索与候选无截断。证据：`tests/unit/test_t076_collection_queries.py`（SQLAlchemy 语句计数）与 `tests/integration/test_t076_collection_api.py`（真实 HTTP）。
+- 计数只统计被测调用本身，夹具造数阶段排除在计数之外；同一 QueryClient 的请求去重不可被重复统计。前端以 Vitest 断言列表页只发一次批量摘要、不发逐环境 runtime 请求（`EnvironmentListPage.test.tsx`、`ProxyListPage.test.tsx`、`SessionEntryPage.test.tsx` 的集合分页用例）。
+- 证据边界：云端无 Docker/Chrome/GPU，真实运行实例的完整 API/SSE/Browser 链路验证（t076 AC-008）不在云端门禁内，登记 pending 待 Mac 补验，不得用 mock、skip 或历史结果代替。
+
+## 删除生命周期故障注入与真实删除验收（t078）
+
+- 阶段故障注入是删除验证的基本方法：单元层以假运行服务/文件系统注入停止超时、写者残留、实例被替换、Artifact/目录/预览清理失败，断言失败阶段准确、数据在停止失败时零删除、清理失败时数据库行保留（`tests/unit/test_t078_deletion_lifecycle.py`）；API 层以真实 HTTP + SQLite 验证受理/查询/重试/恢复与旧单删端点的新语义（`tests/integration/test_t078_deletion_api.py`）。前端以可推进阶段的删除 fake 验证确认前零请求、冻结目标集、部分失败保留与重试（`EnvironmentListPage.test.tsx`）。
+- 证据边界：云端无 Docker/Chrome，隔离真实运行环境的停止并删除、停止失败保留与中断恢复对照（t078 AC-007）不在云端门禁内，登记 pending p128 待 Mac 补验，不得用 mock、skip 或历史结果代替。
 
 ## 门禁类别清单
 
@@ -508,12 +519,20 @@ bash scripts/run_automation_probe.sh
 - 迁移故障矩阵以纯逻辑单元验证（`tests/unit/test_t080_storage_migration.py`）：dry-run 清单分类（含 runtime/gates 重映射与 Singleton 跳过）、符号链接失败封闭、实际写者拒绝、检测不可用时须显式确认停栈、恢复点摘要被篡改时切换前失败、复制故障注入后按 journal 续跑、目标同路径异内容拒绝覆盖、同内容文件 adopt 不删除、回退只删本轮 placed 文件。
 - 恢复点验收沿 t066 契约：迁移的 backup_verified 阶段复用恢复点 manifest 的逐文件摘要全量复核，先证实可恢复才允许切换。
 
+## 字体资产目录零读取与审计故障矩阵（t081）
+
+`tests/unit/test_t081_font_catalog.py` 以生产 helper 计数（`check_font_set` 与 `_sha256_file` 包装）锁定读路径契约：100 次 runtime 解析 + 100 次列表查询的字体正文打开/哈希恒为零，结果仍正确呈现绑定、覆盖与验证状态；集合使用明显大于小型假字体的合成集（20 文件 × 64 KB 级），不用字符串扫描冒充 I/O 证明。故障矩阵覆盖：发布后未接管不可绑定、接管恢复中断发布（staging 残留永不接管）与重复接管幂等、显式审计发现删改/额外文件/manifest 异常并撤销可用、受控修复以新修订恢复、迟到审计回执被 `state_seq` 围栏丢弃、审计并发上限（2）与同集去重、审计阻塞期间普通读取仍推进、Supervisor 每实例验证一次、运行状态按实例绑定配置版本报告、宿主导入源变更不泄漏进目录。旧语义测试 `test_a5_font_scan_offload.py`（每请求审计）与 `test_t053_coordinator_font_runtime.py`（实时读取/禁止缓存）已整体删除，理由见 ADR 030；离线与有界两条属性在审计引擎上重新证明。真实容器链路（现场规模集导入、共用绑定实例 10 分钟持续读取零字体正文、审计负例/修复正例留证）属 [deploy] 验证，云端不可执行，登记 pending 本地补验。
+
 ## 常驻 Policy Agent 协议、生命周期与隔离收敛（t082）
 
 - 协议与状态机以单元验证（`tests/unit/test_t082_policy_agent.py`）：身份全等校验与伪造拒绝、install/inspect 幂等、旧修订重放与同修订异 spec 的围栏拒绝、刷新 replace、fail-close 确认语义、resolve 输入校验（URL/凭据/注入拒绝）、畸形与超大请求拒绝、真实 UDS 客户端往返与不可达类型化错误；协议 schema 由 `scripts/export_policy_agent_protocol.py --check` 纳入门禁漂移检查。
 - 适配器生命周期以 fake Docker + 进程内 Agent 验证（`tests/unit/test_t082_adapter_policy_agents.py`）：启动恰建一个加固形状正确的 Agent、反复 verify 零建容器零 exec、冻结派生只解析一次、上游变化刷新（replace + 修订 +1）、刷新失败保留旧冻结 spec、第二适配器接管采纳、孤儿仅在目标消失时删除、Profile 拆除同步删 Agent、fail-close 未确认报错。
 - 核心收敛以脚本化适配器验证（`tests/unit/test_t082_supervisor_policy_convergence.py`）：漂移 + 失败封闭成功不暂停、未确认则暂停精确目标、本机制暂停在复验（含重装）通过后恢复、复验不过保持暂停、Agent 不可用先定点修复后超 30 秒预算隔离、Stream Agent 不可用走 Stream-only 替换、他实例暂停记录永不恢复、Agent 事件只定点修复对应 Profile。
 - 真实内核正负例改由 Policy Agent 驱动（`tests/e2e/test_supervisor_namespace_policy_e2e.py`、`test_supervisor_ipv6_policy_e2e.py`：经生产 `PolicyAgentClient` 在真实 netns 内 install/inspect、修订围栏拒绝、Agent 移除后规则持续生效），失败封闭与清理沿 `test_supervisor_policy_failure_e2e.py`（无效 policy 镜像使 Agent 永不健康）。真实容器链路属 [deploy] 层：两项 spike（仅 NET_ADMIN 完整能力、pause 冻结语义）与 AC-010 稳态验收不以单元证据替代，顺延登记见 p132 / p133。
-## 字体资产目录零读取与审计故障矩阵（t081）
 
-`tests/unit/test_t081_font_catalog.py` 以生产 helper 计数（`check_font_set` 与 `_sha256_file` 包装）锁定读路径契约：100 次 runtime 解析 + 100 次列表查询的字体正文打开/哈希恒为零，结果仍正确呈现绑定、覆盖与验证状态；集合使用明显大于小型假字体的合成集（20 文件 × 64 KB 级），不用字符串扫描冒充 I/O 证明。故障矩阵覆盖：发布后未接管不可绑定、接管恢复中断发布（staging 残留永不接管）与重复接管幂等、显式审计发现删改/额外文件/manifest 异常并撤销可用、受控修复以新修订恢复、迟到审计回执被 `state_seq` 围栏丢弃、审计并发上限（2）与同集去重、审计阻塞期间普通读取仍推进、Supervisor 每实例验证一次、运行状态按实例绑定配置版本报告、宿主导入源变更不泄漏进目录。旧语义测试 `test_a5_font_scan_offload.py`（每请求审计）与 `test_t053_coordinator_font_runtime.py`（实时读取/禁止缓存）已整体删除，理由见 ADR 030；离线与有界两条属性在审计引擎上重新证明。真实容器链路（现场规模集导入、共用绑定实例 10 分钟持续读取零字体正文、审计负例/修复正例留证）属 [deploy] 验证，云端不可执行，登记 pending 本地补验。
+## 最小状态协议、缓存围栏与稳态计数（t083）
+
+- 状态缓存以注入 clock + 脚本化 fetcher 单元验证（`tests/unit/test_t083_state_cache.py`）：多批快照按游标拼装且请求数按批次增长、跨批次 epoch 变化整轮作废、稳态 maintain 在 30 秒兜底间隔内零 fetch、并发 maintain 单飞、失败有界退避且永不权威、通知按 state_revision 围栏（迟到/重放丢弃、新者应用、移除删条目）、异 epoch 通知使完整性失效、权威窗口（40 秒）随成功接触续期、本地写失效强制下一次读取先重同步。
+- API 侧以真实迁移库 + TestClient 验证（`tests/unit/test_t083_state_protocol_api.py`）：state_revision 在 desired/bind/observed 三条写路径上逐次自增；快照端点服务鉴权（无 token 401）、键集分批（limit=2 三个 Profile 两批读完）、DTO 键集恰为最小集；旧内部 `GET /profiles` 与 `GET /profiles/{id}/runtime` 返回 404；publish 汇聚点推送 StateChangeNotice（最小状态恰一份、删除走 removed 名单）；runtime GET 的 coordinator 刷新方法被装配为抛错 spy 时仍正常返回（读纯度）。
+- 稳态探针计数口径以纯聚合函数验证（`tests/unit/test_t083_steady_state_probe.py`）：exec_create 计一次、exec_start/exec_die 只入阶段计数、测量标记 exec 排除出栈计数、policy helper/Agent 的 create+destroy 计 churn、异前缀栈事件忽略；同一文件锁定 Compose 无 healthcheck/service_healthy、deploy.sh 以 service_readiness_probe 做真实 readiness 等待且不再出现 `--wait`。
+- 真实栈验收属 [deploy]：4 Profile/10 分钟零 churn/零稳态 exec/零字体正文读取（p134）与故障矩阵（API/Supervisor/Gateway 重启、通知丢失、策略漂移、单 Profile 慢响应 + CPU/rchar/宿主日志样本，p135）在 Mac 隔离栈本地补验，云端单元/集成证据不替代。

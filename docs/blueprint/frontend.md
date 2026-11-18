@@ -76,16 +76,17 @@ SSE 按事件类型分发（t040）：`shared/api/sse.ts` 解析 `event:` 行按
 ## 7. 环境管理界面（t037+）
 
 - 首页 `/` 由 `features/profiles/EnvironmentListPage.tsx` 承载；`app/router.tsx` 的 `/profiles/:profileId/{config,files,automation,maintenance}` 四个路由统一指向 `ProfileDetailPage`（按 `useLocation().pathname` 渲染对应 Tab），`/profiles/:profileId` 重定向 `config`。
-- 数据装配：`ProfileResponse` 只含 `group_id` / `proxy_id`，列表的分组名、代理列（仅显示代理名或「直连」）、备注 Tooltip 图标与本地化平台/时区由 `useGroupsQuery` / `useProxiesQuery` 与 `useProfilesQuery` 客户端 join；五态与 last activity 来自 `ProfileRuntimeResponse`（`useProfileRuntimeQuery` / `useRuntimeSnapshot` 与 SSE 缓存）。不向用户展示 `#0001` 内部显示编号。
+- 数据装配：列表读服务端集合页（`useProfilesCollectionQuery`，搜索/筛选/排序/分页参数进 URL，页大小 50，翻页器在列表下方；`page` 在筛选变化时重置为 1；表头全选只选当前页）；分组名、代理名与分组颜色随集合页返回（`ProfileResponse.group_name` / `group_color` / `proxy_name`，行内直接渲染）；筛选下拉与移动分组菜单的选项读有界候选（`useGroupCandidatesQuery` / `useProxyCandidatesQuery`，首 50 条 + 已选值单读回显），不再拉全量分组/代理表；备注 Tooltip 图标与本地化平台/时区由集合页字段渲染；五态与 last activity 来自批量运行摘要（`useRuntimeSummaryQuery`），行运行时由摘要条目原地拼装（`summaryToRuntime`），不再按环境逐个请求。不向用户展示 `#0001` 内部显示编号。
 - `useEnvironmentFilters`（支持搜索、状态、分组、系统平台 `windows`/`macos`、代理 `direct`/具体代理与排序，同步 URL 查询参数）、`useEnvironmentLayout`（localStorage，由图标按钮切换列表/卡片视图）、`useBatchActions`（逐项 `mutateAsync` + `useActionKeyMutation` 自动独立幂等键）、`useGroupReorder`（`POST /groups/reorder`）为纯逻辑 / hooks 层；「分组管理」作为独立按钮置于工具栏右侧。
 - 共用 `ProfileForm`（`features/profiles/ProfileForm.tsx`）区分元数据字段与运行配置字段，驱动 `ConfigTab` 的待应用判据；种子范围（`100000 – 999999`）通过感叹号图标悬浮 Tooltip 展示，重摇种子使用图标化刷新按钮；选择代理、切换语言或切换系统平台时自动对齐对应的时区、语言、平台字体包（展示可读名称而非 SHA256 哈希）与默认分辨率。
 - t073：环境列表与卡片仅在 `profile.timezone` 显式非空时显示时区，隐藏默认 / 自动匹配时区；`env-running-count` 改为带标签的 `runningProfiles` 文案与绿色运行圆点，不再渲染裸数字。`EnvironmentRowActions` 每行仅 1 个带文字主按钮（运行中蓝色「打开」、非运行「启动」），详情 / 编辑 / 复制 / 停止 / 删除收敛为带 `aria-label` 与 `title` 的纯图标按钮，运行态显示 warning 停止、非运行态显示 danger 红色删除。新建 `ProfileCreateDialog` 与编辑 `ProfileEditDialog` 统一用 `Dialog size="lg"` 宽弹窗 + `ProfileForm` 多列布局，编辑走 `diffProfileValues` 差分更新；列表行「编辑」直接唤起编辑弹窗，「配置详情」跳转 `/profiles/:id/config`，详情页页头也提供编辑入口。
+- t078（取代 t073 的运行计数与行操作互斥口径）：环境管理页头不再渲染 `env-running-count`，表格删除最后活跃列（相对时间仅卡片保留）；`EnvironmentRowActions` 中停止与删除独立并存，删除在所有状态下固定最右、danger 样式，运行行删除的 title 说明「先停止再删除」、停止在 stopping 态禁用并以 title 说明。单项/批量删除共用 `DeleteEnvironmentsDialog` 居中模态（目标打开时冻结、确认前零请求、进度与逐项结果/失败阶段/重试在弹窗内），原 fixed-bottom 确认条删除；批量删除走 `POST /profile-deletions` 批次端点 + 批次轮询（`useDeletionBatchQuery`），不再逐个单删，完成项自动失效列表缓存并退出选择、失败项保留选择。
 
 ## 8. 代理管理界面（t038+；t074 重写）
 
 - `/proxies` 由 `features/proxies/ProxyListPage.tsx` 承载；`ProxyListToolbar` 提供搜索（名称 / host / 国家名 / 城市 / 地区标签，大小写不敏感）、协议筛选（http / https / socks5）与**独立「国家筛选」「城市筛选」**（城市选项随所选国家联动去重），右侧提供批量闪电测速按钮（`Zap` 图标）、图标化列表/卡片视图切换器与「添加代理」主按钮。`useProxyFilters` 把 `q` / `scheme` / `country` / `city` 存 URL SearchParams、`useProxyLayout` 把 `list` / `card` 存 `localStorage`，刷新后筛选、视图、国家、城市、延迟、状态全部保留；联动筛选须在一次 `setFilters({country, city})` 内原子提交，两次 `setSearchParams` 会同 tick 互相覆盖。
 - `ProxyTable` / 卡片展示 **8 列** = 名称（备注以感叹号图标悬浮 Tooltip 展示）/ 协议（`ProtocolChip`）/ 地址（`MonoValue` 的 `host:port`）/ 国家 / 城市 / 状态 / 使用环境 / 操作，**不展示认证列**，也不再把「位置 + 状态」混为一列。状态列：`pending` 显示探测中；`ok` 仅以绿色语义文字显示 `{latency_ms}ms`（无延迟显示「可用」），不显示额外状态数字；`failed` 以红色语义文字显示脱敏 `observation_error_code`；`unknown` 显示中性未测速提示。删除按钮用 t073 的 `IconButton variant="danger"`。
-- 使用环境列只渲染 `0 个` / `1 个` / `2 个` 等计数（去掉「查看环境」文案）：`0` 为不可点 `<span>`；`1` 点击经 `useNavigate` 直接进入对应环境配置页；`>=2` 点击先打开 `ProxyUsedByPopover` 列出全部环境（含名称与绿/灰运行点）再点选进入。计数按 `useProfilesQuery` 的 `proxy_id` 客户端分组。
+- 使用环境列只渲染 `0 个` / `1 个` / `2 个` 等计数（去掉「查看环境」文案）：`0` 为不可点 `<span>`；`1` 点击经 `useNavigate` 直接进入对应环境配置页；`>=2` 点击先打开 `ProxyUsedByPopover` 列出全部环境（含名称与绿/灰运行点）再点选进入。计数与明细取后端并集（`GET /api/v1/proxies/{id}/used-by`，当前配置 ∪ 运行绑定版本，按环境去重，每项标 `current` / `bound` / `both`），明细只在用户点击时读取。t076 起代理列表读服务端集合页（`useProxiesCollectionQuery`，每页 50 条），国家/城市选项由 `GET /api/v1/proxies/countries` 的范围提供（国家值取国家代码），批量测速只覆盖当前页。
 - 添加 / 编辑用 `Dialog size="lg"`（`ProxyFormDialog`），默认只显示「代理链接」「备注」与只读观测区（国家 / 城市 / 出口 IP / 延迟 / 失败原因）；高级设置默认折叠，链接与高级字段由同一端点值对象双向同步。`SessionDetailsPanel` 的代理位置同步展示国家 · 城市 · 延迟与失败态。
 - 单条与批量闪电测速调用 `ApiClient.proxies.probe`（`POST /api/v1/proxies/{id}/probe`，无 body）+ `useProbeProxyMutation`；**彻底删除 `speedResults` state 与 `Date.now() - startedAt` 伪测速**，延迟只取后端持久化的 `ProxyResponse.latency_ms`。`observation_status === "failed"` 即使 HTTP 200 也提示错误 toast、不误报成功；`ok` 显示成功 toast。批量测速按后端结果汇总失败数。
 
@@ -98,5 +99,6 @@ SSE 按事件类型分发（t040）：`shared/api/sse.ts` 解析 `event:` 行按
 ## 10. 前端状态一致性（t058）
 
 - Profile 编辑只提交与初始值不同的字段（`ProfileForm` 以差分驱动提交）；字段分类（元数据 / 即时 / 运行配置）以后端 `repository.py` 的三分常量为准，经生成类型同步，前后端逐值一致。
+- t076 起 SSE `runtime_state` 事件只原地更新对应环境的运行缓存与摘要缓存（`useProfileEventsSync`，`config_version` / 实例围栏，重复事件无副作用），不使运行查询或列表查询失效、不触发完整列表重取；重连后以服务端快照为准。摘要更新不依赖单环境运行缓存（列表/入口页首次打开时该缓存为空，事件仍按摘要条目围栏更新摘要）；事件携带的启停时间、失败计数与重启拦截同步进两份缓存，预览事件同样原地更新摘要条目的捕获时间（不倒退）。
 - 会话阶段与错误文案的单一权威是 `runtimeQuery`：`SessionPage` 把 `runtimeQuery.data?.observed_state` 作为唯一 `runtimeState` 传入 `useBrowserSession`。
 - 错误边界分层：`ErrorBoundary.componentDidCatch` 经前端日志通道记录；路由内容由 `RouteErrorBoundary` 包裹，随路由切换复位。
