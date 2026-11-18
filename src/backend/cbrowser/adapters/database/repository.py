@@ -11,6 +11,7 @@ from typing import Any
 from cbrowser.adapters.database.models import (
     AuditEventModel,
     ProfileConfigVersionModel,
+    ProfileDeletionModel,
     ProfileGroupModel,
     ProfileModel,
     ProfileRuntimeModel,
@@ -31,6 +32,7 @@ from cbrowser.domain.models import (
     GroupResponse,
     Profile,
     ProfileConfig,
+    ProfileDeletionOperation,
     ProfileRuntime,
     ProxyCandidateEntry,
     ProxyCountryRange,
@@ -819,6 +821,129 @@ class ProfileRepository:
                 return False
             await session.delete(p_model)
             return True
+
+    # --- Profile deletion lifecycle (t078) ---
+
+    @staticmethod
+    def _to_domain_deletion(
+        m: ProfileDeletionModel,
+    ) -> ProfileDeletionOperation:
+        detail: dict[str, Any] = {}
+        if m.detail:
+            try:
+                parsed = json.loads(m.detail)
+            except ValueError:
+                parsed = {}
+            if isinstance(parsed, dict):
+                detail = parsed
+        return ProfileDeletionOperation(
+            id=m.id,
+            batch_id=m.batch_id,
+            profile_id=m.profile_id,
+            profile_name=m.profile_name,
+            stage=m.stage,  # type: ignore[arg-type]
+            failed_stage=m.failed_stage,
+            error=m.error,
+            detail=detail,
+            created_at=m.created_at,
+            updated_at=m.updated_at,
+        )
+
+    async def create_deletion(
+        self, *, batch_id: str, profile_id: str, profile_name: str
+    ) -> ProfileDeletionOperation:
+        model = ProfileDeletionModel(
+            id=uuid.uuid4().hex,
+            batch_id=batch_id,
+            profile_id=profile_id,
+            profile_name=profile_name,
+            stage="accepted",
+        )
+        async with self._session_maker() as session, write_transaction(session):
+            session.add(model)
+            await session.flush()
+            return self._to_domain_deletion(model)
+
+    async def get_deletion(
+        self, operation_id: str
+    ) -> ProfileDeletionOperation | None:
+        async with self._session_maker() as session:
+            model = await session.get(ProfileDeletionModel, operation_id)
+            return self._to_domain_deletion(model) if model else None
+
+    async def list_deletions_for_batch(
+        self, batch_id: str
+    ) -> list[ProfileDeletionOperation]:
+        async with self._session_maker() as session:
+            stmt = (
+                select(ProfileDeletionModel)
+                .where(ProfileDeletionModel.batch_id == batch_id)
+                .order_by(ProfileDeletionModel.created_at.asc())
+            )
+            result = await session.execute(stmt)
+            return [self._to_domain_deletion(m) for m in result.scalars().all()]
+
+    async def find_open_deletion(
+        self, profile_id: str
+    ) -> ProfileDeletionOperation | None:
+        """Latest non-done intent for a profile, if any.
+
+        A repeat deletion request must join the existing intent (in
+        flight or failed-and-retryable) instead of creating a second
+        one (t078 AC-004); only ``done`` closes an intent.
+        """
+        async with self._session_maker() as session:
+            stmt = (
+                select(ProfileDeletionModel)
+                .where(
+                    ProfileDeletionModel.profile_id == profile_id,
+                    ProfileDeletionModel.stage != "done",
+                )
+                .order_by(ProfileDeletionModel.created_at.desc())
+                .limit(1)
+            )
+            result = await session.execute(stmt)
+            model = result.scalar_one_or_none()
+            return self._to_domain_deletion(model) if model else None
+
+    async def list_unfinished_deletions(self) -> list[ProfileDeletionOperation]:
+        """In-flight intents (accepted/stopping/cleaning) for startup
+        resume; failed intents wait for an explicit retry."""
+        async with self._session_maker() as session:
+            stmt = (
+                select(ProfileDeletionModel)
+                .where(
+                    ProfileDeletionModel.stage.in_(
+                        ["accepted", "stopping", "cleaning"]
+                    )
+                )
+                .order_by(ProfileDeletionModel.created_at.asc())
+            )
+            result = await session.execute(stmt)
+            return [self._to_domain_deletion(m) for m in result.scalars().all()]
+
+    async def update_deletion(
+        self,
+        operation_id: str,
+        *,
+        stage: str,
+        failed_stage: str | None,
+        error: str | None,
+        detail: dict[str, Any],
+        batch_id: str | None = None,
+    ) -> ProfileDeletionOperation | None:
+        async with self._session_maker() as session, write_transaction(session):
+            model = await session.get(ProfileDeletionModel, operation_id)
+            if model is None:
+                return None
+            model.stage = stage
+            model.failed_stage = failed_stage
+            model.error = error
+            model.detail = json.dumps(detail, ensure_ascii=False)
+            if batch_id is not None:
+                model.batch_id = batch_id
+            await session.flush()
+            return self._to_domain_deletion(model)
 
     async def list_config_versions(
         self, profile_id: str

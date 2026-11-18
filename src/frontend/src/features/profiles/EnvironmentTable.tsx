@@ -32,7 +32,6 @@ import {
   type GroupHue,
   type StatusTone,
 } from "../../shared/ui";
-import { formatRelativeTime } from "./formatRelativeTime";
 
 export interface EnvironmentRow {
   profile: ProfileResponse;
@@ -157,29 +156,32 @@ export function EnvironmentRowActions({
       >
         <Copy aria-hidden="true" className={iconClass} />
       </IconButton>
-      {canStop ? (
+      {/* t078 AC-001: stop and delete are independent entries; delete
+       * is always present, fixed last (rightmost), and danger-styled.
+       * Deleting a running environment is a stop-then-delete on the
+       * server, so the button stays enabled in every state and its
+       * title says what will happen. */}
+      {canStop && (
         <IconButton
           variant="warning"
           label={t("envStop")}
-          title={t("envStop")}
+          title={stopping ? t("envStopHintStopping") : t("envStop")}
           disabled={stopping}
           data-testid={`env-action-stop-${id}`}
           onClick={() => onAction("stop", row)}
         >
           <Square aria-hidden="true" className={iconClass} />
         </IconButton>
-      ) : (
-        <IconButton
-          variant="danger"
-          label={t("envDelete")}
-          title={t("envDelete")}
-          disabled={stopping}
-          data-testid={`env-action-delete-${id}`}
-          onClick={() => onAction("delete", row)}
-        >
-          <Trash2 aria-hidden="true" className={iconClass} />
-        </IconButton>
       )}
+      <IconButton
+        variant="danger"
+        label={t("envDelete")}
+        title={canStop ? t("envDeleteHintRunning") : t("envDelete")}
+        data-testid={`env-action-delete-${id}`}
+        onClick={() => onAction("delete", row)}
+      >
+        <Trash2 aria-hidden="true" className={iconClass} />
+      </IconButton>
     </div>
   );
 }
@@ -243,7 +245,6 @@ export function EnvironmentTable({
             <TableHead>{t("envColNetwork")}</TableHead>
             <TableHead>{t("envColFingerprint")}</TableHead>
             <TableHead>{t("envColStatus")}</TableHead>
-            <TableHead>{t("envColLastActive")}</TableHead>
             <TableHead>{t("envColActions")}</TableHead>
           </TableRow>
         </TableHeader>
@@ -254,7 +255,6 @@ export function EnvironmentTable({
             const status = statusDescriptor(observed);
             const errorReason =
               row.runtime?.last_coordinator_error ?? row.profile.name;
-            const running = observed === "running";
             const platformLabel = formatPlatformLabel(
               row.profile.fingerprint_platform,
               t,
@@ -343,21 +343,6 @@ export function EnvironmentTable({
                       <StatusBadge tone={status.tone} label={t(status.label)} />
                     )}
                   </div>
-                </TableCell>
-                <TableCell>
-                  <span className="font-ui text-body-sm text-on-surface-muted">
-                    {running
-                      ? t("envRunningFor", {
-                          time: formatRelativeTime(
-                            row.runtime?.last_started_at,
-                          ),
-                        })
-                      : t("envLastStopped", {
-                          time: formatRelativeTime(
-                            row.runtime?.last_stopped_at,
-                          ),
-                        })}
-                  </span>
                 </TableCell>
                 <TableCell>
                   <EnvironmentRowActions row={row} onAction={onAction} />

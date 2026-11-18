@@ -33,6 +33,9 @@ from cbrowser.domain.models import (
     ErrorResponse,
     ProfileConfig,
     ProfileCreateRequest,
+    ProfileDeletionBatchResponse,
+    ProfileDeletionOperation,
+    ProfileDeletionRequest,
     ProfileDuplicateRequest,
     ProfileResetRequest,
     ProfileResponse,
@@ -55,6 +58,7 @@ from cbrowser.services.profile_service import (
     DatabaseLockError,
     InvalidFontSetBindingError,
     InvalidProfileNameError,
+    ProfileDeletionFailedError,
     ProfileNotFoundError,
     ProfileOperationConflictError,
     ProfileRunningError,
@@ -552,32 +556,98 @@ async def update_profile(
 )
 async def delete_profile(
     profile_id: str,
-    request: Request,
     service: Annotated[ProfileService, Depends(get_profile_service)],
 ):
+    # t078: DELETE drives the durable deletion lifecycle synchronously
+    # (stop-then-delete); artifact cleanup happens inside the lifecycle
+    # via the wired cleaner and its outcome is part of the operation
+    # record, never silently swallowed here.
     try:
         await service.delete_profile(profile_id)
-        artifact_service = getattr(request.app.state, "artifact_service", None)
-        if artifact_service is not None:
-            try:
-                await artifact_service.remove_profile(profile_id)
-            except Exception as exc:  # noqa: BLE001 - profile is already deleted
-                logger.warning(
-                    "Artifact cleanup after profile deletion failed: "
-                    "profile=%s error_type=%s",
-                    profile_id,
-                    type(exc).__name__,
-                )
         return
     except ProfileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Profile {profile_id} not found",
         )
-    except ProfileRunningError as exc:
+    except ProfileDeletionFailedError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "profile_running", "message": str(exc)},
+            detail={
+                "code": "profile_deletion_failed",
+                "stage": exc.operation.failed_stage,
+                "message": str(exc),
+            },
+        )
+
+
+@profile_router.post(
+    "/profile-deletions",
+    response_model=ProfileDeletionBatchResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def create_profile_deletions(
+    payload: ProfileDeletionRequest,
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+):
+    batch_id, operations = await service.request_deletions(
+        payload.profile_ids
+    )
+    return ProfileDeletionBatchResponse(
+        batch_id=batch_id, operations=operations
+    )
+
+
+@profile_router.get(
+    "/profile-deletions/batches/{batch_id}",
+    response_model=ProfileDeletionBatchResponse,
+)
+async def get_profile_deletion_batch(
+    batch_id: str,
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+):
+    operations = await service.list_deletion_batch(batch_id)
+    if not operations:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Deletion batch {batch_id} not found",
+        )
+    return ProfileDeletionBatchResponse(
+        batch_id=batch_id, operations=operations
+    )
+
+
+@profile_router.get(
+    "/profile-deletions/{operation_id}",
+    response_model=ProfileDeletionOperation,
+)
+async def get_profile_deletion(
+    operation_id: str,
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+):
+    operation = await service.get_deletion(operation_id)
+    if operation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Deletion operation {operation_id} not found",
+        )
+    return operation
+
+
+@profile_router.post(
+    "/profile-deletions/{operation_id}/retry",
+    response_model=ProfileDeletionOperation,
+)
+async def retry_profile_deletion(
+    operation_id: str,
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+):
+    try:
+        return await service.retry_deletion(operation_id)
+    except ProfileNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Deletion operation {operation_id} not found",
         )
 
 

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import {
+  useMutation,
   useQuery,
   useQueryClient,
   type QueryClient,
@@ -12,6 +13,8 @@ import type {
   CandidateEntry,
   ProfileCollectionPage,
   ProfileControlStateData,
+  ProfileDeletionBatchResponse,
+  ProfileDeletionOperation,
   ProfileResponse,
   ProfileCreateRequest,
   ProfileUpdateRequest,
@@ -287,6 +290,68 @@ export function useDeleteProfileMutation(
       client.profiles.delete(input, actionKey),
     onSuccess: () => {
       invalidateProfileLists(queryClient);
+    },
+  });
+}
+
+/** t078: deletion lifecycle hooks. The batch query polls while any
+ * target is non-terminal and invalidates the profile lists as targets
+ * reach ``done``, so the list converges even if the progress dialog
+ * is closed mid-run (the intent itself is durable server-side). */
+export const deletionKeys = {
+  all: ["profile-deletions"] as const,
+  batch: (batchId: string) =>
+    [...deletionKeys.all, "batch", batchId] as const,
+};
+
+export function useCreateDeletionsMutation(
+  client: ApiClient = defaultApiClient,
+): UseMutationResult<ProfileDeletionBatchResponse, Error, string[]> {
+  return useMutation({
+    mutationFn: (profileIds: string[]) =>
+      client.profiles.createDeletions(profileIds),
+  });
+}
+
+export function useDeletionBatchQuery(
+  batchId: string | null,
+  client: ApiClient = defaultApiClient,
+): UseQueryResult<ProfileDeletionBatchResponse> {
+  const queryClient = useQueryClient();
+  const result = useQuery({
+    queryKey: deletionKeys.batch(batchId ?? ""),
+    queryFn: () => client.profiles.getDeletionBatch(batchId!),
+    enabled: batchId !== null,
+    refetchInterval: (query) => {
+      const operations = query.state.data?.operations ?? [];
+      return operations.some(
+        (op) => op.stage !== "done" && op.stage !== "failed",
+      )
+        ? 1000
+        : false;
+    },
+  });
+  const doneIds = (result.data?.operations ?? [])
+    .filter((op) => op.stage === "done")
+    .map((op) => op.profile_id)
+    .join(",");
+  useEffect(() => {
+    if (doneIds) {
+      invalidateProfileLists(queryClient);
+    }
+  }, [doneIds, queryClient]);
+  return result;
+}
+
+export function useRetryDeletionMutation(
+  client: ApiClient = defaultApiClient,
+): UseMutationResult<ProfileDeletionOperation, Error, string> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (operationId: string) =>
+      client.profiles.retryDeletion(operationId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: deletionKeys.all });
     },
   });
 }

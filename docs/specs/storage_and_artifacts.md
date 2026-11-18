@@ -1,7 +1,7 @@
 ---
 slug: storage_and_artifacts
 status: active
-tasks: [baseline]
+tasks: [baseline, t078]
 ---
 # 需求规范：数据持久化、迁移与文件交换 (storage_and_artifacts)
 
@@ -24,6 +24,7 @@ tasks: [baseline]
     - `profile_runtimes`：期望状态与真实观测状态，含起停时间戳与浏览器版本字段（t035）
     - `runtime_events`：运行事件去重与退出事件记录（随 Profile 级联删除）
     - `artifacts`：上传与下载文件元数据
+    - `profile_deletions`：删除意图与阶段结果（t078；每目标一行，含名称快照、失败阶段与分步清理明细，终结后保留作审计）
     - `audit_events`：生命周期操作审计（无外键，不随 Profile 删除）
     - `settings`：系统级键值配置
 - 排他控制租约、控制会话与 StreamTicket 已废弃（ADR 007）；数据库不包含 `control_sessions`、`control_leases` 或 `stream_tickets` 表。
@@ -53,6 +54,11 @@ tasks: [baseline]
 - 内容类型统一规范化（上传与下载入库共用）：去参数、转小写、缺省 `application/octet-stream`，仅拒绝非法 header 值；不再拒绝可执行类型或把下载强制重标为 octet-stream，声明类型按元数据保存（用户决策 D2=A）。用户侧下载响应恒为 `application/octet-stream` 附件 + `nosniff`，与记录类型无关。
 - Artifact 删除为可恢复两阶段：先持久化 `delete_requested_at` 意图（迁移 0008），再删文件、删行；失败保留意图与文件，服务启动时续跑未完成意图；意图未完成期间重复调用幂等，完成后再次调用返回 404；记录路径逃逸时拒绝并保留意图，不递归删除异常目录。
 - 下载报告实例信任：报告的 `runtime_instance_id` 必须是该 Profile 当前绑定或 `runtime_events` 历史中出现过的实例，未知/伪造实例在触碰文件前被拒绝（`rejected`）。
+
+## 删除数据清理语义（t078）
+
+- Profile 删除按固定顺序清理：Artifact 服务移除该 Profile 的全部文件与元数据 → 删除 Profile 数据目录与运行时目录 → 清理预览图 → 最后删除数据库行（级联配置版本、运行态与运行事件）。任一步失败即删除整体失败：不静默吞错、不删数据库行，已完成步骤记入删除意图的 `detail.steps`，重试时对已清理步骤幂等跳过。
+- 删除失败不影响其他 Profile 的数据与运行实例；`profile_deletions` 行在终结（done/failed）后保留，作为删除结果的长期追踪记录，不随 Profile 行删除而消失。
 
 ## 3. 验收标准
 

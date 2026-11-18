@@ -7,6 +7,8 @@ import type {
   ProfileControlStateData,
   ProfileResponse,
   ProfileCreateRequest,
+  ProfileDeletionBatchResponse,
+  ProfileDeletionOperation,
   ProfileUpdateRequest,
   ProfileRuntimeResponse,
   LoginRequest,
@@ -302,6 +304,41 @@ export class ApiClient {
         method: "DELETE",
         headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       });
+    },
+    /** t078: accept an explicit deletion target set; returns the
+     * durable per-target operations to poll. */
+    createDeletions: async (
+      profileIds: string[],
+    ): Promise<ProfileDeletionBatchResponse> => {
+      return this.request<ProfileDeletionBatchResponse>(
+        "/api/v1/profile-deletions",
+        {
+          method: "POST",
+          body: JSON.stringify({ profile_ids: profileIds }),
+        },
+      );
+    },
+    getDeletionBatch: async (
+      batchId: string,
+    ): Promise<ProfileDeletionBatchResponse> => {
+      return this.request<ProfileDeletionBatchResponse>(
+        `/api/v1/profile-deletions/batches/${encodeURIComponent(batchId)}`,
+      );
+    },
+    getDeletion: async (
+      operationId: string,
+    ): Promise<ProfileDeletionOperation> => {
+      return this.request<ProfileDeletionOperation>(
+        `/api/v1/profile-deletions/${encodeURIComponent(operationId)}`,
+      );
+    },
+    retryDeletion: async (
+      operationId: string,
+    ): Promise<ProfileDeletionOperation> => {
+      return this.request<ProfileDeletionOperation>(
+        `/api/v1/profile-deletions/${encodeURIComponent(operationId)}/retry`,
+        { method: "POST" },
+      );
     },
     getRuntime: async (profileId: string): Promise<ProfileRuntimeResponse> => {
       return this.request<ProfileRuntimeResponse>(

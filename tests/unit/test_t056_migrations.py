@@ -328,7 +328,11 @@ def test_fresh_db_schema_matches_golden_except_intended_changes(
     so the old "only display_number differs" assertion is obsolete. New
     semantic: the only structural deltas vs the golden pre-change dump are
     the A21 display_number NOT NULL change and the t074 0010 columns; no
-    pre-existing column is dropped."""
+    pre-existing column is dropped. t078 0011 extends the registered
+    deltas by exactly one new table (``profile_deletions`` with its two
+    named indexes, primary-key autoindex and the partial unique index
+    that enforces one open intent per profile); nothing else may appear
+    and nothing pre-existing may vanish."""
     db = tmp_path / "fresh.db"
     run_database_migrations(db)
     before = {}
@@ -336,7 +340,14 @@ def test_fresh_db_schema_matches_golden_except_intended_changes(
         type_, name, sql = line.split("|", 2)
         before[(type_, name)] = sql
     after = _dump_schema(db)
-    assert set(after) == set(before)
+    assert set(before) - set(after) == set()
+    assert set(after) - set(before) == {
+        ("table", "profile_deletions"),
+        ("index", "idx_profile_deletions_batch"),
+        ("index", "idx_profile_deletions_profile"),
+        ("index", "sqlite_autoindex_profile_deletions_1"),
+        ("index", "uq_profile_deletions_open_profile"),
+    }
     for key in before:
         if key in (
             ("table", "profiles"),
@@ -344,6 +355,19 @@ def test_fresh_db_schema_matches_golden_except_intended_changes(
         ):
             continue
         assert after[key] == before[key], key
+    deletions_sql = after[("table", "profile_deletions")]
+    for column in (
+        "batch_id VARCHAR(64) NOT NULL",
+        "profile_id VARCHAR(64) NOT NULL",
+        "profile_name VARCHAR(255) NOT NULL",
+        "stage VARCHAR(32) NOT NULL",
+        "failed_stage VARCHAR(32)",
+        "error TEXT",
+        "detail TEXT",
+        "created_at VARCHAR(64) NOT NULL",
+        "updated_at VARCHAR(64) NOT NULL",
+    ):
+        assert column in deletions_sql, column
     before_lines = _normalized_sql_lines(before[("table", "profiles")])
     after_lines = _normalized_sql_lines(after[("table", "profiles")])
     assert sorted(set(after_lines) - set(before_lines)) == [

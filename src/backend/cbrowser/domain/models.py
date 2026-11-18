@@ -1063,3 +1063,40 @@ class ProfilePreviewEvent(BaseModel):
     captured_at: str
 
 
+
+
+# --- Profile deletion lifecycle (t078) ---
+
+DeletionStage = Literal[
+    "accepted", "stopping", "cleaning", "done", "failed"
+]
+
+
+class ProfileDeletionRequest(BaseModel):
+    """Explicit target set for one deletion batch (t078 AC-005).
+
+    The IDs are the whole contract: execution acts on exactly these
+    profiles, never on a page position or a later filter result.
+    """
+
+    profile_ids: list[str] = Field(min_length=1)
+
+
+class ProfileDeletionOperation(BaseModel):
+    """One durable deletion intent and its observable stage."""
+
+    id: str
+    batch_id: str
+    profile_id: str
+    profile_name: str
+    stage: DeletionStage
+    failed_stage: str | None = None
+    error: str | None = None
+    detail: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+    updated_at: str
+
+
+class ProfileDeletionBatchResponse(BaseModel):
+    batch_id: str
+    operations: list[ProfileDeletionOperation]

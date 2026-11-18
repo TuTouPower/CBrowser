@@ -1,7 +1,7 @@
 ---
 slug: runtime_lifecycle
 status: active
-tasks: [baseline, t076]
+tasks: [baseline, t076, t078]
 ---
 # 需求规范：Runtime 生命周期协调
 
@@ -24,6 +24,12 @@ tasks: [baseline, t076]
 
 - `GET /api/v1/profiles/runtime-summary` 一次返回全部环境的运行摘要（`desired_state` / `observed_state` / `config_version` / 实例 / 失败计数 / 启停与预览捕获时间 / 协调器错误）与运行总数；列表、卡片、工作台入口与关闭的切换器只读它，不再按环境逐个请求 runtime。
 - SSE `runtime_state` 事件带 `config_version`：旧版本或旧实例的迟到事件丢弃，重复/重放事件无副作用且不触发列表重取；有效事件原地更新运行缓存与摘要缓存，重连后以服务端快照为准。
+
+## 停止后删除协调（t078）
+
+- 删除目标先收敛运行态再清理数据：删除意图在 Profile 锁内把运行意愿置为 stopped，等待观测状态离开 running/starting/stopping 且无活动写者后，才允许进入数据清理；等待超时或写者无法确认时删除失败、数据不动，不强删运行中实例。
+- 清理前记录停止时绑定的 `runtime_instance_id` 并复核：清理时若已有新实例绑定，删除失败而不误删——旧实例的迟到事件同样不能作用于新实例或已删除目标（与 SSE `config_version` 围栏同一口径）。
+- 删除意图持久化（`profile_deletions`），API 启动时恢复未终结意图继续推进；客户端关闭、网络重试与服务重启都不丢失已接受的删除结果。
 
 ## 生命周期与代际
 
