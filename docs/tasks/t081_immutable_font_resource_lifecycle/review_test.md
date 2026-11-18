@@ -210,7 +210,7 @@ reviewed_scope: 69f046775b93e50b
 - reviewed scope 增量核对（doc-only 确认）：相对 diff anchor 的完整变更集逐文件核对修改时间与内容——全部 `src/` 与 `tests/` 文件的修改时间均不晚于 Round 3 评审时刻（生产文件最晚为 `runtime_coordinator.py` 与 `supervisor/core.py`，即 Round 3 变异恢复并经 sha256 复核一致的字节副本）；Round 3 之后仅三份文件被改动且时间同为一批：`docs/blueprint/architecture.md`（§3.5 围栏措辞改实为「迟到回执不覆盖已应用的新回执/接管（发布/修复只写文件、经后续审计生效）」，与 ADR 030 及代码口径一致）、`docs/blueprint/browser_runtime.md`（A16 默认集口径改实为「只取验证通过（verified）的集，`verified_at` 最大者胜出」，与 Round 2 已复核的生产实现一致）、`docs/tasks/t081_immutable_font_resource_lifecycle/progress.md`（处置行 t081_code_f009/f010 记录的正是上述两处文档修复）。无任何测试或生产代码变更，两处文档改动均为措辞与已实现行为对齐，不引入新的可测行为、不改变任何 AC 证据口径。
 - 改测方向复核：无。本轮无测试文件改动。
 - 本轮新发现：0 条
-- 独立复跑证据：reviewer 以门禁 venv（`~/workspace/CBrowser/.scratch/gate_venv/bin/python -m pytest tests/unit/test_t081_font_catalog.py -q`，TMPDIR=/home/hatch/workspace/cloud-task-logs/tmp-t081）实跑 14/14 全过（25.61s）。
+- 独立复跑证据：reviewer 以门禁 venv（`~/workspace/CBrowser/.scratch/gate_venv/bin/python -m pytest tests/unit/test_t081_font_catalog.py -q`，TMPDIR=~/workspace/cloud-task-logs/tmp-t081）实跑 14/14 全过（25.61s）。
 - 危险模式扫描：本轮增量无测试改动，无从命中；全量变更集的危险模式结论沿用 Round 3（无恒真断言、无删/反转/注释断言、无 skip/only/xfail、无 type: ignore）。
 - 未进表的提示：无
 - 总体判断：Round 3 PASS 的测试证据基础未被本轮增量触动，增量确认为纯文档措辞对齐，维持 PASS。
