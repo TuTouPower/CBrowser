@@ -726,7 +726,15 @@ class ProfileService:
         per target. A target with an intent joins it (never a duplicate);
         a late request whose Profile was already deleted concurrently
         joins the finished intent (p136). Only a genuinely missing target
-        with no prior intent gets a ``profile_not_found`` failure receipt."""
+        with no prior intent gets a ``profile_not_found`` failure receipt.
+
+        t085 (p139): the resolve-or-create decision for one target is
+        serialized per profile (``ProfileLockRegistry``): the
+        check-for-existing / create sequence is no longer interleavable,
+        so a second request can no longer slip a duplicate intent in
+        after the first intent completed and the partial unique index
+        stopped covering it.
+        """
         batch_id = uuid.uuid4().hex
         operations: list[ProfileDeletionOperation] = []
         seen: set[str] = set()
@@ -734,59 +742,71 @@ class ProfileService:
             if profile_id in seen:
                 continue
             seen.add(profile_id)
-            existing = await self._repo.find_open_deletion(profile_id)
-            if existing is not None:
+            async with self._locks.lock(profile_id):
                 operations.append(
-                    await self._join_deletion(existing, batch_id)
+                    await self._resolve_or_create_deletion(
+                        profile_id, batch_id
+                    )
                 )
-                continue
-            profile = await self._repo.get_profile(profile_id)
-            if profile is None:
-                # p136: a concurrent request may have already completed
-                # the deletion. Re-join that finished intent instead of
-                # creating a second, spurious ``profile_not_found`` one.
-                finished = await self._repo.find_deletion_for_profile(
+        return batch_id, operations
+
+    async def _resolve_or_create_deletion(
+        self, profile_id: str, batch_id: str
+    ) -> ProfileDeletionOperation:
+        """Resolve one target to its single intent.
+
+        Caller must hold the per-profile lock (``self._locks``): every
+        read below and the ``create_deletion`` insert run atomically
+        against concurrent ``request_deletions`` calls for the same
+        profile in this process. The partial unique index plus the
+        ``IntegrityError`` retry remain the backstop for other processes.
+        """
+        existing = await self._repo.find_open_deletion(profile_id)
+        if existing is not None:
+            return await self._join_deletion(existing, batch_id)
+        profile = await self._repo.get_profile(profile_id)
+        if profile is None:
+            # p136: a concurrent request may have already completed
+            # the deletion. Re-join that finished intent instead of
+            # creating a second, spurious ``profile_not_found`` one.
+            finished = await self._repo.find_deletion_for_profile(profile_id)
+            if finished is not None:
+                return await self._join_deletion(finished, batch_id)
+        try:
+            operation = await self._repo.create_deletion(
+                batch_id=batch_id,
+                profile_id=profile_id,
+                profile_name=(
+                    profile.config.name if profile else profile_id
+                ),
+            )
+        except IntegrityError:
+            # A concurrent submission created the open intent
+            # first (the partial unique index rejected ours);
+            # join the winner once its transaction commits.
+            existing = None
+            for _ in range(50):
+                existing = await self._repo.find_open_deletion(profile_id)
+                if existing is not None:
+                    break
+                await asyncio.sleep(0.01)
+            if existing is None:
+                # t085: the winner may have completed while we waited,
+                # so no open intent remains — but the finished one is
+                # still joinable; only raise when no intent exists at
+                # all.
+                existing = await self._repo.find_deletion_for_profile(
                     profile_id
                 )
-                if finished is not None:
-                    operations.append(
-                        await self._join_deletion(finished, batch_id)
-                    )
-                    continue
-            try:
-                operation = await self._repo.create_deletion(
-                    batch_id=batch_id,
-                    profile_id=profile_id,
-                    profile_name=(
-                        profile.config.name if profile else profile_id
-                    ),
-                )
-            except IntegrityError:
-                # A concurrent submission created the open intent
-                # first (the partial unique index rejected ours);
-                # join the winner once its transaction commits.
-                existing = None
-                for _ in range(50):
-                    existing = await self._repo.find_open_deletion(
-                        profile_id
-                    )
-                    if existing is not None:
-                        break
-                    await asyncio.sleep(0.01)
-                if existing is None:
-                    raise
-                operations.append(
-                    await self._join_deletion(existing, batch_id)
-                )
-                continue
-            if profile is None:
-                operation = await self._fail_deletion(
-                    operation, "accepted", "profile_not_found"
-                )
-            else:
-                self._kick_deletion(operation.id)
-            operations.append(operation)
-        return batch_id, operations
+            if existing is None:
+                raise
+            return await self._join_deletion(existing, batch_id)
+        if profile is None:
+            return await self._fail_deletion(
+                operation, "accepted", "profile_not_found"
+            )
+        self._kick_deletion(operation.id)
+        return operation
 
     async def _join_deletion(
         self,
@@ -914,9 +934,33 @@ class ProfileService:
             return
         if operation.stage == "accepted":
             # An intent that never started against a profile that does
-            # not exist is a failure, not a completed deletion; the
-            # crash-recovery path below only applies once work began.
+            # not exist is a failure, not a completed deletion — unless
+            # a sibling intent proves the deletion already happened.
+            # t085 (p139): a late duplicate intent's driver used to fail
+            # here with ``profile_not_found`` because the first intent's
+            # machine had already deleted the row; the deletion this
+            # intent represents is complete, so it is done, mirroring
+            # the clean stage's already-gone handling below. With no
+            # sibling, the genuinely-missing receipt semantics stay:
+            # a profile that never existed still fails.
             if await self._repo.get_profile(operation.profile_id) is None:
+                sibling = await self._repo.find_sibling_deletion(
+                    operation.profile_id,
+                    exclude_operation_id=operation.id,
+                )
+                if sibling is not None:
+                    detail = dict(operation.detail)
+                    steps: dict[str, str] = dict(detail.get("steps") or {})
+                    steps.setdefault("database", "ok")
+                    detail["steps"] = steps
+                    await self._repo.update_deletion(
+                        operation.id,
+                        stage="done",
+                        failed_stage=None,
+                        error=None,
+                        detail=detail,
+                    )
+                    return
                 await self._fail_deletion(
                     operation, "accepted", "profile_not_found"
                 )

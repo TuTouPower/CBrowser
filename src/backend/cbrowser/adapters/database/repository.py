@@ -933,6 +933,32 @@ class ProfileRepository:
             model = result.scalar_one_or_none()
             return self._to_domain_deletion(model) if model else None
 
+    async def find_sibling_deletion(
+        self, profile_id: str, *, exclude_operation_id: str
+    ) -> ProfileDeletionOperation | None:
+        """Latest intent for a profile other than ``exclude_operation_id``.
+
+        t085 (p139): when a deletion driver's accepted-stage guard finds
+        the profile row already gone, a sibling intent is the evidence
+        that another deletion pass for this profile exists — the case
+        the guard treats as already deleted. ``find_open`` /
+        ``find_deletion_for_profile`` cannot answer this: the latest
+        intent may be the operation itself.
+        """
+        async with self._session_maker() as session:
+            stmt = (
+                select(ProfileDeletionModel)
+                .where(
+                    ProfileDeletionModel.profile_id == profile_id,
+                    ProfileDeletionModel.id != exclude_operation_id,
+                )
+                .order_by(ProfileDeletionModel.created_at.desc())
+                .limit(1)
+            )
+            result = await session.execute(stmt)
+            model = result.scalar_one_or_none()
+            return self._to_domain_deletion(model) if model else None
+
     async def find_open_deletion(
         self, profile_id: str
     ) -> ProfileDeletionOperation | None:
