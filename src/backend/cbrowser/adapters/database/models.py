@@ -444,6 +444,24 @@ class ProfileControlModel(Base):
     )
 
 
+class ProfileDeletionBatchMemberModel(Base):
+    """Batch membership of a deletion intent (p130/p136).
+
+    One intent can be confirmed from several clients; each confirmation
+    batch gets its own membership row so every poller observes the same
+    intent. The intent's own ``batch_id`` stays the creation batch.
+    """
+
+    __tablename__ = "profile_deletion_batch_members"
+
+    batch_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    operation_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+
+    __table_args__ = (
+        Index("idx_deletion_batch_members_operation", "operation_id"),
+    )
+
+
 class ProfileDeletionModel(Base):
     """Durable profile deletion intent (t078).
 

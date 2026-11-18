@@ -669,9 +669,10 @@ class ProfileService:
         self, profile_ids: list[str]
     ) -> tuple[str, list[ProfileDeletionOperation]]:
         """Accept an explicit target set and return one durable intent
-        per target. A target with an open intent joins it (never a
-        duplicate); a missing profile gets an intent that is already
-        failed at ``accepted`` so the receipt stays uniform."""
+        per target. A target with an intent joins it (never a duplicate);
+        a late request whose Profile was already deleted concurrently
+        joins the finished intent (p136). Only a genuinely missing target
+        with no prior intent gets a ``profile_not_found`` failure receipt."""
         batch_id = uuid.uuid4().hex
         operations: list[ProfileDeletionOperation] = []
         seen: set[str] = set()
@@ -686,6 +687,18 @@ class ProfileService:
                 )
                 continue
             profile = await self._repo.get_profile(profile_id)
+            if profile is None:
+                # p136: a concurrent request may have already completed
+                # the deletion. Re-join that finished intent instead of
+                # creating a second, spurious ``profile_not_found`` one.
+                finished = await self._repo.find_deletion_for_profile(
+                    profile_id
+                )
+                if finished is not None:
+                    operations.append(
+                        await self._join_deletion(finished, batch_id)
+                    )
+                    continue
             try:
                 operation = await self._repo.create_deletion(
                     batch_id=batch_id,
@@ -726,12 +739,14 @@ class ProfileService:
         existing: ProfileDeletionOperation,
         batch_id: str,
     ) -> ProfileDeletionOperation:
-        """Present an already-open intent under the batch that just
-        confirmed it, so the returned receipt and the batch query
-        agree. A failed intent that is confirmed again is a retry:
-        resume it from its failed stage with the failure cleared;
-        an in-flight intent only changes batches. Either way the
-        intent is (re-)driven."""
+        """Present an existing intent under the batch that just confirmed
+        it, so the returned receipt and the batch query agree. Membership
+        is tracked separately (p130): the intent's own batch_id is never
+        moved, so every confirming client keeps observing the intent.
+        A failed intent confirmed again is a retry: resume it from its
+        failed stage with the failure cleared. An already-done intent is
+        returned as-is (p136): a late request must not create a second,
+        spurious ``profile_not_found`` intent."""
         if existing.stage == "failed":
             resumed = await self._repo.update_deletion(
                 existing.id,
@@ -739,21 +754,10 @@ class ProfileService:
                 failed_stage=None,
                 error=None,
                 detail=dict(existing.detail),
-                batch_id=batch_id,
             )
             assert resumed is not None
             existing = resumed
-        elif existing.batch_id != batch_id:
-            moved = await self._repo.update_deletion(
-                existing.id,
-                stage=existing.stage,
-                failed_stage=existing.failed_stage,
-                error=existing.error,
-                detail=dict(existing.detail),
-                batch_id=batch_id,
-            )
-            assert moved is not None
-            existing = moved
+        await self._repo.add_batch_member(batch_id, existing.id)
         self._kick_deletion(existing.id)
         return existing
 

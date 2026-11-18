@@ -402,3 +402,48 @@ async def test_late_instance_event_does_not_resurrect_deleted(service, repo):
     assert await repo.find_open_deletion(profile.id) is None
     final = await service.get_deletion(operations[0].id)
     assert final is not None and final.stage == "done"
+
+
+async def test_late_request_joins_finished_intent_not_a_failed_one(
+    service, repo
+):
+    """p136: a request arriving after a concurrent deletion finished must
+    re-join that done intent, never create a second ``failed`` intent."""
+    profile = await _make_profile(repo, "late-race-target")
+    first_batch, first_ops = await service.request_deletions([profile.id])
+    await service.await_pending_deletions()
+    assert (await service.get_deletion(first_ops[0].id)).stage == "done"
+    assert await repo.get_profile(profile.id) is None
+
+    second_batch, second_ops = await service.request_deletions([profile.id])
+
+    assert second_batch != first_batch
+    assert len(second_ops) == 1
+    assert second_ops[0].id == first_ops[0].id
+    assert second_ops[0].stage == "done"
+    assert second_ops[0].error is None
+    assert [
+        op.id for op in await service.list_deletion_batch(second_batch)
+    ] == [first_ops[0].id]
+
+
+async def test_two_confirming_batches_both_observe_the_intent(service, repo):
+    """p130: two clients confirming the same intent must both be able to
+    poll their own batch. Membership is a set of rows, not a single
+    mutable ``batch_id`` on the intent."""
+    profile = await _make_profile(repo, "two-batch-target")
+    first_batch, first_ops = await service.request_deletions([profile.id])
+    second_batch, second_ops = await service.request_deletions([profile.id])
+
+    assert first_batch != second_batch
+    assert first_ops[0].id == second_ops[0].id
+    assert [
+        op.id for op in await service.list_deletion_batch(first_batch)
+    ] == [first_ops[0].id]
+    assert [
+        op.id for op in await service.list_deletion_batch(second_batch)
+    ] == [second_ops[0].id]
+
+    await service.await_pending_deletions()
+    final = await service.get_deletion(first_ops[0].id)
+    assert final is not None and final.stage == "done"

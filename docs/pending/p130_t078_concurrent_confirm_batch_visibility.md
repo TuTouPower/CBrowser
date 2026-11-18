@@ -1,7 +1,10 @@
 ---
 pid: "p130"
 slug: "t078_concurrent_confirm_batch_visibility"
-status: "todo"
+status: "closed"
+resolution: "resolved"
+reason: "已在 main 完成根因修复（0012_deletion_batch_members 关联表分离批次成员关系与删除意图、_join_deletion 新增成员而不改写既有 batch_id），补双批次并发确认测试并通过全量 unit/migration/hygiene 门禁"
+fix_ref: "main"
 ---
 # p130 t078 并发双确认时先确认者批次轮询留空
 
@@ -10,4 +13,4 @@ status: "todo"
 - 根因：批次成员关系与意图共用同一字段（profile_deletions.batch_id 单值），加入既有意图时只能改归最新批次，无法同时属于两个批次。根治方向：批次成员关系与意图分离（批次-意图关联表），或批次查询按受理返回的 operation id 集合解析；或前端在批次查询为空时回退到 POST 返回的 operations 逐项轮询。
 - 测试缺口：现有并发用例只验后端单意图与收敛，未覆盖双客户端各自批次轮询的可见性；补测应模拟两次近同时确认并断言两个批次号都能查到该意图（或前端回退轮询能呈现进度）。
 - 线索：`src/backend/cbrowser/services/profile_service.py` `_join_deletion`（意图改归批次处）；`src/frontend/src/features/profiles/EnvironmentListPage.tsx` 弹窗 operations 仅来自批次查询。
-- 处理：未开
+- 处理：main；resolution=resolved；reason=已在 main 完成根因修复（0012_deletion_batch_members 关联表分离批次成员关系与删除意图、\_join_deletion 新增成员而不改写既有 batch_id），补双批次并发确认测试并通过全量 unit/migration/hygiene 门禁

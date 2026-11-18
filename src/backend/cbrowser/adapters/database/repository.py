@@ -11,6 +11,7 @@ from typing import Any
 from cbrowser.adapters.database.models import (
     AuditEventModel,
     ProfileConfigVersionModel,
+    ProfileDeletionBatchMemberModel,
     ProfileDeletionModel,
     ProfileGroupModel,
     ProfileModel,
@@ -861,8 +862,32 @@ class ProfileRepository:
         )
         async with self._session_maker() as session, write_transaction(session):
             session.add(model)
+            session.add(
+                ProfileDeletionBatchMemberModel(
+                    batch_id=batch_id, operation_id=model.id
+                )
+            )
             await session.flush()
             return self._to_domain_deletion(model)
+
+    async def add_batch_member(self, batch_id: str, operation_id: str) -> None:
+        """Make an existing intent visible in another batch (p130).
+
+        Idempotent: re-confirming from the same batch does not duplicate
+        membership, and the intent's own batch_id is never moved.
+        """
+        async with self._session_maker() as session, write_transaction(session):
+            existing = await session.get(
+                ProfileDeletionBatchMemberModel,
+                (batch_id, operation_id),
+            )
+            if existing is None:
+                session.add(
+                    ProfileDeletionBatchMemberModel(
+                        batch_id=batch_id, operation_id=operation_id
+                    )
+                )
+                await session.flush()
 
     async def get_deletion(
         self, operation_id: str
@@ -877,11 +902,36 @@ class ProfileRepository:
         async with self._session_maker() as session:
             stmt = (
                 select(ProfileDeletionModel)
-                .where(ProfileDeletionModel.batch_id == batch_id)
+                .join(
+                    ProfileDeletionBatchMemberModel,
+                    ProfileDeletionBatchMemberModel.operation_id
+                    == ProfileDeletionModel.id,
+                )
+                .where(ProfileDeletionBatchMemberModel.batch_id == batch_id)
                 .order_by(ProfileDeletionModel.created_at.asc())
             )
             result = await session.execute(stmt)
             return [self._to_domain_deletion(m) for m in result.scalars().all()]
+
+    async def find_deletion_for_profile(
+        self, profile_id: str
+    ) -> ProfileDeletionOperation | None:
+        """Latest intent for a profile, any stage (p136).
+
+        A request arriving after a concurrent deletion finished must
+        re-join that finished intent instead of creating a spurious
+        ``profile_not_found`` intent.
+        """
+        async with self._session_maker() as session:
+            stmt = (
+                select(ProfileDeletionModel)
+                .where(ProfileDeletionModel.profile_id == profile_id)
+                .order_by(ProfileDeletionModel.created_at.desc())
+                .limit(1)
+            )
+            result = await session.execute(stmt)
+            model = result.scalar_one_or_none()
+            return self._to_domain_deletion(model) if model else None
 
     async def find_open_deletion(
         self, profile_id: str

@@ -1,7 +1,10 @@
 ---
 pid: "p136"
 slug: "t078_concurrent_delete_request_race"
-status: "todo"
+status: "closed"
+resolution: "resolved"
+reason: "已在 main 完成根因修复（profile_service.request_deletions 在目标已删时并入最近已完成删除意图而非新建失败意图，辅以并发交错用例覆盖），相关测试与全量 unit 门禁均通过"
+fix_ref: "main"
 ---
 # p136 t078 并发删除请求竞态：后到请求在先行删除完成后新建意图并失败
 
@@ -10,5 +13,4 @@ status: "todo"
 - 根因：`profile_service.request_deletions` 的并入逻辑只覆盖「先行意图尚 open」的窗口：后到请求若在先行意图已 done、Profile 已删除之后才执行 find_open_deletion / get_profile，会查不到 open 意图与 Profile，从而新建一条意图并由执行器以 profile_not_found 失败；两请求交错时亦可各建一条。合入前主仓（3be25c9）与合入后删除相关代码逐字相同，属 t078 既有竞态，非 t081 合入引入。
 - 测试缺口：现有并发测试用真实线程时序，竞态窗口靠运气命中，应补确定性验证：在先行意图完成点后注入后到请求的交错时序（可控调度），断言后到请求并入已完成意图（或得到明确的 already-deleted 结果）且不新建意图、不产生 failed 意图。
 - 线索：失败签名见 2026-11-18 合入验证记录；复现方式为对上述测试连跑多次（约半数失败）。
-- 处理：未开（云端可修：纯后端逻辑＋单元测试覆盖；修复后回归该测试连跑多轮全过为准）
-
+- 处理：main；resolution=resolved；reason=已在 main 完成根因修复（profile_service.request_deletions 在目标已删时并入最近已完成删除意图而非新建失败意图，辅以并发交错用例覆盖），相关测试与全量 unit 门禁均通过

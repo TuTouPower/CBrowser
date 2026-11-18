@@ -333,8 +333,10 @@ def test_fresh_db_schema_matches_golden_except_intended_changes(
     named indexes, primary-key autoindex and the partial unique index
     that enforces one open intent per profile); t081 0012 extends the
     allowed deltas by exactly one more new table, ``font_set_assets``
-    (the font asset catalog); nothing else may appear and nothing
-    pre-existing may vanish."""
+    (the font asset catalog); p130/p136 0013 adds exactly one more
+    table, ``profile_deletion_batch_members`` (membership rows plus its
+    named and primary-key autoindex); nothing else may appear and
+    nothing pre-existing may vanish."""
     db = tmp_path / "fresh.db"
     run_database_migrations(db)
     before = {}
@@ -351,6 +353,9 @@ def test_fresh_db_schema_matches_golden_except_intended_changes(
         ("index", "uq_profile_deletions_open_profile"),
         ("table", "font_set_assets"),
         ("index", "sqlite_autoindex_font_set_assets_1"),
+        ("table", "profile_deletion_batch_members"),
+        ("index", "sqlite_autoindex_profile_deletion_batch_members_1"),
+        ("index", "idx_deletion_batch_members_operation"),
     }
     catalog_sql = after[("table", "font_set_assets")]
     for column in (
