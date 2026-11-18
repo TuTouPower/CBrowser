@@ -328,7 +328,9 @@ def test_fresh_db_schema_matches_golden_except_intended_changes(
     so the old "only display_number differs" assertion is obsolete. New
     semantic: the only structural deltas vs the golden pre-change dump are
     the A21 display_number NOT NULL change and the t074 0010 columns; no
-    pre-existing column is dropped."""
+    pre-existing column is dropped.  t081 0011 extends the allowed deltas
+    by exactly one new table, ``font_set_assets`` (the font asset
+    catalog); every pre-existing object must still match the golden."""
     db = tmp_path / "fresh.db"
     run_database_migrations(db)
     before = {}
@@ -336,7 +338,23 @@ def test_fresh_db_schema_matches_golden_except_intended_changes(
         type_, name, sql = line.split("|", 2)
         before[(type_, name)] = sql
     after = _dump_schema(db)
-    assert set(after) == set(before)
+    assert set(after) - set(before) == {
+        ("table", "font_set_assets"),
+        ("index", "sqlite_autoindex_font_set_assets_1"),
+    }
+    assert set(before) - set(after) == set()
+    catalog_sql = after[("table", "font_set_assets")]
+    for column in (
+        "platform VARCHAR(32)",
+        "set_id VARCHAR(64)",
+        "integrity TEXT",
+        "state VARCHAR(16)",
+        "revision INTEGER",
+        "state_seq INTEGER",
+        "verified_at VARCHAR(64)",
+        "audited_at VARCHAR(64)",
+    ):
+        assert column in catalog_sql, column
     for key in before:
         if key in (
             ("table", "profiles"),

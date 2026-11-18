@@ -441,3 +441,39 @@ class ProfileControlModel(Base):
     updated_at: Mapped[str] = mapped_column(
         String(64), default=utc_now_iso, nullable=False
     )
+
+
+class FontSetAssetModel(Base):
+    """t081: durable catalog record for one published font set.
+
+    The API is the only writer.  A row exists only after a full
+    verification of the published directory; ``state`` is ``verified``
+    or ``failed`` (an explicit audit revoked availability).  ``revision``
+    increments on every applied catalog mutation and fences consumer
+    verification results; ``state_seq`` fences audit verdicts: a verdict
+    applies only while the sequence it captured at scheduling is still
+    current, so a late audit can never overwrite a newer applied
+    verdict or adoption (publishing/repair writes files only and takes
+    effect through a subsequent audit).
+    """
+
+    __tablename__ = "font_set_assets"
+
+    platform: Mapped[str] = mapped_column(String(32), primary_key=True)
+    set_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    source: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_version: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    file_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_bytes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    integrity: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    state: Mapped[str] = mapped_column(String(16), default="failed", nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    state_seq: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    verified_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    audited_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[str] = mapped_column(
+        String(64), default=utc_now_iso, nullable=False
+    )
+    updated_at: Mapped[str] = mapped_column(
+        String(64), default=utc_now_iso, onupdate=utc_now_iso, nullable=False
+    )

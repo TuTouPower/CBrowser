@@ -1,4 +1,11 @@
-"""Import platform fonts into a content-addressed, immutable font set."""
+"""Import platform fonts into a content-addressed, immutable font set.
+
+t081: importing publishes the set into the fonts volume; it becomes
+selectable/startable only after the API records it in the asset
+catalog — automatically at API startup (adoption) or on demand via
+``POST /api/v1/font-sets/{platform}/{set_id}/audit``.  See
+``docs/guides/font_set_operations.md`` and ADR 030.
+"""
 
 from __future__ import annotations
 

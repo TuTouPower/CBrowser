@@ -420,38 +420,68 @@ class RuntimeCoordinator:
         )
 
     async def get_font_runtime(
-        self, profile_id: str
+        self, profile_id: str, runtime=None
     ) -> tuple[str | None, list[str]]:
-        """Resolve the bound font set and its missing detection fonts (AC-007).
+        """Resolve the bound font set and its missing detection fonts.
 
-        Derived from the Profile's own config with the same ``check_font_set``
-        detection data the Agent reports in /health, so the REST response and
-        SSE agree with the in-container check. The read is live on every
-        call (t053 A19): there is deliberately no cache, so a set that is
-        deleted or damaged is reported missing immediately, with no restart.
-        A missing set reports every detection font as uncovered; the
-        Supervisor's launch gate still fails closed on it separately.
-        Any read failure degrades to the set id with an empty missing list
-        and never breaks a runtime response.
+        t081: the answer comes from the font asset catalog (metadata
+        recorded at verification time) — this path never opens font
+        bytes or hashes content, so REST/SSE/list reads cost the same
+        for any set size.  When a runtime record is supplied, the
+        reported set is the one the RUNNING instance was bound to (the
+        config at ``runtime.config_version``), so a pending config
+        change is never reported as the live instance's fonts; without
+        a runtime record the profile's current config is reported
+        (stopped state).  A set the catalog does not record as verified
+        reports every detection font as uncovered; the Supervisor's
+        launch gate still fails closed on it separately.  Any read
+        failure degrades to the set id with an empty missing list and
+        never breaks a runtime response.
         """
-        from cbrowser import font_sets
-        from cbrowser.font_sets import DETECTION_FONTS
-        from cbrowser.runtime_agent.fontconfig import PLATFORM_FONTS_UNCONFIGURED
-
         try:
             profile = await self.profile_service.get_profile(profile_id)
         except Exception:  # noqa: BLE001
             return None, []
+        if runtime is not None and runtime.config_version != profile.current_config_version:
+            try:
+                snapshot = await self.profile_service.get_config_version(
+                    profile_id, runtime.config_version
+                )
+            except Exception:  # noqa: BLE001
+                snapshot = None
+            if snapshot is None:
+                # AC-006: never report the pending (current) config as
+                # the running instance's fonts.  Without the bound
+                # snapshot the honest answer is "unknown", not the
+                # newer config the instance never started with.
+                return None, []
+            return await self._font_runtime_from(
+                snapshot.config.get("font_set_id"),
+                snapshot.config.get("fingerprint_platform"),
+            )
         config = profile.config
-        font_set_id = config.font_set_id
+        return await self._font_runtime_from(
+            config.font_set_id, config.fingerprint_platform
+        )
+
+    async def _font_runtime_from(
+        self, font_set_id, platform
+    ) -> tuple[str | None, list[str]]:
+        from cbrowser.font_sets import DETECTION_FONTS
+        from cbrowser.runtime_agent.fontconfig import PLATFORM_FONTS_UNCONFIGURED
+
         if not font_set_id:
             return None, [PLATFORM_FONTS_UNCONFIGURED]
-        platform = config.fingerprint_platform
         if platform not in _PLATFORM_DETECTION_LABELS:
             return str(font_set_id), []
         labels = _PLATFORM_DETECTION_LABELS[platform]
-        found = font_sets.get_font_set(platform, font_set_id)
-        if found is None:
+        try:
+            record = await self.profile_service.font_catalog().get_asset(
+                platform, str(font_set_id)
+            )
+        except Exception:  # noqa: BLE001
+            return str(font_set_id), []
+        if record is None or not record.verified:
             return str(font_set_id), sorted(
                 {
                     name
@@ -459,8 +489,7 @@ class RuntimeCoordinator:
                     for name in DETECTION_FONTS.get(label, ())
                 }
             )
-        directory, _manifest = found
-        detection = font_sets.check_font_set(directory).get("detection", {})
+        detection = record.detection
         missing = sorted(
             {
                 name
@@ -889,7 +918,9 @@ class RuntimeCoordinator:
                     control = await self.control_service.get_state(profile_id)
                 except Exception:  # noqa: BLE001 - control is advisory here
                     control = None
-            font_set_id, missing_fonts = await self.get_font_runtime(profile_id)
+            font_set_id, missing_fonts = await self.get_font_runtime(
+                profile_id, runtime=rt
+            )
             data = ProfileRuntimeEventData(
                 profile_id=rt.profile_id,
                 desired_state=rt.desired_state,

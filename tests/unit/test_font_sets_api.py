@@ -41,9 +41,19 @@ def _services(db_context) -> tuple[ProfileService, ProfileRepository]:
     return ProfileService(repo), repo
 
 
+async def _adopted_services(db_context):
+    """t081: profile binding reads the asset catalog, so a published set
+    becomes bindable through adoption (the API startup path), exactly as
+    in production.  Assertions below are unchanged from the filesystem
+    era; only the setup gains the adoption step."""
+    service, repo = _services(db_context)
+    await service.font_catalog().adopt_all()
+    return service, repo
+
+
 @pytest.mark.asyncio
 async def test_create_binds_default_font_set(db_context, fonts) -> None:
-    service, _ = _services(db_context)
+    service, _ = await _adopted_services(db_context)
     profile = await service.create_profile(
         config=ProfileConfig(name="Defaulted"),
         req_payload={"name": "Defaulted"},
@@ -56,7 +66,7 @@ async def test_create_without_font_sets_leaves_binding_null(
     db_context, tmp_path, monkeypatch
 ) -> None:
     monkeypatch.setenv("CBROWSER_FONTS_DIR", str(tmp_path / "empty"))
-    service, _ = _services(db_context)
+    service, _ = await _adopted_services(db_context)
     profile = await service.create_profile(
         config=ProfileConfig(name="NoSets"),
         req_payload={"name": "NoSets"},
@@ -66,7 +76,7 @@ async def test_create_without_font_sets_leaves_binding_null(
 
 @pytest.mark.asyncio
 async def test_create_rejects_unknown_font_set(db_context, fonts) -> None:
-    service, _ = _services(db_context)
+    service, _ = await _adopted_services(db_context)
     with pytest.raises(InvalidFontSetBindingError):
         await service.create_profile(
             config=ProfileConfig(name="Unknown", font_set_id="0" * 64),
@@ -76,7 +86,7 @@ async def test_create_rejects_unknown_font_set(db_context, fonts) -> None:
 
 @pytest.mark.asyncio
 async def test_create_rejects_platform_mismatch(db_context, fonts) -> None:
-    service, _ = _services(db_context)
+    service, _ = await _adopted_services(db_context)
     with pytest.raises(InvalidFontSetBindingError):
         await service.create_profile(
             config=ProfileConfig(
@@ -91,7 +101,7 @@ async def test_create_rejects_platform_mismatch(db_context, fonts) -> None:
 @pytest.mark.asyncio
 async def test_create_rejects_tampered_font_set(db_context, fonts) -> None:
     (fonts["set_dir"] / "arial.ttf").write_bytes(b"TAMPERED")
-    service, _ = _services(db_context)
+    service, _ = await _adopted_services(db_context)
     with pytest.raises(InvalidFontSetBindingError):
         await service.create_profile(
             config=ProfileConfig(name="Tampered", font_set_id=fonts["set_id"]),
@@ -101,7 +111,7 @@ async def test_create_rejects_tampered_font_set(db_context, fonts) -> None:
 
 @pytest.mark.asyncio
 async def test_patch_binding_validation(db_context, fonts) -> None:
-    service, _ = _services(db_context)
+    service, _ = await _adopted_services(db_context)
     profile = await service.create_profile(
         config=ProfileConfig(name="P"),
         req_payload={"name": "P"},
@@ -124,7 +134,7 @@ async def test_patch_binding_validation(db_context, fonts) -> None:
 async def test_changing_font_fields_generates_config_versions(
     db_context, fonts
 ) -> None:
-    service, repo = _services(db_context)
+    service, repo = await _adopted_services(db_context)
     profile = await service.create_profile(
         config=ProfileConfig(
             name="Versioned",
