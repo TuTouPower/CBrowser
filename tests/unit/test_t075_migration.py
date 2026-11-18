@@ -23,6 +23,11 @@ from cbrowser.adapters.database.migrations import get_alembic_config
 
 REVISION_0012 = "c81f0a11b001"
 REVISION_0013 = "d75a0013f001"
+# t083's runtime_state_revision: numbered 0013 on its own branch; on
+# main the merge-time rechain puts it between REVISION_0012 and this
+# migration, so an upgrade blocked by this migration's guard stops
+# stamped at this predecessor revision.
+REVISION_PREDECESSOR_ON_MAIN = "d83a2c12b083"
 
 WIN_SET = "a" * 64
 MAC_SET = "b" * 64
@@ -230,8 +235,9 @@ def test_forced_gpu_blocks_before_any_write(tmp_path: Path) -> None:
 
     conn = sqlite3.connect(db)
     try:
-        # Nothing written: still stamped 0012, old shape and values intact.
-        assert _version(conn) == REVISION_0012
+        # This migration wrote nothing: still stamped at its on-main
+        # predecessor, old shape and values intact.
+        assert _version(conn) == REVISION_PREDECESSOR_ON_MAIN
         assert "gpu_family" in _columns(conn, "profiles")
         assert "include_cjk_fonts" not in _columns(conn, "profiles")
         row = conn.execute(
@@ -358,7 +364,9 @@ def test_snapshot_forced_gpu_blocks(tmp_path: Path) -> None:
     assert "nvidia" in str(excinfo.value)
     conn = sqlite3.connect(db)
     try:
-        assert _version(conn) == REVISION_0012
+        # Blocked before any write by this migration: still stamped
+        # at its on-main predecessor.
+        assert _version(conn) == REVISION_PREDECESSOR_ON_MAIN
     finally:
         conn.close()
 
