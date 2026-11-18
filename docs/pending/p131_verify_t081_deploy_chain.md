@@ -1,10 +1,9 @@
 ---
-id: p131
-title: 本地补验 t081 AC-009：真实容器链路字体集生命周期
-status: todo
-kind: entry
-created_at: 2026-11-18
+pid: "p131"
+slug: "verify_t081_deploy_chain"
+status: "todo"
 ---
+# p131 本地补验 t081 AC-009：真实容器链路字体集生命周期
 
 ## 要验证什么
 
