@@ -1,7 +1,8 @@
 ---
 pid: "p143"
 slug: "windows_profile_egress_tcp_consistency"
-status: "todo"
+status: "parked"
+reason: "当前部署为 HTTP 代理出站且本机无可控 Windows 出站节点，按用户确认暂搁，不阻塞其余修复与上线"
 ---
 # p143 Windows 环境与区域出口的 TCP 连接特征一致性
 
@@ -10,4 +11,5 @@ status: "todo"
 - 前置：需要可控制的原生 Windows 执行机或 Windows 区域出口、能证明目标 TCP 会话由 Windows 网络栈发起的路由拓扑，以及可抓包的受控目标。当前美日代理仅提供 HTTP 接入，未证实可以控制其出站 TCP 栈。
 - 验证：美日分别以原生 Windows 同版本对照抓取目标端 SYN 选项序列、窗口大小和缩放、MSS、TTL，核对实际公网出口地域，并独立验证 TLS/HTTP2、DNS、WebRTC 和代理失败封闭。浏览器身份与实际连接来源均须有证据。
 - 线索：`.scratch/new_profile_comparison/us_detector.json`、`.scratch/new_profile_comparison/jp_detector.json`、[检测站判定逻辑](https://github.com/yt1988/who-are-you/blob/HEAD/src/infer.mjs#L298)。
-- 处理：未开
+- 处理：不办
+- 暂搁：当前部署为 HTTP 代理出站且本机无可控 Windows 出站节点，按用户确认暂搁，不阻塞其余修复与上线
