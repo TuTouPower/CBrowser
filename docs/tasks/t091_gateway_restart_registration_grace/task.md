@@ -25,11 +25,11 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：当已确认注册（`known=True`）的活跃沙箱在 Supervisor 运行期间遭遇一次或多次 `gateway_missing` 或 `gateway_unreachable`，并在 Gateway 恢复后首个周期返回未注册读数时，Supervisor 保留其注册恢复资格、不将其清除为未注册新会话，且立即进入最多 90 秒的 `registration_recovery_grace`（`transport_state="recovering"`, `last_error="registration_recovery_grace"`），不在宽限期内替换健康 Stream；若宽限到期仍未注册，照常执行 Stream-only 替换。
+- [x] AC-001：当已确认注册（`known=True`）的活跃沙箱在 Supervisor 运行期间遭遇一次或多次 `gateway_missing` 或 `gateway_unreachable`，并在 Gateway 恢复后首个周期返回未注册读数时，Supervisor 保留其注册恢复资格、不将其清除为未注册新会话，且立即进入最多 90 秒的 `registration_recovery_grace`（`transport_state="recovering"`, `last_error="registration_recovery_grace"`），不在宽限期内替换健康 Stream；若宽限到期仍未注册，照常执行 Stream-only 替换。
 
-- [ ] AC-002：若会话在遭遇 `gateway_missing` / `gateway_unreachable` 边界前已失去注册（`known=False` 且 `recovery_armed=False`）或 Profile 已正常停止清理，该边界与停机清理点仍清除陈旧 `RegistrationState`，不继承过期宽限；既有的 `recovery_armed=True` 恢复宽限保持与不可修复协议拒绝（immediate `failed`）契约保持不变。
+- [x] AC-002：若会话在遭遇 `gateway_missing` / `gateway_unreachable` 边界前已失去注册（`known=False` 且 `recovery_armed=False`）或 Profile 已正常停止清理，该边界与停机清理点仍清除陈旧 `RegistrationState`，不继承过期宽限；既有的 `recovery_armed=True` 恢复宽限保持与不可修复协议拒绝（immediate `failed`）契约保持不变。
 
-- [ ] AC-003：新增与更新的 Supervisor 收敛单元测试及全部非 E2E 门禁通过；重建镜像后真实全量 Docker E2E 门禁（含 `tests/e2e/test_gateway_ac003_media_e2e.py`）全部通过。
+- [x] AC-003：新增与更新的 Supervisor 收敛单元测试及全部非 E2E 门禁通过；重建镜像后真实全量 Docker E2E 门禁（含 `tests/e2e/test_gateway_ac003_media_e2e.py`）全部通过。
 
 ### 可测试性声明
 
@@ -43,7 +43,8 @@
 
 ## 上下文区
 
-- 关联 spec：docs/specs/runtime_lifecycle.md, docs/specs/gate_verification.md
+- 关联 spec：docs/specs/runtime_lifecycle.md
+- 同时更新 spec：docs/specs/gate_verification.md
 - 来源：p146（2026-11-19，全量 E2E 门禁 `r2` / `r3` 揭示与代码排查确认）
 
 ### 有意不测

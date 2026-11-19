@@ -506,6 +506,20 @@ class SupervisorCore:
             return True
         return now - state.lost_at < self._REGISTRATION_LOSS_GRACE_SEC
 
+    @staticmethod
+    def _should_drop_registration_on_gateway_outage(
+        state: RegistrationState | None,
+    ) -> bool:
+        """Whether a registration entry should be dropped across Gateway outages.
+
+        Only unconfirmed prior losses (``known=False`` and not ``recovery_armed``)
+        are cleared at ``gateway_missing`` / ``gateway_unreachable`` boundaries.
+        Actively registered sessions (``known=True``) and restore-armed sessions
+        (``recovery_armed=True``) retain recovery eligibility so a StreamAgent
+        in reconnect backoff gets its 90s grace after Gateway restarts (t091).
+        """
+        return state is not None and not state.known and not state.recovery_armed
+
     async def _ensure_media_attachment(
         self, profile_id: str, instance_id: str
     ) -> MediaAttachmentOutcome:
@@ -818,12 +832,12 @@ class SupervisorCore:
                 )
             return
         if attachment.status == MEDIA_ATTACH_GATEWAY_MISSING:
-            # t055 A7: a restore-armed grace survives this boundary
-            # (the grace belongs to the recovery); any other state is
-            # dropped wholesale so a same-name restart replaces
-            # immediately instead of deferring on a stale grace (t026).
-            state = self._registration.get(profile_id)
-            if state is None or not state.recovery_armed:
+            # t091 / t055 A7: actively registered (`known`) and restore-armed
+            # (`recovery_armed`) sessions retain recovery eligibility across
+            # Gateway outages; only prior unconfirmed losses are cleared here.
+            if self._should_drop_registration_on_gateway_outage(
+                self._registration.get(profile_id)
+            ):
                 self._registration.pop(profile_id, None)
             self._update_transport(
                 profile_id,
@@ -982,11 +996,11 @@ class SupervisorCore:
             profile_id, instance_id
         )
         if registered is None:
-            # t055 A7: same retention as the gateway-missing branch
-            # above: a restore-armed grace survives, anything else is
-            # dropped wholesale (t026 stale-grace).
-            state = self._registration.get(profile_id)
-            if state is None or not state.recovery_armed:
+            # t091 / t055 A7: symmetric with gateway_missing — preserve live
+            # `known=True` and restore-armed sessions; drop unconfirmed stale losses.
+            if self._should_drop_registration_on_gateway_outage(
+                self._registration.get(profile_id)
+            ):
                 self._registration.pop(profile_id, None)
             self._update_transport(
                 profile_id,
