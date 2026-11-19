@@ -545,10 +545,15 @@ export function ProfileForm({
               value={values.locale ?? "en-US"}
               onValueChange={(value) => {
                 const nextLocale = value === "zh-CN" ? "zh-CN" : "en-US";
+                const proxyInferredTz = timezoneForProxy(selectedProxy);
                 localeManualRef.current = true;
                 setManualOverrides((prev) => ({ ...prev, locale: true }));
                 setValues((prev) => {
-                  const nextTimezone = timezoneManualRef.current
+                  const keepExistingTimezone =
+                    timezoneManualRef.current ||
+                    proxyInferredTz != null ||
+                    Boolean(prev.timezone);
+                  const nextTimezone = keepExistingTimezone
                     ? prev.timezone
                     : timezoneForLocale(nextLocale, prev.timezone);
                   return {
@@ -569,6 +574,10 @@ export function ProfileForm({
         </Row>
         {(() => {
           const proxyInferredTz = timezoneForProxy(selectedProxy);
+          const expectedProxyLocale =
+            proxyInferredTz != null
+              ? (localeForTimezone(proxyInferredTz) ?? "en-US")
+              : null;
           const proxyRegion =
             selectedProxy?.country_code ||
             selectedProxy?.region_label ||
@@ -579,35 +588,48 @@ export function ProfileForm({
             activeLocale === "zh-CN"
               ? t("formLocaleChinese")
               : t("formLocaleEnglish");
-          const fontRule =
-            activeLocale === "zh-CN"
-              ? t("formAlignFontsZh")
-              : t("formAlignFontsEn");
+          const fontRule = values.include_cjk_fonts
+            ? t("formAlignFontsZh")
+            : t("formAlignFontsEn");
           const tzText = values.timezone ?? t("formTimezoneAuto");
+          const proxyMismatch =
+            proxyInferredTz != null &&
+            (values.timezone !== proxyInferredTz ||
+              activeLocale !== expectedProxyLocale);
           const hasOverrides =
-            manualOverrides.timezone || manualOverrides.locale;
+            proxyInferredTz != null
+              ? proxyMismatch
+              : manualOverrides.timezone || manualOverrides.locale;
           if (!proxyInferredTz && !values.timezone && !hasOverrides) {
             return null;
           }
+          const summaryMessage = proxyInferredTz
+            ? proxyMismatch
+              ? t("formAlignProxyOverriddenSummary", {
+                  region: proxyRegion,
+                  proxyTimezone: proxyInferredTz,
+                  proxyLocale: expectedProxyLocale ?? "en-US",
+                  timezone: tzText,
+                  locale: localeText,
+                  fontRule,
+                })
+              : t("formAlignProxySummary", {
+                  region: proxyRegion,
+                  timezone: tzText,
+                  locale: localeText,
+                  fontRule,
+                })
+            : t("formAlignLocaleSummary", {
+                timezone: tzText,
+                locale: localeText,
+                fontRule,
+              });
           return (
             <div
               data-testid="profile-form-alignment-summary"
               className="col-span-full flex flex-wrap items-center justify-between gap-sm rounded-md border border-outline bg-surface-subtle px-sm py-xs font-ui text-label-sm text-on-surface-muted"
             >
-              <span>
-                {proxyInferredTz
-                  ? t("formAlignProxySummary", {
-                      region: proxyRegion,
-                      timezone: tzText,
-                      locale: localeText,
-                      fontRule,
-                    })
-                  : t("formAlignLocaleSummary", {
-                      timezone: tzText,
-                      locale: localeText,
-                      fontRule,
-                    })}
-              </span>
+              <span>{summaryMessage}</span>
               {hasOverrides && (
                 <span className="flex items-center gap-sm">
                   <span>{t("formAlignManualNote")}</span>

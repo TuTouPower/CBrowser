@@ -7,6 +7,7 @@ import {
   filterTimezones,
   getTimezones,
   localeForTimezone,
+  timezoneForProxy,
 } from "./profile_locale";
 
 describe("profile locale rules (t053)", () => {
@@ -71,5 +72,23 @@ describe("profile locale rules (t053)", () => {
     const all = filterTimezones("");
     expect(all.length).toBeGreaterThan(400);
     expect(filterTimezones("europe/lond")).toEqual(["Europe/London"]);
+  });
+
+  it("matches ASCII proxy region keywords on word boundaries without substring collisions (t090 AC-003)", () => {
+    expect(
+      timezoneForProxy({ name: "Tokyo Relay", region_label: "Relay", country_code: null }),
+    ).toBe("Asia/Tokyo");
+    expect(
+      timezoneForProxy({ name: "Germany Node", region_label: "Germany", country_code: null }),
+    ).toBe("Europe/Berlin");
+    expect(
+      timezoneForProxy({ name: "Malaysia Edge", region_label: null, country_code: "MY" }),
+    ).toBe("Asia/Kuala_Lumpur");
+    expect(
+      timezoneForProxy({ name: "us-la-01", region_label: null, country_code: "US" }),
+    ).toBe("America/Los_Angeles");
+    expect(
+      timezoneForProxy({ name: "us_ny_edge", region_label: null, country_code: "US" }),
+    ).toBe("America/New_York");
   });
 });

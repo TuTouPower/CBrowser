@@ -87,6 +87,45 @@ function proxy(): ProxyResponse {
   };
 }
 
+function profile(overrides: Partial<ProfileResponse> = {}): ProfileResponse {
+  return {
+    id: "p1",
+    name: "Original",
+    display_number: 1,
+    fingerprint_seed: 101,
+    group_id: null,
+    proxy_id: null,
+    timezone: null,
+    locale: null,
+    screen_width: 1920,
+    screen_height: 1080,
+    humanize: false,
+    human_preset: "default",
+    geoip: true,
+    clipboard_sync: true,
+    auto_launch: false,
+    color_scheme: "light",
+    include_cjk_fonts: false,
+    fingerprint_platform: "windows",
+    font_set_id: null,
+    launch_args: [],
+    extension_paths: [],
+    allow_3p_cookies: true,
+    set_google_default: true,
+    capture_preview: true,
+    restore_session: true,
+    transparent_proxy: false,
+    portable_cookies: false,
+    notes: null,
+    user_data_dir: "/data/p1",
+    sort_order: 0,
+    current_config_version: 1,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
 function makeStub(opts: {
   groups?: GroupResponse[];
   proxies?: ProxyResponse[];
@@ -427,6 +466,240 @@ describe("ProfileForm", () => {
     );
     expect(screen.getByTestId("profile-form-timezone")).toHaveValue(
       "Asia/Shanghai",
+    );
+  });
+
+  it("detects saved proxy deviation after async proxy fetch, resets cleanly, and preserves matched edit alignment (t090 AC-001)", async () => {
+    const jpProxy: ProxyResponse = {
+      ...proxy(),
+      id: "px-jp",
+      name: "Tokyo Relay",
+      country_code: "JP",
+      region_label: "Tokyo",
+    };
+    let resolveProxies!: (items: ProxyResponse[]) => void;
+    const delayedStub = {
+      ...makeStub(),
+      proxies: {
+        list: vi.fn(
+          () =>
+            new Promise<ProxyResponse[]>((resolve) => {
+              resolveProxies = resolve;
+            }),
+        ),
+      },
+    } as unknown as ApiClient;
+
+    renderForm({
+      mode: "edit",
+      initial: profile({
+        id: "prof-jp-misaligned",
+        proxy_id: "px-jp",
+        timezone: "Asia/Shanghai",
+        locale: "zh-CN",
+        include_cjk_fonts: true,
+      }),
+      stub: delayedStub,
+    });
+
+    await screen.findByTestId("profile-form-name");
+    resolveProxies([jpProxy]);
+
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId("profile-form-reset-alignment"),
+      ).toBeInTheDocument();
+    });
+    const summaryMismatch = screen.getByTestId(
+      "profile-form-alignment-summary",
+    ).textContent ?? "";
+    expect(summaryMismatch).not.toContain("Aligned to proxy");
+    expect(summaryMismatch).toContain("Asia/Shanghai");
+    expect(summaryMismatch).toContain(en.formAlignManualNote);
+
+    fireEvent.click(screen.getByTestId("profile-form-reset-alignment"));
+    expect(screen.getByTestId("profile-form-timezone")).toHaveValue(
+      "Asia/Tokyo",
+    );
+    expect(
+      within(screen.getByTestId("profile-form-locale")).getByRole("combobox")
+        .textContent,
+    ).toContain(en.formLocaleEnglish);
+    expect(
+      within(screen.getByTestId("profile-form-include-cjk")).getByRole(
+        "checkbox",
+      ),
+    ).toHaveAttribute("aria-checked", "false");
+    expect(
+      screen.queryByTestId("profile-form-reset-alignment"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId("profile-form-alignment-summary").textContent,
+    ).toContain("Aligned to proxy (JP)");
+    expect(
+      screen.getByTestId("profile-form-alignment-summary").textContent,
+    ).toContain(en.formAlignFontsEn);
+
+    // Timezone-only mismatch on reopen also triggers deviation notice + reset.
+    const tzOnlyView = renderForm({
+      mode: "edit",
+      initial: profile({
+        id: "prof-jp-tz-only",
+        proxy_id: "px-jp",
+        timezone: "Europe/London",
+        locale: "en-US",
+        include_cjk_fonts: false,
+      }),
+      stub: makeStub({ proxies: [jpProxy] }),
+    });
+    await waitFor(() => {
+      expect(
+        within(tzOnlyView.container).queryByTestId("profile-form-reset-alignment"),
+      ).toBeInTheDocument();
+    });
+    expect(
+      within(tzOnlyView.container).getByTestId("profile-form-alignment-summary")
+        .textContent,
+    ).not.toContain("Aligned to proxy");
+    tzOnlyView.unmount();
+
+    // Exact saved alignment shows aligned banner without a reset button.
+    const matchedView = renderForm({
+      mode: "edit",
+      initial: profile({
+        id: "prof-jp-matched",
+        proxy_id: "px-jp",
+        timezone: "Asia/Tokyo",
+        locale: "en-US",
+        include_cjk_fonts: false,
+      }),
+      stub: makeStub({ proxies: [jpProxy] }),
+    });
+    await waitFor(() => {
+      expect(
+        within(matchedView.container).getByTestId("profile-form-alignment-summary")
+          .textContent,
+      ).toContain("Aligned to proxy (JP)");
+    });
+    expect(
+      within(matchedView.container).queryByTestId("profile-form-reset-alignment"),
+    ).not.toBeInTheDocument();
+    matchedView.unmount();
+  });
+
+  it("renders CJK alignment summary from actual include_cjk_fonts across init, toggle, and reset (t090 AC-002)", async () => {
+    const view = renderForm({
+      mode: "edit",
+      initial: profile({
+        id: "prof-cjk-en",
+        timezone: "Asia/Tokyo",
+        locale: "en-US",
+        include_cjk_fonts: true,
+      }),
+      stub: makeStub(),
+    });
+    await screen.findByTestId("profile-form-name");
+    expect(
+      screen.getByTestId("profile-form-alignment-summary").textContent,
+    ).toContain(en.formAlignFontsZh);
+
+    const cjkCheckbox = within(
+      screen.getByTestId("profile-form-include-cjk"),
+    ).getByRole("checkbox");
+    fireEvent.click(cjkCheckbox);
+    expect(cjkCheckbox).toHaveAttribute("aria-checked", "false");
+    expect(
+      screen.getByTestId("profile-form-alignment-summary").textContent,
+    ).toContain(en.formAlignFontsEn);
+    view.unmount();
+
+    const cnProxy: ProxyResponse = {
+      ...proxy(),
+      id: "px-cn",
+      name: "Shanghai Node",
+      country_code: "CN",
+      region_label: "Shanghai",
+    };
+    const resetStub = {
+      ...makeStub(),
+      proxies: { list: vi.fn().mockResolvedValue([cnProxy]) },
+    } as unknown as ApiClient;
+    renderForm({
+      mode: "edit",
+      initial: profile({
+        id: "prof-zh-nocjk",
+        proxy_id: "px-cn",
+        timezone: "Asia/Tokyo",
+        locale: "zh-CN",
+        include_cjk_fonts: false,
+      }),
+      stub: resetStub,
+    });
+    await screen.findByTestId("profile-form-name");
+    expect(
+      screen.getByTestId("profile-form-alignment-summary").textContent,
+    ).toContain(en.formAlignFontsEn);
+
+    const resetBtn = await screen.findByTestId("profile-form-reset-alignment");
+    fireEvent.click(resetBtn);
+    expect(
+      screen.getByTestId("profile-form-alignment-summary").textContent,
+    ).toContain(en.formAlignFontsZh);
+  });
+
+  it("does not overwrite proxy or saved non-null timezone when locale changes (t090 AC-003)", async () => {
+    const jpProxy: ProxyResponse = {
+      ...proxy(),
+      id: "px-jp",
+      name: "Tokyo Relay",
+      country_code: "JP",
+      region_label: "Tokyo",
+    };
+    const createView = renderForm({
+      mode: "create",
+      stub: makeStub({ proxies: [jpProxy] }),
+    });
+    await screen.findByTestId("profile-form-name");
+
+    fireEvent.click(
+      within(screen.getByTestId("profile-form-proxy")).getByRole("combobox"),
+    );
+    fireEvent.click(await screen.findByRole("option", { name: "Tokyo Relay" }));
+    expect(screen.getByTestId("profile-form-timezone")).toHaveValue(
+      "Asia/Tokyo",
+    );
+
+    fireEvent.click(
+      within(screen.getByTestId("profile-form-locale")).getByRole("combobox"),
+    );
+    fireEvent.click(
+      await screen.findByRole("option", { name: en.formLocaleChinese }),
+    );
+    expect(screen.getByTestId("profile-form-timezone")).toHaveValue(
+      "Asia/Tokyo",
+    );
+    createView.unmount();
+
+    renderForm({
+      mode: "edit",
+      initial: profile({
+        id: "prof-berlin",
+        proxy_id: null,
+        timezone: "Europe/Berlin",
+        locale: "en-US",
+        include_cjk_fonts: false,
+      }),
+      stub: makeStub(),
+    });
+    await screen.findByTestId("profile-form-name");
+    fireEvent.click(
+      within(screen.getByTestId("profile-form-locale")).getByRole("combobox"),
+    );
+    fireEvent.click(
+      await screen.findByRole("option", { name: en.formLocaleChinese }),
+    );
+    expect(screen.getByTestId("profile-form-timezone")).toHaveValue(
+      "Europe/Berlin",
     );
   });
 
