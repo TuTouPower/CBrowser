@@ -115,3 +115,7 @@
 
 - **state_revision**：`profile_runtimes.state_revision` 为每 Profile 单调修订，ORM `before_update` 事件在任意运行时行更新时统一自增（迁移 0013），是 Supervisor 状态同步的版本围栏；与 API 进程 `api_epoch`（进程启动生成、随每份快照与通知携带）共同决定一份状态是否可信：跨 epoch 不比 revision、未完整读完的快照不是权威、迟到通知按 revision 丢弃。
 - **最小协调字段**：跨 API→Supervisor 的协调只允许 `SupervisorProfileState` 的字段集（意愿、绑定实例/配置版本、终态事件、重试/封锁、display_number、修订与更新时间）；字体覆盖、transport、search-defaults、control 与 UI 投影永不进入协调协议，观测新鲜度由缓存权威窗口（40 秒）与「未确认标未知」表达，读取路径不因观测缺失改写意愿。
+
+## 包装配置快照身份迁移与补偿（t089）
+
+- 仓库创建、更新与代理凭据轮换在 `profile_config_versions.snapshot` 中以 `{"config": <配置字典>, "proxy_credential_revision": <修订|null>}` 包装持久化。`0013_profile_identity.py` 与追加在 `d7e3a91f4c62` 后的前向幂等补偿迁移 `0014_repair_wrapped_snapshots.py`（`e89a0014c001`）共享 `cbrowser.adapters.database.snapshot_identity` 解包校验与重写逻辑：fail-before-write 校验嵌套 `config` 内的强制 `gpu_family` / 无效字体集 / 损坏结构，按内层 `locale` / `fingerprint_platform` 转换并绑定默认集，移除内层 `gpu_family`、收敛 `color_scheme`、清除外层误写冗余字段并完整保留 `proxy_credential_revision`，确保 `ProfileConfig` 严格校验不放松且历史版本可正常用于读取、启动与恢复。

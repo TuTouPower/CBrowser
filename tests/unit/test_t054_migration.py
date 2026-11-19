@@ -32,14 +32,16 @@ REVISION_0008 = "3751fed02a4a"
 # migration next (numbered 0013 on its branch and rechained after
 # t083 at merge time); p130/p136 adds deletion batch membership next
 # (d7e3a91f4c62, numbered 0012 on its branch and rechained after t075
-# at merge time), which is the current single head (0015 in chain
-# order). The 0008 assertions below still target 0008 as the revision
+# at merge time); t089 appends compensation migration 0014
+# (e89a0014c001, 0016 in chain order) for legacy wrapped snapshots.
+# The 0008 assertions below still target 0008 as the revision
 # that deletes the network rows.
 REVISION_0011 = "c41d9a02e6b7"
 REVISION_0012 = "c81f0a11b001"
 REVISION_0013 = "d83a2c12b083"
 REVISION_0014 = "d75a0013f001"
 REVISION_0015 = "d7e3a91f4c62"
+REVISION_0016 = "e89a0014c001"
 
 NETWORK_KEYS = (
     "network.pending_config",
@@ -62,11 +64,11 @@ def _revision_of_head(tmp_path: Path) -> str:
     return heads[0]
 
 
-def test_head_is_0015_and_single(tmp_path: Path) -> None:
-    """Replaces ``test_head_is_0014_and_single``: p130/p136 deletion
-    batch membership, rechained after t075 at merge time, is the new
-    single head; asserting 0014 would lock an obsolete migration head."""
-    assert _revision_of_head(tmp_path) == REVISION_0015
+def test_head_is_0016_and_single(tmp_path: Path) -> None:
+    """Replaces ``test_head_is_0015_and_single``: t089 compensation
+    migration 0014 (e89a0014c001) follows d7e3a91f4c62 as the new
+    single head; asserting 0015 would lock an obsolete migration head."""
+    assert _revision_of_head(tmp_path) == REVISION_0016
 
 
 def test_upgrade_deletes_all_network_settings_rows(tmp_path: Path) -> None:

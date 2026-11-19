@@ -1,7 +1,7 @@
 ---
 slug: storage_and_artifacts
 status: active
-tasks: [baseline, t078, t080]
+tasks: [baseline, t078, t080, t089]
 ---
 # 需求规范：数据持久化、迁移与文件交换 (storage_and_artifacts)
 
@@ -84,3 +84,7 @@ tasks: [baseline, t078, t080]
 ## 前端上传失败报告（t023）
 
 - 前端多文件上传顺序执行并在首个失败处停止；失败提示给出已成功数、失败文件名与未处理数，不输出文件内容。删除与上传等写操作携带每次调用独立生成的幂等键，自动重试复用同键。
+
+## 包装配置版本快照的身份迁移与补偿（t089）
+
+- `profile_config_versions.snapshot` 统一兼容平铺历史快照与仓库写入的 `{"config": ..., "proxy_credential_revision": ...}` 包装结构：`0013_profile_identity.py`（`d75a0013f001`）与补偿迁移 `0014_repair_wrapped_snapshots.py`（`e89a0014c001`，接在 `d7e3a91f4c62` 之后保持单一 head）共用 `cbrowser/adapters/database/snapshot_identity.py`，在写入前整库校验内层/平铺 `gpu_family`、已认证 `font_set_id` 及损坏对象，仅在内层或平铺目标映射对象执行清理与默认绑定，保留 `proxy_credential_revision` 并清除旧 `0013` 在包装外层错写的配置键，支持幂等重跑且不修改浏览器用户目录。
