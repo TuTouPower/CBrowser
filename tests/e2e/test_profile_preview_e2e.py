@@ -3,14 +3,12 @@ from __future__ import annotations
 import asyncio
 import io
 import json
-import stat
 import subprocess
 import urllib.parse
 from pathlib import Path
 
 import httpx
 import pytest
-from cbrowser.preview import frame_path, read_meta
 from gateway_probe.browser_oracle import browser_eval
 from gateway_probe.topology import GatewayTopologyHarness
 from PIL import Image
@@ -263,12 +261,20 @@ async def test_whole_browser_preview_switches_tabs_and_preserves_http_contract(
                 await anonymous.get(f"/api/v1/profiles/{profile_id}/preview")
             ).status_code in (401, 403)
         await asyncio.to_thread(assert_container_frame_validation, container)
-        directory = harness.data_dir / "profiles" / profile_id / "preview"
-        assert (
-            stat.S_IMODE(frame_path(directory, read_meta(directory)).stat().st_mode)
-            == 0o600
+        preview_modes = await asyncio.to_thread(
+            harness.run_supervisor_json,
+            (
+                "import json, stat, sys; from pathlib import Path; "
+                "from cbrowser.preview import frame_path, read_meta; "
+                "d = Path('/data/profiles') / sys.argv[1] / 'preview'; "
+                "meta = read_meta(d); assert meta is not None; "
+                "f = frame_path(d, meta); "
+                "print(json.dumps({'frame_mode': stat.S_IMODE(f.stat().st_mode), 'meta_mode': stat.S_IMODE((d / 'meta.json').stat().st_mode)}))"
+            ),
+            profile_id,
         )
-        assert stat.S_IMODE((directory / "meta.json").stat().st_mode) == 0o600
+        assert preview_modes["frame_mode"] == 0o600
+        assert preview_modes["meta_mode"] == 0o600
     finally:
         await harness.cleanup()
 

@@ -500,18 +500,31 @@ async def test_e2e_ac010_gateway_topology_runtime_in_secure_mode_with_chrome(
         browser_cname = profile["browser_container"]
 
         # Verify the per-instance credentials file lives outside the
-        # Browser-mounted runtime dir.
-        secret_dir = harness.data_dir / "runtime" / ".secrets" / profile_id
-        credential_files = sorted(secret_dir.glob("selkies_tokens_*.json"))
-        assert len(credential_files) == 1, credential_files
-        tokens_path = credential_files[0]
-        assert (tokens_path.stat().st_mode & 0o777) == 0o600, "Must be 0600"
-        assert not tokens_path.is_relative_to(harness.data_dir / "runtime" / profile_id)
+        # Browser-mounted runtime dir inside the named runtime volume.
+        secret_info = await asyncio.to_thread(
+            harness.run_supervisor_json,
+            (
+                "import json, sys; from pathlib import Path; "
+                "files = sorted((Path('/data/runtime/.secrets') / sys.argv[1]).glob('selkies_tokens_*.json')); "
+                "res = {'files': [str(p) for p in files]}; "
+                "res.update({'mode': files[0].stat().st_mode & 0o777, 'data': json.loads(files[0].read_text())}) if len(files) == 1 else None; "
+                "print(json.dumps(res))"
+            ),
+            profile_id,
+        )
+        assert len(secret_info["files"]) == 1, secret_info["files"]
+        tokens_path_str = secret_info["files"][0]
+        assert secret_info["mode"] == 0o600, "Must be 0600"
+        assert not tokens_path_str.startswith(f"/data/runtime/{profile_id}/")
 
         browser_inspect = harness.docker_client.api.inspect_container(browser_cname)
-        mounted_sources = {m["Source"] for m in browser_inspect["Mounts"]}
-        assert str(tokens_path) not in mounted_sources
-        assert str(tokens_path.parent) not in mounted_sources
+        host_config_mounts = browser_inspect.get("HostConfig", {}).get("Mounts") or []
+        for m in browser_inspect["Mounts"]:
+            assert not m.get("Source", "").endswith(".secrets")
+            assert not m.get("Destination", "").startswith("/run/cbrowser/runtime/.secrets")
+        for m in host_config_mounts:
+            subpath = (m.get("VolumeOptions") or {}).get("Subpath", "")
+            assert not subpath.startswith(".secrets"), subpath
         denied = await asyncio.to_thread(
             subprocess.run,
             [
@@ -535,7 +548,7 @@ async def test_e2e_ac010_gateway_topology_runtime_in_secure_mode_with_chrome(
         )
         assert listing.returncode == 0
         assert "selkies_tokens" not in listing.stdout
-        tokens_data = json.loads(tokens_path.read_text(encoding="utf-8"))
+        tokens_data = secret_info["data"]
         master_token = tokens_data["master_token"]
         controller_token = tokens_data["controller_token"]
         assert len(master_token) >= 42

@@ -26,6 +26,7 @@ from cbrowser.runtime_agent.socket_root import (
 )
 from playwright.async_api import async_playwright
 from e2e_env import require_e2e_env
+from e2e_volumes import prepare_minimal_e2e_fonts_root
 from wait import poll_until, wait_until
 
 
@@ -584,11 +585,16 @@ async def test_stream_runtime_direct_media_matrix(
     )
 
     # Snapshot config
+    fonts_root, font_set_id = prepare_minimal_e2e_fonts_root(
+        work_dir / "fonts", browser_image=browser_image
+    )
+    font_set_dir = (fonts_root / "windows" / font_set_id).resolve()
     snap_path = host_runtime_dir / "snapshot.json"
     cfg = ProfileConfig(
         screen_width=1920,
         screen_height=1080,
         geoip=False,
+        font_set_id=font_set_id,
     )
     snapshot = ConfigVersionSnapshot(
         id=f"snap_{uuid.uuid4().hex[:12]}",
@@ -648,6 +654,8 @@ async def test_stream_runtime_direct_media_matrix(
             "/home/cbrowser:rw,mode=0755,size=64m",
             "-v",
             f"{engine_cache}:/data/engine-cache:ro",
+            "-v",
+            f"{font_set_dir}:/run/cbrowser/fonts/windows/{font_set_id}:ro",
             "-v",
             f"{host_profile_dir}:/data/profiles/{profile_id}/profile",
             "-v",

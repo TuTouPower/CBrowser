@@ -140,14 +140,25 @@ def real_api_server(tmp_path: Path):
     ):
         env.pop(name, None)
 
+    fonts_env: dict[str, str] = {}
+    if os.environ.get("CBROWSER_E2E_FONTS_DIR") or os.environ.get(
+        "CBROWSER_RUNTIME_TEST_IMAGE"
+    ):
+        from e2e_volumes import prepare_minimal_e2e_fonts_root
+
+        fonts_root, _ = prepare_minimal_e2e_fonts_root(tmp_path / "fonts")
+        fonts_env["CBROWSER_FONTS_DIR"] = str(fonts_root)
+
     root = Path(__file__).resolve().parents[2]
     env.update(
         PYTHONPATH=str(root / "src/backend"),
         PYTHONDONTWRITEBYTECODE="1",
+        PYTHONUNBUFFERED="1",
         TMPDIR=str(tmp_path),
         CBROWSER_DB_PATH=str(tmp_path / "control.db"),
         CBROWSER_DATA_ROOT=str(tmp_path),
         CBROWSER_SUPERVISOR_TOKEN_FILE=str(token_file),
+        **fonts_env,
         **auth_ctx.env,
     )
 
@@ -174,7 +185,8 @@ def real_api_server(tmp_path: Path):
         try:
             with httpx.Client(base_url=api_url, trust_env=False) as client:
                 ready = False
-                for _ in range(100):
+                health_deadline = time.monotonic() + 30.0
+                while time.monotonic() < health_deadline:
                     try:
                         if client.get("/api/v1/health").status_code == 200:
                             ready = True
@@ -190,6 +202,21 @@ def real_api_server(tmp_path: Path):
                         f"{log_path.read_text()}"
                     )
                 auth_headers = auth_ctx.login_sync(api_url, client)
+                if fonts_env:
+                    fonts_deadline = time.monotonic() + 30.0
+                    while time.monotonic() < fonts_deadline:
+                        f_resp = client.get("/api/v1/font-sets", headers=auth_headers)
+                        if f_resp.status_code == 200 and (
+                            (f_resp.json().get("default_font_set_id") or {}).get(
+                                "windows"
+                            )
+                        ):
+                            break
+                        time.sleep(0.15)
+                    else:
+                        pytest.fail(
+                            "Real API process did not adopt default windows font set"
+                        )
             yield api_url, token, token_file, auth_headers
         finally:
             proc.terminate()

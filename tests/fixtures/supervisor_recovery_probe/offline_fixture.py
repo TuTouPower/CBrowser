@@ -32,9 +32,18 @@ from typing import Any
 
 import docker
 import docker.errors
+from docker.types import Mount
 import httpx
 
 from e2e_env import require_e2e_env, worker_resource_offsets
+from e2e_volumes import (
+    create_prefix_volumes,
+    init_prefix_volumes,
+    is_real_docker_client,
+    prepare_minimal_e2e_fonts_root,
+    run_volume_json,
+    supervisor_volume_mounts,
+)
 from api_auth import create_auth_context
 from cbrowser.shared.endpoints import DEFAULT_GATEWAY_PORT, GatewayEndpoint
 from cbrowser.runtime_agent.socket_root import (
@@ -182,6 +191,7 @@ class RealApiProcess:
         root: Path,
         env: dict[str, str],
         log_path: Path,
+        fonts_dir: Path | None = None,
     ) -> None:
         self.port = port
         self.db_path = db_path
@@ -189,6 +199,7 @@ class RealApiProcess:
         self.root = root
         self.env = env
         self.log_path = log_path
+        self.fonts_dir = fonts_dir
         self.auth_context = create_auth_context(log_path.parent)
         self.auth_headers: dict[str, str] = {}
         self.proc: subprocess.Popen | None = None
@@ -220,6 +231,8 @@ class RealApiProcess:
             "info",
         ]
         api_env = dict(self.env)
+        if self.fonts_dir is not None:
+            api_env["CBROWSER_FONTS_DIR"] = str(self.fonts_dir)
         api_env.update(
             CBROWSER_DB_PATH=str(self.db_path),
             CBROWSER_SUPERVISOR_TOKEN_FILE=str(self.token_file),
@@ -254,7 +267,29 @@ class RealApiProcess:
                     try:
                         resp = client.get("/api/v1/health", timeout=1.0)
                         if resp.status_code == 200:
-                            self.auth_headers = self.auth_context.login_sync(self.url)
+                            self.auth_headers = self.auth_context.login_sync(
+                                self.url, client
+                            )
+                            if api_env.get("CBROWSER_FONTS_DIR"):
+                                while time.monotonic() < deadline:
+                                    f_resp = client.get(
+                                        "/api/v1/font-sets",
+                                        headers=self.auth_headers,
+                                        timeout=2.0,
+                                    )
+                                    if f_resp.status_code == 200 and (
+                                        (
+                                            f_resp.json().get("default_font_set_id")
+                                            or {}
+                                        ).get("windows")
+                                    ):
+                                        break
+                                    time.sleep(0.15)
+                                else:
+                                    raise TimeoutError(
+                                        "API font catalog did not adopt default "
+                                        f"windows font set within {timeout_sec}s"
+                                    )
                             logger.info(
                                 f"Real API process online on port {self.port} "
                                 f"(PID {self.proc.pid})"
@@ -340,6 +375,7 @@ class RealSupervisorContainer:
         network: str | None = None,
         udp_mux_min_port: int = 30000,
         udp_mux_max_port: int = 30991,
+        fonts_root: Path | None = None,
     ) -> None:
         self.api_url = api_url
         self.data_root = data_root.resolve()
@@ -355,6 +391,8 @@ class RealSupervisorContainer:
         self.root = root
         self.env = env
         self.log_path = log_path
+        self.fonts_root = fonts_root.resolve() if fonts_root else None
+        self._volumes_initialized = False
         if gateway_port is not None:
             self.gateway_port = gateway_port
         elif self.gateway_url:
@@ -411,38 +449,22 @@ class RealSupervisorContainer:
         )
         return sup_token_dst, agent_key_dst, gw_token_dst
 
-    def _build_mounts(self) -> dict[str, dict[str, str]]:
-        mounts: dict[str, dict[str, str]] = {
-            str(self.data_root / name): {
-                "bind": str(self.data_root / name),
-                "mode": "rw",
-            }
-            for name in (
-                "profiles",
-                "runtime",
-                "runtime-events",
-                "artifacts",
-                "spool",
-                "control",
-            )
-        }
-        mounts[str(self.engine_cache)] = {
-            "bind": str(self.engine_cache),
-            "mode": "rw",
-        }
-        mounts[str(self.geoip_cache)] = {
-            "bind": str(self.geoip_cache),
-            "mode": "rw",
-        }
-        mounts["/var/run/docker.sock"] = {
-            "bind": "/var/run/docker.sock",
-            "mode": "ro",
-        }
-        mounts[DEFAULT_AGENT_SOCKET_ROOT] = {
-            "bind": DEFAULT_AGENT_SOCKET_ROOT,
-            "mode": "rw",
-        }
-        return mounts
+    def _build_mounts(self) -> list[Mount]:
+        return supervisor_volume_mounts(
+            self.prefix,
+            data_root="/data",
+            socket_root=DEFAULT_AGENT_SOCKET_ROOT,
+            policy_agent_root="/run/cb/policy-agents",
+            fonts_root="/fonts",
+            extra_mounts=[
+                Mount(
+                    target="/run/secrets",
+                    source=str(self.data_root / "control"),
+                    type="bind",
+                    read_only=True,
+                )
+            ],
+        )
 
     def _build_command(
         self,
@@ -454,15 +476,15 @@ class RealSupervisorContainer:
             "--api-url",
             self.api_url,
             "--data-root",
-            str(self.data_root),
+            "/data",
             "--engine-cache",
-            str(self.engine_cache),
+            "/data/engine-cache",
             "--geoip-cache",
-            str(self.geoip_cache),
+            "/data/engine-cache/geoip",
             "--token-file",
-            str(token_path),
+            f"/run/secrets/{token_path.name}",
             "--agent-key-file",
-            str(agent_path),
+            f"/run/secrets/{agent_path.name}",
             "--gateway-url",
             self.gateway_url,
             "--gateway-port",
@@ -470,7 +492,7 @@ class RealSupervisorContainer:
             "--gateway-control-url",
             self.gateway_control_url,
             "--gateway-token-file",
-            str(gw_token_path),
+            f"/run/secrets/{gw_token_path.name}",
             "--prefix",
             self.prefix,
             "--host",
@@ -488,16 +510,44 @@ class RealSupervisorContainer:
             f"Invalid supervisor image: {self.supervisor_image}"
         )
 
-        for name in (
-            "profiles", "runtime", "runtime-events", "artifacts", "spool", "control"
-        ):
-            (self.data_root / name).mkdir(parents=True, exist_ok=True)
+        self.data_root.mkdir(parents=True, exist_ok=True)
+        instance_id = _resolve_instance_id()
+        if not self._volumes_initialized:
+            if is_real_docker_client(self.docker_client):
+                if self.fonts_root is None and (
+                    os.environ.get("CBROWSER_E2E_FONTS_DIR")
+                    or os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE")
+                ):
+                    fonts_dir = self.data_root / "_fonts_src"
+                    prepare_minimal_e2e_fonts_root(
+                        fonts_dir,
+                        browser_image=os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE") or None,
+                        docker_client=self.docker_client,
+                    )
+                    self.fonts_root = fonts_dir
+                init_prefix_volumes(
+                    self.docker_client,
+                    self.prefix,
+                    self.supervisor_image,
+                    roles=("data", "runtime", "fonts"),
+                    engine_cache_src=self.engine_cache if self.engine_cache.is_dir() else None,
+                    geoip_cache_src=self.geoip_cache if self.geoip_cache.is_dir() else None,
+                    fonts_root_src=self.fonts_root,
+                    extra_labels={"com.cbrowser.instance-id": instance_id},
+                )
+            else:
+                create_prefix_volumes(
+                    self.docker_client,
+                    self.prefix,
+                    roles=("data", "runtime", "fonts"),
+                    extra_labels={"com.cbrowser.instance-id": instance_id},
+                )
+            self._volumes_initialized = True
 
         sup_token_p, agent_p, gw_token_p = self._prepare_secrets()
         mounts = self._build_mounts()
         cmd = self._build_command(sup_token_p, agent_p, gw_token_p)
 
-        instance_id = _resolve_instance_id()
         container_env = {
             "CBROWSER_INSTANCE_ID": instance_id,
             "CBROWSER_BROWSER_IMAGE": os.environ.get(
@@ -510,6 +560,12 @@ class RealSupervisorContainer:
             "CBROWSER_MEDIA_SUBNET_POOL": os.environ.get(
                 "CBROWSER_E2E_MEDIA_POOL", "10.251.0.0/16"
             ),
+            "CBROWSER_DATA_ROOT": "/data",
+            "CBROWSER_ENGINE_CACHE": "/data/engine-cache",
+            "CBROWSER_GEOIP_CACHE": "/data/engine-cache/geoip",
+            "CBROWSER_POLICY_AGENT_ROOT": "/run/cb/policy-agents",
+            "CBROWSER_FONTS_DIR": "/fonts",
+            "CBROWSER_MANAGE_OWNERSHIP": "1",
             AGENT_SOCKET_ROOT_ENV: DEFAULT_AGENT_SOCKET_ROOT,
         }
 
@@ -523,7 +579,7 @@ class RealSupervisorContainer:
             "security_opt": ["no-new-privileges:true"],
             "tmpfs": {"/tmp": "rw,size=256m"},
             "environment": container_env,
-            "volumes": mounts,
+            "mounts": mounts,
             "ports": {"8005/tcp": ("127.0.0.1", self.port)},
             "command": cmd,
             "labels": {
@@ -726,26 +782,111 @@ class RealBrowserActionProbe:
 
 
 class SpoolDirectoryWatcher:
-    def __init__(self, spool_dir: Path) -> None:
-        self.spool_dir = Path(spool_dir)
+    """Inspect or write supervisor spool files on host or inside named volume."""
+
+    def __init__(
+        self,
+        spool_dir: Path | None = None,
+        *,
+        volume_prefix: str | None = None,
+        docker_client: Any | None = None,
+        helper_image: str | None = None,
+    ) -> None:
+        self.spool_dir = Path(spool_dir) if spool_dir is not None else Path("/data/spool")
+        self.volume_prefix = volume_prefix
+        self.docker_client = docker_client
+        self.helper_image = helper_image
+
+    def _run_spool_json(self, script: str, *args: str) -> Any:
+        assert self.volume_prefix is not None
+        client = self.docker_client or docker.from_env()
+        owns_client = self.docker_client is None
+        image = self.helper_image or require_e2e_env(
+            "CBROWSER_SUPERVISOR_TEST_IMAGE"
+        )["CBROWSER_SUPERVISOR_TEST_IMAGE"]
+        try:
+            return run_volume_json(
+                client,
+                self.volume_prefix,
+                image,
+                script,
+                roles=("data",),
+                args=list(args),
+                timeout=30,
+            )
+        finally:
+            if owns_client:
+                client.close()
+
+    def exists(self, spool_file: Path) -> bool:
+        if self.volume_prefix is None:
+            return spool_file.exists()
+        script = (
+            "import json, sys; from pathlib import Path; "
+            "print('CBROWSER_E2E_RESULT=' + json.dumps((Path('/data/spool') / sys.argv[1]).exists()))"
+        )
+        return bool(self._run_spool_json(script, spool_file.name))
+
+    def quarantine_exists(self, spool_file: Path) -> bool:
+        if self.volume_prefix is None:
+            return (self.spool_dir / "quarantine" / spool_file.name).exists()
+        script = (
+            "import json, sys; from pathlib import Path; "
+            "print('CBROWSER_E2E_RESULT=' + json.dumps((Path('/data/spool/quarantine') / sys.argv[1]).exists()))"
+        )
+        return bool(self._run_spool_json(script, spool_file.name))
+
+    def write_spool_file(self, filename: str, payload: dict[str, Any]) -> Path:
+        if self.volume_prefix is None:
+            self.spool_dir.mkdir(parents=True, exist_ok=True)
+            target = self.spool_dir / filename
+            target.write_text(json.dumps(payload), encoding="utf-8")
+            return target
+        script = (
+            "import json, sys; from pathlib import Path; "
+            "p = Path('/data/spool'); p.mkdir(parents=True, exist_ok=True); "
+            "t = p / sys.argv[1]; t.write_text(sys.argv[2], encoding='utf-8'); "
+            "print('CBROWSER_E2E_RESULT=' + json.dumps(str(t)))"
+        )
+        return Path(self._run_spool_json(script, filename, json.dumps(payload)))
+
+    def _scan_spool(self, expected_profile_id: str) -> tuple[str, dict[str, Any]] | None:
+        if self.volume_prefix is None:
+            if not self.spool_dir.exists():
+                return None
+            for f in sorted(self.spool_dir.glob("*.json")):
+                try:
+                    data = json.loads(f.read_text(encoding="utf-8"))
+                    if (
+                        data.get("profile_id") == expected_profile_id
+                        and data.get("event_type") == "exit"
+                    ):
+                        return str(f), data
+                except (json.JSONDecodeError, OSError):
+                    pass
+            return None
+        script = (
+            "import json, sys; from pathlib import Path; "
+            "pid = sys.argv[1]; out = None\n"
+            "for f in sorted(Path('/data/spool').glob('*.json')):\n"
+            "    try:\n"
+            "        d = json.loads(f.read_text(encoding='utf-8'))\n"
+            "        if d.get('profile_id') == pid and d.get('event_type') == 'exit':\n"
+            "            out = [str(f), d]; break\n"
+            "    except (OSError, json.JSONDecodeError): pass\n"
+            "print('CBROWSER_E2E_RESULT=' + json.dumps(out))"
+        )
+        hit = self._run_spool_json(script, expected_profile_id)
+        return (hit[0], hit[1]) if hit is not None else None
 
     async def wait_for_spool_event(
         self, expected_profile_id: str, timeout_sec: float = 30.0
     ) -> tuple[Path, dict[str, Any]]:
         deadline = time.monotonic() + timeout_sec
         while time.monotonic() < deadline:
-            if self.spool_dir.exists():
-                for f in sorted(self.spool_dir.glob("*.json")):
-                    try:
-                        content = f.read_text(encoding="utf-8")
-                        data = json.loads(content)
-                        if (
-                            data.get("profile_id") == expected_profile_id
-                            and data.get("event_type") == "exit"
-                        ):
-                            return f, data
-                    except (json.JSONDecodeError, OSError):
-                        pass
+            hit = await asyncio.to_thread(self._scan_spool, expected_profile_id)
+            if hit is not None:
+                return Path(hit[0]), hit[1]
             await asyncio.sleep(0.3)
         raise TimeoutError(
             f"Spool exit event for profile {expected_profile_id} "
@@ -757,9 +898,57 @@ class SpoolDirectoryWatcher:
     ) -> None:
         deadline = time.monotonic() + timeout_sec
         while time.monotonic() < deadline:
-            if not spool_file.exists():
+            if not await asyncio.to_thread(self.exists, spool_file):
                 return
             await asyncio.sleep(0.3)
         raise TimeoutError(
             f"Spool file {spool_file} was not removed within {timeout_sec}s"
         )
+
+
+async def sync_supervisor_state_notice(
+    api_client: httpx.AsyncClient,
+    sup_client: httpx.AsyncClient,
+    *,
+    api_headers: dict[str, str] | None = None,
+) -> None:
+    """Push full paginated API state snapshot to Supervisor ``/supervisor/v1/state-changes``.
+
+    Offline recovery and retry probes spawn ``RealApiProcess`` without
+    ``CBROWSER_SUPERVISOR_URL`` because Supervisor listens on an ephemeral
+    port, so API mutations would otherwise wait up to 30s for Supervisor's
+    background snapshot sync before ``state_cache`` reflects them.
+    """
+    api_epoch: str | None = None
+    states: list[dict[str, Any]] = []
+    cursor: str | None = None
+    while True:
+        params: dict[str, Any] = {"limit": 200}
+        if cursor is not None:
+            params["cursor"] = cursor
+        r_snap = await api_client.get(
+            "/api/v1/internal/supervisor/state/snapshot",
+            params=params,
+            headers=api_headers,
+        )
+        r_snap.raise_for_status()
+        snap = r_snap.json()
+        if api_epoch is None:
+            api_epoch = snap["api_epoch"]
+        elif snap["api_epoch"] != api_epoch:
+            # Restart cleanly from page 1 if API epoch rolled mid-pagination.
+            api_epoch = None
+            states = []
+            cursor = None
+            continue
+        states.extend(snap["profiles"])
+        cursor = snap.get("next_cursor")
+        if cursor is None:
+            break
+    notice = {
+        "api_epoch": api_epoch,
+        "states": states,
+        "removed": [],
+    }
+    r_push = await sup_client.post("/supervisor/v1/state-changes", json=notice)
+    r_push.raise_for_status()

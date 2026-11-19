@@ -47,6 +47,7 @@ import pytest
 from wait import poll_until
 
 from e2e_env import free_udp_port_span
+from e2e_volumes import prepare_minimal_e2e_fonts_root, remove_prefix_volumes
 
 from supervisor_recovery_probe import offline_fixture
 from supervisor_recovery_probe.gateway_service import (
@@ -101,6 +102,9 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
     data_root = tmp_path / "data_root"
     data_root.mkdir(parents=True, exist_ok=True)
     engine_cache, geoip_cache = prepare_engine_cache(data_root)
+    fonts_root, _ = prepare_minimal_e2e_fonts_root(
+        tmp_path / "e2e_fonts", browser_image=browser_image
+    )
 
     clean_environ = dict(os.environ)
     for k in (
@@ -115,6 +119,7 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
     clean_environ.update(
         CBROWSER_BROWSER_IMAGE=browser_image,
         CBROWSER_STREAM_IMAGE=stream_image,
+        CBROWSER_FONTS_DIR=str(fonts_root),
         PYTHONPATH=str(ROOT / "src/backend"),
         PYTHONDONTWRITEBYTECODE="1",
         TMPDIR=str(tmp_path),
@@ -145,6 +150,7 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
         root=ROOT,
         env=clean_environ,
         log_path=api_log,
+        fonts_dir=fonts_root,
     )
 
     sup_log = tmp_path / "supervisor.log"
@@ -167,6 +173,7 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
         docker_client=d_client,
         udp_mux_min_port=udp_base,
         udp_mux_max_port=udp_base + 1,
+        fonts_root=fonts_root,
     )
 
     api_headers = {"Authorization": f"Bearer {sup_token}"}
@@ -177,9 +184,17 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
         await asyncio.to_thread(api_proc.start)
         await asyncio.to_thread(sup_proc.start)
         api_headers.update(api_proc.auth_headers)
-        async with httpx.AsyncClient(
-            base_url=api_proc.url, headers=api_headers, trust_env=False
-        ) as api_client:
+        async with (
+            httpx.AsyncClient(
+                base_url=api_proc.url, headers=api_headers, trust_env=False
+            ) as api_client,
+            httpx.AsyncClient(
+                base_url=sup_proc.url,
+                headers=sup_headers,
+                timeout=60.0,
+                trust_env=False,
+            ) as sup_client,
+        ):
             r_create_a = await api_client.post(
                 "/api/v1/profiles", json={"name": "Offline Target A", "geoip": True}
             )
@@ -208,9 +223,8 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
             )
             assert r_des_b.status_code == 200
 
-        async with httpx.AsyncClient(
-            base_url=sup_proc.url, headers=sup_headers, timeout=60.0, trust_env=False
-        ) as sup_client:
+            await offline_fixture.sync_supervisor_state_notice(api_client, sup_client)
+
             res_a = await sup_client.post(
                 "/supervisor/v1/profiles/start",
                 json={"profile_id": profile_a_id, "config_version": 1, "profile_number": profile_a_number},
@@ -282,7 +296,9 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
         )
         RealBrowserActionProbe.trigger_clean_close(b_cname_a)
 
-        spool_watcher = SpoolDirectoryWatcher(data_root / "spool")
+        spool_watcher = SpoolDirectoryWatcher(
+            volume_prefix=prefix, docker_client=d_client
+        )
         spool_file, event_data = await spool_watcher.wait_for_spool_event(
             profile_a_id, timeout_sec=30.0
         )
@@ -301,7 +317,7 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
         # across the window rather than sleeping then checking once.
         window_end = time.monotonic() + 2.0
         while time.monotonic() < window_end:
-            assert spool_file.exists(), (
+            assert await asyncio.to_thread(spool_watcher.exists, spool_file), (
                 "Spooled event MUST remain on disk while API is offline"
             )
             b_c_b.reload()
@@ -315,7 +331,9 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
         assert api_proc.verify_offline(), (
             "API must remain offline during Supervisor kill"
         )
-        assert spool_file.exists(), "Spool file must persist across Supervisor SIGKILL"
+        assert await asyncio.to_thread(spool_watcher.exists, spool_file), (
+            "Spool file must persist across Supervisor SIGKILL"
+        )
 
         logger.info(
             "Restarting Supervisor with same data_root while API is still offline..."
@@ -326,7 +344,7 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
         # Retention window, sampled as above.
         window_end = time.monotonic() + 2.0
         while time.monotonic() < window_end:
-            assert spool_file.exists(), (
+            assert await asyncio.to_thread(spool_watcher.exists, spool_file), (
                 "Resurrected Supervisor must retain spooled event while API remains down"
             )
             b_c_b.reload()
@@ -355,7 +373,7 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
             # Deadline poll (t024 AC-007/A28): 25s convergence bound.
             r_rt_a = await poll_until(
                 lambda: api_client.get(
-                    f"/api/v1/internal/supervisor/profiles/{profile_a_id}/runtime"
+                    f"/api/v1/profiles/{profile_a_id}/runtime"
                 ),
                 lambda r: r.status_code == 200
                 and r.json()["desired_state"] == "stopped"
@@ -410,7 +428,7 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
             assert evt_row[5] == "normal"
 
             r_rt_b = await api_client.get(
-                f"/api/v1/internal/supervisor/profiles/{profile_b_id}/runtime"
+                f"/api/v1/profiles/{profile_b_id}/runtime"
             )
             assert r_rt_b.status_code == 200
             data_rt_b = r_rt_b.json()
@@ -504,7 +522,7 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
             # Authoritative State Proof: diagnostic event payload CANNOT alter
             # business runtime state!
             r_rt_b_after = await api_client.get(
-                f"/api/v1/internal/supervisor/profiles/{profile_b_id}/runtime"
+                f"/api/v1/profiles/{profile_b_id}/runtime"
             )
             assert r_rt_b_after.status_code == 200
             data_rt_b_after = r_rt_b_after.json()
@@ -614,7 +632,7 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
             assert dup_res["outcome"] == "duplicate"
 
             r_rt_a2 = await api_client.get(
-                f"/api/v1/internal/supervisor/profiles/{profile_a_id}/runtime"
+                f"/api/v1/profiles/{profile_a_id}/runtime"
             )
             assert r_rt_a2.json()["desired_state"] == "running", (
                 "Duplicate old exit event must NOT overwrite new running intent"
@@ -671,4 +689,5 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
         try:
             tracker.cleanup()
         finally:
+            remove_prefix_volumes(d_client, prefix)
             d_client.close()

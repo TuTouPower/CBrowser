@@ -3,20 +3,29 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import secrets
-import shutil
 import time
 import uuid
 from pathlib import Path
 from typing import Any
 
 import docker
+from docker.types import Mount
 import httpx
 from cbrowser.shared.endpoints import DEFAULT_GATEWAY_PORT
 
 from e2e_env import require_e2e_env, worker_resource_offsets
+from e2e_volumes import (
+    api_volume_mounts,
+    init_prefix_volumes,
+    is_real_docker_client,
+    prepare_minimal_e2e_fonts_root,
+    remove_prefix_volumes,
+    supervisor_volume_mounts,
+)
 from cbrowser.network_config import DEFAULT_HTTPS_PORT, generate_caddyfile
 from .selkies_assets import prepare_selkies_web_assets
 
@@ -134,23 +143,15 @@ class GatewayTopologyHarness:
         return {}
 
     def _init_dirs_and_secrets(self) -> None:
-        # Confine the whole harness tree under a 0o700 work root
-        # (t024 AC-011/A33): the data directory stays group/other-writable
-        # because it is bind-mounted into containers running as other uids,
-        # but no unrelated local user can traverse into the tree.
+        # Confine host secret storage under a 0o700 work tree (t024 AC-011/A33);
+        # runtime storage, caches, and fonts live inside dedicated Docker named
+        # volumes matching production compose.yaml.
         self.work_dir.mkdir(parents=True, exist_ok=True)
         self.work_dir.chmod(0o700)
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.data_dir.chmod(0o700)
         self.control_dir.mkdir(parents=True, exist_ok=True)
         self.control_dir.chmod(0o700)
-        for name in ("profiles", "runtime", "runtime-events", "artifacts", "spool"):
-            d = self.data_dir / name
-            d.mkdir(parents=True, exist_ok=True)
-            d.chmod(0o777)
-
-        cache = self.data_dir / "engine_cache"
-        if not cache.exists():
-            shutil.copytree(self.engine_cache_src, cache)
-            shutil.copytree(self.geoip_cache_src, cache / "geoip", dirs_exist_ok=True)
 
         for name in (
             "supervisor",
@@ -251,20 +252,21 @@ class GatewayTopologyHarness:
         ]["IPAddress"]
 
     def _start_supervisor_container(self) -> None:
-        mounts = {
-            str(self.data_dir / name): {"bind": str(self.data_dir / name), "mode": "rw"}
-            for name in (
-                "engine_cache",
-                "profiles",
-                "runtime",
-                "runtime-events",
-                "artifacts",
-                "spool",
-                "control",
-            )
-        }
-        mounts["/var/run/docker.sock"] = {"bind": "/var/run/docker.sock", "mode": "ro"}
-        mounts["/run/cb/socks"] = {"bind": "/run/cb/socks", "mode": "rw"}
+        mounts = supervisor_volume_mounts(
+            self.prefix,
+            data_root="/data",
+            socket_root="/run/cb/socks",
+            policy_agent_root="/run/cb/policy-agents",
+            fonts_root="/fonts",
+            extra_mounts=[
+                Mount(
+                    target="/run/secrets",
+                    source=str(self.control_dir),
+                    type="bind",
+                    read_only=True,
+                )
+            ],
+        )
 
         self.supervisor_container = self._run_container(
             "supervisor",
@@ -287,9 +289,15 @@ class GatewayTopologyHarness:
                 "CBROWSER_MEDIA_SUBNET_POOL": os.environ.get(
                     "CBROWSER_E2E_MEDIA_POOL", "10.251.0.0/16"
                 ),
+                "CBROWSER_DATA_ROOT": "/data",
                 "CBROWSER_SOCKET_ROOT": "/run/cb/socks",
+                "CBROWSER_POLICY_AGENT_ROOT": "/run/cb/policy-agents",
+                "CBROWSER_ENGINE_CACHE": "/data/engine-cache",
+                "CBROWSER_GEOIP_CACHE": "/data/engine-cache/geoip",
+                "CBROWSER_FONTS_DIR": "/fonts",
+                "CBROWSER_MANAGE_OWNERSHIP": "1",
             },
-            volumes=mounts,
+            mounts=mounts,
             ports={"8005/tcp": ("127.0.0.1", None)},
             command=[
                 "--api-url",
@@ -309,15 +317,17 @@ class GatewayTopologyHarness:
                 "--deployment-instance-id",
                 self.deployment_instance_id,
                 "--data-root",
-                str(self.data_dir),
+                "/data",
                 "--engine-cache",
-                str(self.data_dir / "engine_cache"),
+                "/data/engine-cache",
+                "--geoip-cache",
+                "/data/engine-cache/geoip",
                 "--token-file",
-                str(self.key_files["supervisor"]),
+                "/run/secrets/supervisor_key",
                 "--agent-key-file",
-                str(self.key_files["agent"]),
+                "/run/secrets/agent_key",
                 "--gateway-token-file",
-                str(self.key_files["gateway"]),
+                "/run/secrets/gateway_key",
                 "--host",
                 "0.0.0.0",
                 "--port",
@@ -428,6 +438,22 @@ class GatewayTopologyHarness:
     async def _do_start(self) -> None:
         self._init_dirs_and_secrets()
         self.prepare_static()
+        fonts_root: Path | None = None
+        if is_real_docker_client(self.docker_client):
+            fonts_root, _ = prepare_minimal_e2e_fonts_root(
+                self.work_dir / "fonts_src",
+                browser_image=self.browser_image,
+                docker_client=self.docker_client,
+            )
+        init_prefix_volumes(
+            self.docker_client,
+            self.prefix,
+            self.supervisor_image,
+            engine_cache_src=self.engine_cache_src,
+            geoip_cache_src=self.geoip_cache_src,
+            fonts_root_src=fonts_root,
+            extra_labels={"com.cbrowser.instance-id": self.deployment_instance_id},
+        )
 
         self.edge_network = self.docker_client.networks.create(
             f"{self.prefix}-edge",
@@ -491,6 +517,7 @@ class GatewayTopologyHarness:
             environment={
                 "CBROWSER_DB_PATH": "/data/db/cbrowser.db",
                 "CBROWSER_DATA_ROOT": "/data",
+                "CBROWSER_FONTS_DIR": "/fonts",
                 # The automation tunnel is gated on the API coordinator
                 # being enabled (t031); the production stack sets both,
                 # so the harness must too or every CDP handshake closes
@@ -506,10 +533,17 @@ class GatewayTopologyHarness:
                 "CBROWSER_VIEWER_GRANT_KEY_FILE": "/run/secrets/viewer_grant_key",
                 **self.api_environment_extra(),
             },
-            volumes={
-                str(self.data_dir): {"bind": "/data", "mode": "rw"},
-                str(self.control_dir): {"bind": "/run/secrets", "mode": "ro"},
-            },
+            mounts=api_volume_mounts(
+                self.prefix,
+                extra_mounts=[
+                    Mount(
+                        target="/run/secrets",
+                        source=str(self.control_dir),
+                        type="bind",
+                        read_only=True,
+                    )
+                ],
+            ),
             ports={"8000/tcp": ("127.0.0.1", None)},
         )
 
@@ -517,14 +551,6 @@ class GatewayTopologyHarness:
         self.api_ip = self.api_container.attrs["NetworkSettings"]["Networks"][
             self.edge_network.name
         ]["IPAddress"]
-
-        # 3. Gateway container
-        self._start_gateway_container()
-
-        # 4. Supervisor container
-        self._start_supervisor_container()
-
-        self.api_container.reload()
         api_ports = self.api_container.attrs["NetworkSettings"]["Ports"]
         if "8000/tcp" not in api_ports or not api_ports["8000/tcp"]:
             st = self.api_container.status
@@ -532,13 +558,60 @@ class GatewayTopologyHarness:
         api_port = api_ports["8000/tcp"][0]["HostPort"]
         self.api_internal_url = f"http://127.0.0.1:{api_port}"
 
+        # Wait for the Control API to listen BEFORE starting Supervisor so
+        # Supervisor's initial StateSnapshot does not hit ConnectError and
+        # enter 2s backoff while tests issue profile starts.
         await wait_until_ready(self.api_internal_url, "/api/v1/health")
+
+        # 3. Gateway container
+        self._start_gateway_container()
+
+        # 4. Supervisor container
+        self._start_supervisor_container()
+
         await wait_until_ready(
             self.supervisor_url,
             "/supervisor/v1/health",
             headers={"Authorization": f"Bearer {self.keys['supervisor']}"},
         )
         await wait_until_ready(self.origin, "/api/v1/health", verify=False)
+        if is_real_docker_client(self.docker_client):
+            await self._wait_until_fonts_ready()
+
+    async def _wait_until_fonts_ready(self, timeout: float = 30.0) -> None:
+        """Wait until API startup finishes adopting the seeded font sets."""
+        deadline = asyncio.get_running_loop().time() + timeout
+        headers = await self.login_api()
+        async with httpx.AsyncClient(
+            base_url=self.origin, headers=headers, verify=False, trust_env=False
+        ) as client:
+            while asyncio.get_running_loop().time() < deadline:
+                resp = await client.get("/api/v1/font-sets")
+                if resp.status_code == 200:
+                    defaults = resp.json().get("default_font_set_id") or {}
+                    if defaults.get("windows"):
+                        return
+                await asyncio.sleep(0.15)
+        raise TimeoutError(
+            f"API font catalog did not adopt default windows font set within {timeout}s"
+        )
+
+    def run_supervisor_json(self, script: str, *args: str) -> Any:
+        """Execute a short inspection script inside ``supervisor_container``."""
+        if self.supervisor_container is None:
+            raise RuntimeError("Supervisor container is not running")
+        result = self.supervisor_container.exec_run(
+            ["python3", "-c", script, *args],
+            demux=True,
+        )
+        stdout_b, stderr_b = result.output if isinstance(result.output, tuple) else (result.output, b"")
+        stdout = (stdout_b or b"").decode("utf-8", errors="replace")
+        stderr = (stderr_b or b"").decode("utf-8", errors="replace")
+        if result.exit_code != 0:
+            raise RuntimeError(
+                f"Supervisor inspection command exited {result.exit_code}: {stderr or stdout}"
+            )
+        return json.loads(stdout)
 
     async def login_api(
         self, client: httpx.AsyncClient | None = None
@@ -836,6 +909,9 @@ def cleanup_prefixed_resources(docker_client: Any, prefix: str) -> None:
             err_t = type(exc).__name__
             logger.error("Network remove error for %s: %s", n_name, err_t)
             errors.append(f"network_remove({n_name}): {err_t}")
+
+    # 3. Volumes: remove owned <prefix>-{db,data,runtime,fonts} volumes
+    errors.extend(remove_prefix_volumes(docker_client, prefix))
 
     if errors:
         raise RuntimeError(f"Cleanup encountered failures: {', '.join(errors)}")

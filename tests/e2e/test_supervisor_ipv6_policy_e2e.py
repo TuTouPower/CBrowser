@@ -8,12 +8,15 @@ import docker
 import pytest
 
 from e2e_env import require_e2e_env
+from e2e_volumes import (
+    ContainerPolicyAgentClient,
+    init_prefix_volumes,
+    policy_agent_socket_mount,
+    remove_prefix_volumes,
+)
 from cbrowser.supervisor.container_spec import policy_agent_environment
 from cbrowser.supervisor.network_policy import NetworkPolicySpec
-from cbrowser.supervisor.policy_agent_client import (
-    PolicyAgentClient,
-    PolicyAgentRejected,
-)
+from cbrowser.supervisor.policy_agent_client import PolicyAgentRejected
 from cbrowser.supervisor.policy_agent_protocol import PolicyAgentIdentity
 
 pytestmark = [pytest.mark.serial, pytest.mark.e2e_images('CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_SUPERVISOR_TEST_IMAGE')]
@@ -118,8 +121,7 @@ sys.stdout.write(json.dumps(result))
             role="browser",
             target_container_id=target.id,
         )
-        socket_dir = tmp_path / "policy-agent"
-        socket_dir.mkdir(parents=True, exist_ok=True)
+        init_prefix_volumes(client, prefix, images[names[1]], roles=("runtime",))
         agent = client.containers.create(
             images[names[1]],
             entrypoint=["python3", "-m", "cbrowser.supervisor.policy_agent"],
@@ -138,38 +140,37 @@ sys.stdout.write(json.dumps(result))
                 role=identity.role,
                 target_container_id=identity.target_container_id,
             ),
-            volumes={
-                str(socket_dir): {
-                    "bind": "/run/cbrowser_policy_agent",
-                    "mode": "rw",
-                }
-            },
+            mounts=[policy_agent_socket_mount(prefix)],
             labels={"com.cbrowser.prefix": prefix},
         )
         created.append(agent)
         agent.start()
-        socket_path = socket_dir / "agent.sock"
-        for _ in range(150):
-            if socket_path.exists():
-                break
-            await asyncio.sleep(0.1)
-        else:
-            pytest.fail("Policy Agent socket never appeared: " + agent.logs().decode())
-        agent_client = PolicyAgentClient(socket_path, identity, timeout=10.0)
+        agent_client = ContainerPolicyAgentClient(
+            client,
+            prefix,
+            images[names[1]],
+            identity,
+            timeout=10.0,
+        )
+        try:
+            agent_client.wait_ready_health(timeout_sec=15.0)
+        except TimeoutError as exc:
+            pytest.fail(f"{exc}: " + agent.logs().decode())
         agent_client.install(policy, 1)
         assert agent_client.inspect(policy, 1) is True
-        # The revision fence replaces the old one-shot installer's
-        # refusal: a conflicting spec at the applied revision, and any
-        # replayed older revision, are both rejected and change
-        # nothing.
+        # Advance to revision 2 so both a conflicting spec at the applied
+        # revision and a replayed older valid revision (1 < 2, ge=1) are
+        # rejected by the monotonic revision fence.
+        agent_client.install(policy, 2)
+        assert agent_client.inspect(policy, 2) is True
         conflicting_policy = NetworkPolicySpec(
             role="browser", allowed_tcp=[(peer_ip, 19999)]
         )
         with pytest.raises(PolicyAgentRejected):
-            agent_client.install(conflicting_policy, 1)
+            agent_client.install(conflicting_policy, 2)
         with pytest.raises(PolicyAgentRejected):
-            agent_client.install(policy, 0)
-        assert agent_client.inspect(policy, 1) is True
+            agent_client.install(policy, 1)
+        assert agent_client.inspect(policy, 2) is True
         after = observe()
         (tmp_path / "ipv6_policy_proof.json").write_text(
             json.dumps({"before": before, "after": after}, indent=2)
@@ -184,6 +185,7 @@ sys.stdout.write(json.dumps(result))
         if network is not None:
             network.remove()
             network = None
+        remove_prefix_volumes(client, prefix)
         assert not client.containers.list(
             all=True, filters={"label": "com.cbrowser.prefix=" + prefix}
         )
@@ -192,4 +194,5 @@ sys.stdout.write(json.dumps(result))
             container.remove(force=True)
         if network is not None:
             network.remove()
+        remove_prefix_volumes(client, prefix)
         client.close()

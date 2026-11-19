@@ -1,7 +1,7 @@
 ---
 slug: gate_verification
 status: active
-tasks: [baseline, t076]
+tasks: [baseline, t076, t088]
 ---
 # 门禁与验证体系
 
@@ -80,3 +80,9 @@ tasks: [baseline, t076]
 
 - 集合查询按 0/1/100/1000 规模矩阵验证：空集与单项、100 代理/120 环境分页无重复遗漏、1000 代理下 `list_proxies` SELECT 数恒定（≤8，与 20 代理规模相等）、1000 环境分页/搜索/候选无截断；证据为 SQLAlchemy 语句计数与 HTTP 层测试（`tests/unit/test_t076_collection_queries.py`、`tests/integration/test_t076_collection_api.py`）。
 - 集合 SQL/HTTP 计数只统计被测调用本身，夹具造数阶段排除在计数之外；同一 QueryClient 的请求去重不可被重复统计。真实运行实例的完整 API/SSE/Browser 链路验证（AC-008）云端不可验，登记 pending 待 Mac 补验，不得用 mock 或历史结果代替。
+
+## 13. 真实 Docker E2E 命名卷与受管字体夹具契约（t088）
+
+- 共享夹具与独立 E2E 用例统一复用 `tests/fixtures/e2e_volumes.py` 按 `<prefix>-{db,data,runtime,fonts}` 预初始化命名卷、`prepare_minimal_e2e_fonts_root` 导入真实最小平台字体集、`api_volume_mounts` / `supervisor_volume_mounts` 及容器内 Driver/UDS 验证入口（`run_volume_python` / `run_volume_json` / `ContainerPolicyAgentClient` / `SpoolDirectoryWatcher`），生产 `MountPlanner` 与 `FontSetUnavailableError` 保持未放宽。
+- `GatewayTopologyHarness` 等拓扑夹具先确认 API 就绪并同步字体目录采纳，再启动 Supervisor 容器；仅使用 `RealApiProcess` 且未配置 `CBROWSER_SUPERVISOR_URL` 的恢复/图谱用例通过 `/supervisor/v1/state-changes` 推送状态变更通知替代 30s 后台快照盲等。
+- `tests/fixtures/e2e_volumes.py::remove_prefix_volumes` 与 `scripts/gate_container_cleanup.py` 协同按 `com.cbrowser.prefix` 与 `com.cbrowser.gate-run` 精确清理测试命名卷，确保运行前后零残留。

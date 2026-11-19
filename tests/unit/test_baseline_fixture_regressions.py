@@ -44,6 +44,7 @@ from supervisor_recovery_probe.offline_fixture import (  # noqa: E402
     RealApiProcess,
     RealSupervisorContainer,
     get_free_port,
+    sync_supervisor_state_notice,
 )
 
 
@@ -286,10 +287,14 @@ def test_real_supervisor_container_sigkill_remove_error_propagates(
     assert container.last_container_id == "cid_sigkill_remove_fail"
 
 
-def test_real_supervisor_container_mounts_isolate_control_db_bait_and_sync_secrets(
+# Removed legacy bind-mount test `test_real_supervisor_container_mounts_isolate_control_db_bait_and_sync_secrets`
+# (reason: t080/t088 moved RealSupervisorContainer storage to Docker named volumes and /run/secrets).
+
+
+def test_real_supervisor_container_named_volume_mounts_isolate_control_db_and_sync_secrets(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Mounts must isolate control.db bait in parent directory and sync 0600 secrets."""
+    """Named-volume Supervisor fixture mounts isolate control.db bait and sync 0600 secrets."""
     _set_test_images_env(monkeypatch, tmp_path)
 
     # Place control.db bait in the parent tmp_path directory where tokens reside
@@ -344,33 +349,28 @@ def test_real_supervisor_container_mounts_isolate_control_db_bait_and_sync_secre
         container.start(timeout_sec=0.5)
 
     _, run_kwargs = mock_docker.containers.run.call_args
-    volumes = run_kwargs["volumes"]
+    mounts = {m["Target"]: m for m in run_kwargs["mounts"]}
 
     # 1. Parent tmp_path containing control.db MUST NOT be mounted
-    assert str(tmp_path) not in volumes
-    assert str(bait_db) not in volumes
-    for src_bind in volumes:
-        assert "control.db" not in src_bind
+    for m in mounts.values():
+        src = m.get("Source", "")
+        assert src != str(tmp_path)
+        assert src != str(bait_db)
+        assert "control.db" not in src
 
-    # 2. Strict allowed subdirectories only
-    expected_subs = {
-        str(data_root / "profiles"),
-        str(data_root / "runtime"),
-        str(data_root / "runtime-events"),
-        str(data_root / "artifacts"),
-        str(data_root / "spool"),
-        str(data_root / "control"),
-        str(tmp_path / "engine"),
-        str(tmp_path / "geoip"),
-        "/var/run/docker.sock",
-        DEFAULT_AGENT_SOCKET_ROOT,
-    }
-    assert set(volumes.keys()) == expected_subs
-    # Supervisor initialization writer contract: caches are mounted rw
-    assert volumes[str(tmp_path / "engine")]["mode"] == "rw"
-    assert volumes[str(tmp_path / "geoip")]["mode"] == "rw"
-    assert volumes["/var/run/docker.sock"]["mode"] == "ro"
-    assert volumes[DEFAULT_AGENT_SOCKET_ROOT]["mode"] == "rw"
+    # 2. Strict production-matching named volumes and /run/secrets bind only
+    assert mounts["/data"]["Type"] == "volume"
+    assert mounts["/data"]["Source"] == "test-bait-data"
+    assert mounts["/data/runtime"]["Type"] == "volume"
+    assert mounts["/data/runtime"]["Source"] == "test-bait-runtime"
+    assert mounts["/data/control/gates"]["VolumeOptions"]["Subpath"] == "gates"
+    assert mounts[DEFAULT_AGENT_SOCKET_ROOT]["VolumeOptions"]["Subpath"] == "sockets"
+    assert mounts["/run/cb/policy-agents"]["VolumeOptions"]["Subpath"] == "policy-agents"
+    assert mounts["/fonts"]["Source"] == "test-bait-fonts"
+    assert mounts["/fonts"]["ReadOnly"] is True
+    assert mounts["/var/run/docker.sock"]["ReadOnly"] is True
+    assert mounts["/run/secrets"]["Source"] == str(data_root / "control")
+    assert mounts["/run/secrets"]["ReadOnly"] is True
     assert (
         run_kwargs["environment"][AGENT_SOCKET_ROOT_ENV]
         == DEFAULT_AGENT_SOCKET_ROOT
@@ -638,6 +638,30 @@ async def test_gateway_topology_harness_cleanup_ownership_label_rejection(
 
         owned_net.remove.assert_called_once()
         foreign_net.remove.assert_not_called()
+
+
+def test_remove_prefix_volumes_filters_by_prefix_and_isolates_api_error() -> None:
+    """remove_prefix_volumes deletes only exact-prefix volumes and catches list APIError."""
+    from docker.errors import APIError
+    from e2e_volumes import remove_prefix_volumes
+
+    owned_vol = MagicMock()
+    owned_vol.name = "t088-prefix-data"
+    owned_vol.attrs = {"Labels": {"com.cbrowser.prefix": "t088-prefix"}}
+    foreign_vol = MagicMock()
+    foreign_vol.name = "other-prefix-data"
+    foreign_vol.attrs = {"Labels": {"com.cbrowser.prefix": "other-prefix"}}
+
+    ok_client = MagicMock()
+    ok_client.volumes.list.return_value = [owned_vol, foreign_vol]
+    assert remove_prefix_volumes(ok_client, "t088-prefix") == []
+    owned_vol.remove.assert_called_once_with(force=True)
+    foreign_vol.remove.assert_not_called()
+
+    err_client = MagicMock()
+    err_client.volumes.list.side_effect = APIError("daemon unavailable")
+    errors = remove_prefix_volumes(err_client, "t088-prefix")
+    assert errors == ["volume_list:APIError"]
 
 
 @pytest.mark.asyncio
@@ -1216,3 +1240,77 @@ async def test_production_gateway_forwards_non_dict_viewer_json(
                 assert close_env["type"] == "close"
     finally:
         await client.close()
+
+
+@pytest.mark.asyncio
+async def test_sync_supervisor_state_notice_paginates_and_resets_on_epoch_rollover() -> None:
+    """Mid-pagination api_epoch rollover must restart from page 1 of the new epoch."""
+    snap_calls: list[str | None] = []
+    posted_notices: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/internal/supervisor/state/snapshot":
+            cursor = request.url.params.get("cursor")
+            snap_calls.append(cursor)
+            call_idx = len(snap_calls)
+            if call_idx == 1:
+                assert cursor is None
+                return httpx.Response(
+                    200,
+                    json={
+                        "api_epoch": "ep-1",
+                        "profiles": [{"profile_id": "stale-p1"}],
+                        "next_cursor": "c1",
+                    },
+                )
+            if call_idx == 2:
+                assert cursor == "c1"
+                return httpx.Response(
+                    200,
+                    json={
+                        "api_epoch": "ep-2",
+                        "profiles": [{"profile_id": "ep2-p2"}],
+                        "next_cursor": "c2",
+                    },
+                )
+            if call_idx == 3:
+                assert cursor is None
+                return httpx.Response(
+                    200,
+                    json={
+                        "api_epoch": "ep-2",
+                        "profiles": [{"profile_id": "ep2-p1"}],
+                        "next_cursor": "c2",
+                    },
+                )
+            assert call_idx == 4 and cursor == "c2"
+            return httpx.Response(
+                200,
+                json={
+                    "api_epoch": "ep-2",
+                    "profiles": [{"profile_id": "ep2-p2"}],
+                    "next_cursor": None,
+                },
+            )
+        if request.url.path == "/supervisor/v1/state-changes":
+            import json as _json
+
+            posted_notices.append(_json.loads(request.content))
+            return httpx.Response(200, json={"status": "ok"})
+        raise AssertionError(f"Unexpected path: {request.url.path}")
+
+    transport = httpx.MockTransport(handler)
+    async with (
+        httpx.AsyncClient(base_url="http://api.local", transport=transport) as api_client,
+        httpx.AsyncClient(base_url="http://sup.local", transport=transport) as sup_client,
+    ):
+        await sync_supervisor_state_notice(api_client, sup_client)
+
+    assert snap_calls == [None, "c1", None, "c2"]
+    assert posted_notices == [
+        {
+            "api_epoch": "ep-2",
+            "states": [{"profile_id": "ep2-p1"}, {"profile_id": "ep2-p2"}],
+            "removed": [],
+        }
+    ]

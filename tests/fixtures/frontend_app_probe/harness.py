@@ -122,11 +122,17 @@ class FrontendAppTopologyHarness(FrontendTopologyHarness):
     def selkies_tokens(self, profile_id: str) -> dict[str, str]:
         # Supervisor keeps one per-instance credentials file outside the
         # Browser-mounted runtime dir.
-        secret_dir = self.data_dir / "runtime" / ".secrets" / profile_id
-        files = sorted(secret_dir.glob("selkies_tokens_*.json"))
-        if len(files) != 1:
-            raise RuntimeError(f"Expected one Selkies credentials file: {files}")
-        return json.loads(files[0].read_text(encoding="utf-8"))
+        script = (
+            "import json, sys; from pathlib import Path; "
+            "files = sorted((Path('/data/runtime/.secrets') / sys.argv[1]).glob('selkies_tokens_*.json')); "
+            "print(json.dumps({'files': [str(p) for p in files], 'data': json.loads(files[0].read_text()) if len(files) == 1 else None}))"
+        )
+        res = self.run_supervisor_json(script, profile_id)
+        if res["data"] is None:
+            raise RuntimeError(
+                f"Expected one Selkies credentials file: {res['files']}"
+            )
+        return res["data"]
 
     def containers_for(self, profile_id: str) -> list[Any]:
         return self.docker_client.containers.list(

@@ -13,6 +13,7 @@ Validates:
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import uuid
 import tempfile
@@ -73,6 +74,8 @@ async def run_scenario():
             "name": "E2E Profile",
             "locale": locale,
             "geoip": False,
+            "font_set_id": os.environ["CB_E2E_FONT_SET_ID"],
+            "include_cjk_fonts": locale == "zh-CN",
             "set_google_default": scenario == "runtime_startup_defaults",
         },
         "created_at": "2026-10-28T00:00:00Z",
@@ -344,6 +347,13 @@ def _run_docker_e2e(scenario: str, locale: str = "en-US") -> dict[str, Any]:
     script_path = scratch_run / "e2e_runner.py"
     script_path.write_text(CONTAINER_SCRIPT, encoding="utf-8")
 
+    from e2e_volumes import prepare_minimal_e2e_fonts_root
+
+    fonts_root, font_set_id = prepare_minimal_e2e_fonts_root(
+        scratch_run / "fonts", browser_image=image
+    )
+    font_set_dir = (fonts_root / "windows" / font_set_id).resolve()
+
     cmd = [
         "docker",
         "run",
@@ -368,8 +378,12 @@ def _run_docker_e2e(scenario: str, locale: str = "en-US") -> dict[str, Any]:
         "/home/cbrowser:rw,mode=0755",
         "--entrypoint",
         "python3",
+        "-e",
+        f"CB_E2E_FONT_SET_ID={font_set_id}",
         "-v",
         f"{cache_dir}:/data/engine-cache:ro",
+        "-v",
+        f"{font_set_dir}:/run/cbrowser/fonts/windows/{font_set_id}:ro",
         "-v",
         f"{script_path}:/e2e_runner.py:ro",
         image,
@@ -405,6 +419,7 @@ def _run_docker_e2e(scenario: str, locale: str = "en-US") -> dict[str, Any]:
             capture_output=True,
             check=False,
         )
+        shutil.rmtree(scratch_run, ignore_errors=True)
 
 
 class TestRuntimeProfileDefaultsE2E:

@@ -89,3 +89,47 @@ def test_concurrent_cleanup_accepts_already_vanished_resources(monkeypatch, vani
     )
     assert cleanup.run_cleanup(client) == plan
     assert removed == (["net"] if vanished == "container" else ["box"])
+
+
+def test_gate_cleanup_selects_and_removes_only_ended_run_volumes(tmp_path):
+    ended_run = "a" * 32
+    active_run = "b" * 32
+    (tmp_path / (ended_run + ".lock")).touch()
+
+    removed = []
+    ended_vol = SimpleNamespace(
+        name="ended-gate-vol",
+        attrs={"Labels": {cleanup.RUN_LABEL: ended_run}},
+        remove=lambda **kw: removed.append("ended-gate-vol"),
+    )
+    foreign_vol = SimpleNamespace(
+        name="prod-vol",
+        attrs={"Labels": {cleanup.RUN_LABEL: active_run}},
+        remove=lambda **kw: removed.append("prod-vol"),
+    )
+    unlabeled_vol = SimpleNamespace(
+        name="unlabeled-vol",
+        attrs={"Labels": {}},
+        remove=lambda **kw: removed.append("unlabeled-vol"),
+    )
+    vols_by_name = {v.name: v for v in (ended_vol, foreign_vol, unlabeled_vol)}
+
+    import fcntl
+
+    lock_fd = (tmp_path / (active_run + ".lock")).open("w")
+    fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    try:
+        client = SimpleNamespace(
+            containers=SimpleNamespace(list=lambda **kw: []),
+            networks=SimpleNamespace(list=lambda **kw: []),
+            volumes=SimpleNamespace(
+                list=lambda **kw: [ended_vol, foreign_vol, unlabeled_vol],
+                get=lambda name: vols_by_name[name],
+            ),
+        )
+        plan = cleanup.run_cleanup(client, tmp_path)
+    finally:
+        lock_fd.close()
+
+    assert plan.volumes == frozenset({"ended-gate-vol"})
+    assert removed == ["ended-gate-vol"]
