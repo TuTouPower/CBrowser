@@ -147,16 +147,18 @@ def _version(conn: sqlite3.Connection) -> str:
     return conn.execute("SELECT version_num FROM alembic_version").fetchone()[0]
 
 
-def test_0013_connects_predecessor_to_single_head(tmp_path: Path) -> None:
-    """Replaces ``test_head_is_0013_and_single``: p130/p136 (d7e3a91f4c62)
-    now follows REVISION_0013 at merge time; global single head is
-    verified in ``test_t054_migration.py::test_head_is_0015_and_single``."""
+def test_0013_precedes_single_head_in_chain(tmp_path: Path) -> None:
+    """Replaces ``test_0013_connects_predecessor_to_single_head``: p130/p136
+    (d7e3a91f4c62) and t089 wrapped snapshot repair (e89a0014c001) now follow
+    REVISION_0013; global single head is asserted in
+    ``test_t054_migration.py::test_head_is_0016_and_single``."""
     cfg = get_alembic_config(tmp_path / "head.db")
     script = ScriptDirectory.from_config(cfg)
     heads = script.get_heads()
     assert len(heads) == 1
-    rev = script.get_revision(heads[0])
-    assert rev is not None and rev.down_revision == REVISION_0013
+    chain = [rev.revision for rev in script.walk_revisions(head=heads[0])]
+    assert REVISION_0013 in chain
+    assert heads[0] != REVISION_0013
 
 
 def test_upgrade_rewrites_profiles_and_snapshots(tmp_path: Path) -> None:

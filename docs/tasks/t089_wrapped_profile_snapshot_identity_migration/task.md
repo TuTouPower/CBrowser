@@ -25,11 +25,11 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：对尚未升级过 `0013` 的数据库，`upgrade` 能正确校验并重写 `{config, proxy_credential_revision}` 包装快照与平铺历史快照：嵌套内含强制 `gpu_family`（非 `auto`）或无效字体绑定或损坏 JSON 时在任何表结构修改前整体阻断；可等价转换时移除内层 `gpu_family`、将空或 `no-preference` 的 `color_scheme` 转为 `light`、按内层 `locale` 派生 `include_cjk_fonts`、按内层 `fingerprint_platform` 绑定默认字体集，保留外层结构与 `proxy_credential_revision` 且不在外层写入多余配置键。
+- [x] AC-001：对尚未升级过 `0013` 的数据库，`upgrade` 能正确校验并重写 `{config, proxy_credential_revision}` 包装快照与平铺历史快照：嵌套内含强制 `gpu_family`（非 `auto`）或无效字体绑定或损坏 JSON 时在任何表结构修改前整体阻断；可等价转换时移除内层 `gpu_family`、将空或 `no-preference` 的 `color_scheme` 转为 `light`、按内层 `locale` 派生 `include_cjk_fonts`、按内层 `fingerprint_platform` 绑定默认字体集，保留外层结构与 `proxy_credential_revision` 且不在外层写入多余配置键。
 
-- [ ] AC-002：对已经升级到原 head（`d7e3a91f4c62`）且快照仅外层被旧 `0013` 错改的存量数据库，新增补偿迁移以幂等方式完成修复：先执行 fail-before-write 前置校验（嵌套内含不可等价字段时阻断且不修改快照），再清除外层错写的配置字段、按规则修复内层 `config` 并保留 `proxy_credential_revision`，使补偿后的历史版本快照经由真实 API 查询接口交付并通过 `ProfileConfig` 校验，可正常用于启动与恢复。
+- [x] AC-002：对已经升级到原 head（`d7e3a91f4c62`）且快照仅外层被旧 `0013` 错改的存量数据库，新增补偿迁移以幂等方式完成修复：先执行 fail-before-write 前置校验（嵌套内含不可等价字段时阻断且不修改快照），再清除外层错写的配置字段、按规则修复内层 `config` 并保留 `proxy_credential_revision`，使补偿后的历史版本快照经由真实 API 查询接口交付并通过 `ProfileConfig` 校验，可正常用于启动与恢复。
 
-- [ ] AC-003：Alembic 迁移链保持单一 head，补偿迁移及修复后的 `0013` 迁移满足幂等性且不触碰浏览器用户数据；已有迁移头校验及新增单元/集成测试全部通过。
+- [x] AC-003：Alembic 迁移链保持单一 head，补偿迁移及修复后的 `0013` 迁移满足幂等性且不触碰浏览器用户数据；已有迁移头校验及新增单元/集成测试全部通过。
 
 ### 可测试性声明
 

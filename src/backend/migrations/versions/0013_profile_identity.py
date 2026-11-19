@@ -49,10 +49,14 @@ roll back with a release rollback + data-directory rebuild instead.
 
 from __future__ import annotations
 
-import json
-
 import sqlalchemy as sa
 from alembic import op
+
+from cbrowser.adapters.database.snapshot_identity import (
+    find_blocking_snapshot_entries,
+    load_verified_catalog,
+    rewrite_profile_config_snapshots,
+)
 
 revision: str = "d75a0013f001"
 down_revision: str | None = "d83a2c12b083"
@@ -65,27 +69,9 @@ _UNSUPPORTED_DOWNGRADE = (
 )
 
 
-def _platform_defaults(conn) -> dict[str, str]:
-    """Catalog default per platform: most recently verified set."""
-    rows = conn.execute(
-        sa.text(
-            "SELECT platform, set_id, verified_at, created_at "
-            "FROM font_set_assets WHERE state = 'verified'"
-        )
-    ).fetchall()
-    by_platform: dict[str, list[tuple[str, str, str]]] = {}
-    for platform, set_id, verified_at, created_at in rows:
-        by_platform.setdefault(platform, []).append(
-            (verified_at or created_at, set_id, set_id)
-        )
-    defaults: dict[str, str] = {}
-    for platform, candidates in by_platform.items():
-        candidates.sort(key=lambda item: (item[0], item[1]))
-        defaults[platform] = candidates[-1][2]
-    return defaults
-
-
-def _blocking_entries(conn, defaults: dict[str, str]) -> list[str]:
+def _blocking_entries(
+    conn, verified: set[tuple[str, str]], defaults: dict[str, str]
+) -> list[str]:
     entries: list[str] = []
     forced = conn.execute(
         sa.text(
@@ -98,15 +84,6 @@ def _blocking_entries(conn, defaults: dict[str, str]) -> list[str]:
             f"profile {profile_id}: gpu_family={gpu_family!r} forces a GPU "
             "vendor, which has no equivalent under the t075 auto policy"
         )
-    verified = {
-        (platform, set_id)
-        for platform, set_id in conn.execute(
-            sa.text(
-                "SELECT platform, set_id FROM font_set_assets "
-                "WHERE state = 'verified'"
-            )
-        ).fetchall()
-    }
     profiles = conn.execute(
         sa.text("SELECT id, fingerprint_platform, font_set_id FROM profiles")
     ).fetchall()
@@ -125,85 +102,14 @@ def _blocking_entries(conn, defaults: dict[str, str]) -> list[str]:
     # Snapshots are readable history, not dead text: a version that
     # cannot be mapped equivalently would come back unbound, dangling
     # or GPU-forced on restore, so the same rules block the upgrade.
-    snapshots = conn.execute(
-        sa.text("SELECT id, profile_id, snapshot FROM profile_config_versions")
-    ).fetchall()
-    for row_id, profile_id, raw in snapshots:
-        try:
-            data = json.loads(raw)
-        except (TypeError, ValueError):
-            entries.append(
-                f"snapshot {row_id} (profile {profile_id}): snapshot JSON "
-                "is corrupt and cannot be rewritten to the new shape"
-            )
-            continue
-        if not isinstance(data, dict):
-            entries.append(
-                f"snapshot {row_id} (profile {profile_id}): snapshot JSON "
-                "is not an object and cannot be rewritten to the new shape"
-            )
-            continue
-        gpu = data.get("gpu_family")
-        if gpu is not None and gpu != "auto":
-            entries.append(
-                f"snapshot {row_id} (profile {profile_id}): gpu_family={gpu!r} "
-                "forces a GPU vendor, which has no equivalent under the "
-                "t075 auto policy"
-            )
-        snap_platform = data.get("fingerprint_platform") or "windows"
-        snap_set = data.get("font_set_id")
-        if snap_set:
-            if (snap_platform, snap_set) not in verified:
-                entries.append(
-                    f"snapshot {row_id} (profile {profile_id}): font_set_id "
-                    f"{snap_set!r} is not a verified {snap_platform} font set"
-                )
-        elif snap_platform not in defaults:
-            entries.append(
-                f"snapshot {row_id} (profile {profile_id}): no font set "
-                f"bound and no verified {snap_platform} font set exists "
-                "to bind"
-            )
+    entries.extend(find_blocking_snapshot_entries(conn, verified, defaults))
     return entries
-
-
-def _rewrite_snapshots(conn, defaults: dict[str, str]) -> None:
-    rows = conn.execute(
-        sa.text("SELECT id, snapshot FROM profile_config_versions")
-    ).fetchall()
-    for row_id, raw in rows:
-        try:
-            data = json.loads(raw)
-        except (TypeError, ValueError):
-            continue
-        if not isinstance(data, dict):
-            continue
-        data.pop("gpu_family", None)
-        if data.get("color_scheme") in (None, "no-preference"):
-            data["color_scheme"] = "light"
-        if "include_cjk_fonts" not in data:
-            # Same effective-exposure rule as the column backfill: the
-            # old fontconfig rejected Chinese fonts only for en-US.
-            data["include_cjk_fonts"] = data.get("locale") != "en-US"
-        if not data.get("font_set_id"):
-            platform = data.get("fingerprint_platform") or "windows"
-            if platform in defaults:
-                data["font_set_id"] = defaults[platform]
-        rewritten = json.dumps(data, ensure_ascii=False)
-        if rewritten != raw:
-            conn.execute(
-                sa.text(
-                    "UPDATE profile_config_versions SET snapshot = :snapshot "
-                    "WHERE id = :row_id"
-                ),
-                {"snapshot": rewritten, "row_id": row_id},
-            )
 
 
 def upgrade() -> None:
     conn = op.get_bind()
-    defaults = _platform_defaults(conn)
-    blocking = _blocking_entries(conn, defaults)
+    verified, defaults = load_verified_catalog(conn)
+    blocking = _blocking_entries(conn, verified, defaults)
     if blocking:
         raise RuntimeError(
             "t075 identity migration blocked; nothing was written. "
@@ -248,7 +154,7 @@ def upgrade() -> None:
             ),
             {"set_id": set_id, "platform": platform},
         )
-    _rewrite_snapshots(conn, defaults)
+    rewrite_profile_config_snapshots(conn, defaults)
 
 
 def downgrade() -> None:

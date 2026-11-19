@@ -1,0 +1,15 @@
+{
+  "tid": "t089",
+  "attempt": 1,
+  "execution_id": "e62a4e9f1cb747c2999a29aac71d7965",
+  "status": "done",
+  "branch": "t089_wrapped_profile_snapshot_identity_migration",
+  "base_sha": "1f949747dc2d93a935aa9ed9448f0bd25b928b1d",
+  "spec_source_sha": "1f949747dc2d93a935aa9ed9448f0bd25b928b1d",
+  "tests": "Round 1 修复后重跑全量非 E2E 门禁 `CBROWSER_RUN_E2E=0 CBROWSER_GATE_WORKERS=2 ./scripts/run_gates.sh` 全部退出 0（`protocol_drift_check`、`requirements_check`、`contract` 389、`unit` 2483、`integration` 229、`design_lint`、`design_check`、`frontend_test` 718、`frontend_build` 全绿；定向 `test_t089_wrapped_snapshot_migration.py`、`test_t089_wrapped_snapshot_recovery.py`、`test_t075_migration.py`、`test_t054_migration.py`、`test_control_migration.py`、`test_t056_migrations.py` 共 42 passed）",
+  "blackbox": "真实 API + Alembic `upgrade head` 路由返回（`/api/v1/profiles/{id}/versions/1`、`/api/v1/internal/supervisor/profiles/{id}/versions/1`、`/api/v1/internal/supervisor/proxies/{proxy_id}/credentials`）与真实 `RecoveryCoordinator._load_profile_config` / `SupervisorCore._resolve_proxy_credentials` 消费经 `ProfileConfig.model_validate` 通过；线上存量库升级将在集成后通过 `deploy.sh` 执行",
+  "review": "Round 2 Code PASS + Test PASS（3/3 AC `TICK-VALID`，零 finding）",
+  "review_scope": "340b259402dc37a9",
+  "pending": [],
+  "findings": []
+}
