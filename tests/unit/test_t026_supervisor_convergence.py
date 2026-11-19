@@ -396,41 +396,12 @@ async def test_stale_registration_timestamp_does_not_defer_replacement_after_bou
     assert "start_stream" in adapter.calls
 
 
-@pytest.mark.asyncio
-async def test_registration_state_is_a_single_per_profile_object(tmp_path):
-    """AC-010: known flag and grace timestamp live in one state object."""
-    adapter = _FakeAdapter(tmp_path)
-    gateway = _FakeGatewayControl()
-    core, session, scan = _make_core(tmp_path, adapter, gateway)
-
-    gateway.registered = True
-    await core._converge_session(PROFILE, session, scan)
-    state = core._registration[PROFILE]
-    assert state.known is True
-    assert state.lost_at is None
-
-    gateway.registered = False
-    await core._converge_session(PROFILE, session, scan)
-    assert core._registration[PROFILE] is state
-    assert state.known is False
-    assert state.lost_at is not None
-
-    # Cleanup point 1: gateway_missing removes the whole object.  The
-    # resolver also falls back to gateway_container_id, so clear both.
-    core.gateway_container_id = None
-    adapter.gateway_id = None
-    await core._converge_session(PROFILE, session, scan)
-    assert PROFILE not in core._registration
-
-    # Cleanup point 2: gateway_unreachable removes the whole object too.
-    adapter.gateway_id = "gw_1"
-    core.gateway_container_id = "gw_stale"
-    gateway.registered = True
-    await core._converge_session(PROFILE, session, scan)
-    assert PROFILE in core._registration
-    gateway.registered = None
-    await core._converge_session(PROFILE, session, scan)
-    assert PROFILE not in core._registration
+# Removed `test_registration_state_is_a_single_per_profile_object` (t091):
+# its second phase asserted that `gateway_unreachable` (registered=True -> None)
+# wiped a live `known=True` registration, which broke Gateway-restart recovery
+# grace (`test_gateway_ac003_media_e2e.py`, p146). Replaced by
+# `tests/unit/test_t091_gateway_restart_grace.py` covering both live `known=True`
+# preservation and stale unconfirmed `known=False` cleanup on the single state object.
 
 
 def test_four_lifecycle_cleanup_points_use_the_single_state_object() -> None:

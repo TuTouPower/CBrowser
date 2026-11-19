@@ -1,7 +1,7 @@
 ---
 slug: gate_verification
 status: active
-tasks: [baseline, t076, t088]
+tasks: [baseline, t076, t088, t091]
 ---
 # 门禁与验证体系
 
@@ -42,9 +42,9 @@ tasks: [baseline, t076, t088]
 - E2E 必跑模式对运行镜像执行 `scripts/verify_image_packages.py`，比对镜像内已安装包集合与依赖锁，不一致即失败。
 - 测试运行对未登记来源的 `DeprecationWarning` 视为错误；仅精确登记忽略第三方来源（httpx per-request cookies、aiohttp bare functions、jsonschema RefResolver）。产品源码弃用用法从根因修正：`HTTP_422_UNPROCESSABLE_CONTENT`、SQLAlchemy `lazy="raise"`、`aiohttp.ClientWSTimeout`、Alembic `path_separator`。
 
-## 7. Supervisor 注册状态（p042 / t044）
+## 7. Supervisor 注册状态（p042 / t044 / t091）
 
-- 注册状态收敛为每 profile 一个 `RegistrationState`（`known` + `lost_at`），四个生命周期清理点（gateway_missing、gateway_unreachable、启动确认注册、clean stop）一次性清除或重置整个对象。profile 停止后同名重启不继承残留恢复宽限，新 Stream 未注册时按未注册路径替换。
+- 注册状态收敛为每 profile 一个 `RegistrationState`（`known` + `lost_at` + `recovery_armed`），四个生命周期清理点（`gateway_missing`、`gateway_unreachable`、启动前清理与 clean stop）统一操作该对象：`gateway_missing` 与 `gateway_unreachable` 边界仅清理未确认恢复的陈旧失活状态（`not known and not recovery_armed`），保留活体已注册会话（`known=True`）与恢复会话（`recovery_armed=True`）在 Gateway 重启期间的 90 秒恢复宽限（与 `runtime_lifecycle.md` 一致）；profile 停止后同名重启仍清除旧状态，不继承残留恢复宽限，新 Stream 未注册时按未注册路径替换。
 
 ## 8. 测试夹具基线（p044 / t044）
 

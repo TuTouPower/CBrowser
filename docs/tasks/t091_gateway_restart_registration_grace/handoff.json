@@ -1,0 +1,15 @@
+{
+  "tid": "t091",
+  "attempt": 1,
+  "execution_id": "82171dc7f4204346b028b41ba497082f",
+  "status": "done",
+  "branch": "t091_gateway_restart_registration_grace",
+  "base_sha": "675c51ca4217adfa6a2cd190e7c05b0c6d69a3be",
+  "spec_source_sha": "675c51ca4217adfa6a2cd190e7c05b0c6d69a3be",
+  "tests": "全量门禁第 1 轮 11/11 suite 通过（证据模式 `run_id=68c50aceb2604a0d96bb9807b9a8064a`，见「全量门禁记录」）。contract 389 tests / 0 fail / 0 err / 1 skip；unit 2489 / 0 / 0 / 13；integration 229 / 0 / 0 / 18；frontend_test 722 cases；e2e 108 / 0 fail / 0 err / 2 skip（106 通过）。",
+  "blackbox": "真实 Docker E2E 全量通过，含 `test_gateway_ac003_media_e2e::test_ac003_dual_chrome_media_inputs_and_gateway_recovery_v2`（41.349s，Gateway SIGKILL→退避→restart→重注册→媒体恢复）；Supervisor 镜像 `sha256:625886a34b34…` 内嵌 t091 修复（三处 `_should_drop_registration_on_gateway_outage`），非旧镜像。",
+  "review": "single 级 `review_general.md` Round 1 零 finding，verdict PASS；`task.py review-status` `overall=PASS / next_action=finalize`。",
+  "review_scope": "7e4684e04a93b502",
+  "pending": [],
+  "findings": []
+}
