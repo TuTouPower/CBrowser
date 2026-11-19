@@ -607,6 +607,7 @@ class BrowserRunner:
             "--remote-debugging-address=127.0.0.1",
             "--autoplay-policy=no-user-gesture-required",
             f"--fingerprint-platform={cfg.fingerprint_platform}",
+            "--fingerprint-noise=false",
             f"--fingerprint-screen-width={width}",
             f"--fingerprint-screen-height={height}",
             # GTK is present only for the file chooser; its IME reads a stale

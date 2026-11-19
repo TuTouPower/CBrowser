@@ -110,6 +110,7 @@
 - **时区 → 语言规则**：中文地区时区集合 `{Asia/Shanghai, Asia/Chongqing, Asia/Urumqi, Asia/Harbin, Asia/Hong_Kong, Asia/Macau, Asia/Taipei}` → `zh-CN`，其余合法时区 → `en-US`；时区为空时语言保持当前值。规则由后端 `domain/profile_locale.py` 的 `locale_for_timezone` 定义，前端 `features/profiles/profile_locale.ts` 逐项镜像，两侧单测保证一致（同一规则来源的两种实现，不存在第三份真相）。
 - **新建默认值**：`humanize` 与 `portable_cookies` 默认开启；其余高级选项默认值不变——`transparent_proxy` / `auto_launch` 关闭，`allow_3p_cookies` / `set_google_default` / `clipboard_sync` / `restore_session` / `capture_preview` 开启。三端一致：后端 `ProfileConfig` / `ProfileCreateRequest` / `ProfileResponse`、ORM（Python 默认 + `server_default`）、前端 `DEFAULT_PROFILE_CREATE_VALUES`；由后端单测与前端提交单测固定。迁移 `0007` 只改 server default，不改写既有 Profile 的已存值。
 - **语言属运行配置**：`locale` 变更生成新 `ProfileConfigVersion`，重启后字体可见性与 `navigator.language` 按新语言生效。`geoip` 默认开启，但语言恒为显式值，不被出口 IP 推断覆盖（CloakBrowser 显式 `locale` 是否优先于出口 IP 推断，仍待真实引擎验证，见 t053 未知契约清单）。
+- **引擎噪声策略**：Runner 关闭 Canvas、WebGL 和音频的引擎注入噪声，保留环境种子与平台字段。网站可读取更稳定的渲染和音频信号，相应的抗跨站关联能力会变化（t086）。
 
 ## 状态同步围栏与最小协调字段（t083）
 

@@ -201,7 +201,7 @@ async def test_ac003_cache_init_and_runner_pinning_fail_closed(
         client.close()
 
 
-def test_ac001_ac002_ac006_real_engine_multicontext_baseline_and_drift_gate(
+def test_ac001_ac002_ac006_real_engine_gate_detects_controlled_timezone_drift(
     tmp_path: Path,
 ) -> None:
     env = require_e2e_env(
@@ -312,8 +312,9 @@ def test_ac001_ac002_ac006_real_engine_multicontext_baseline_and_drift_gate(
     assert notls_diff["upgrade_decision"] == "blocked"
     assert "inconclusive:tls_capture" in notls_diff["blocking_reasons"]
 
-    # Real seed drift -> locatable per-API diffs & blocked direct upgrade (AC-001/AC-002).
-    drift_cfg = dict(win_cfg, fingerprint_seed=333333)
+    # Deliberately change the timezone input to validate drift detection
+    # under the launch policy that disables seed-driven Canvas noise.
+    drift_cfg = dict(win_cfg, timezone="Asia/Tokyo")
     candidate_drift = _run_container_measure(
         image=image,
         engine_cache=engine_cache,
@@ -332,7 +333,11 @@ def test_ac001_ac002_ac006_real_engine_multicontext_baseline_and_drift_gate(
         approved_rules={"tls_extension_shuffle_via_ja4": True},
     )
     assert drift_diff["upgrade_decision"] == "blocked"
-    assert any(
-        d["classification"] == "unapproved_drift" and d["field"] == "canvas2d"
-        for d in drift_diff["diffs"]
-    )
+    assert {
+        (diff["context"], diff["baseline_value"], diff["candidate_value"])
+        for diff in drift_diff["diffs"]
+        if diff["classification"] == "unapproved_drift" and diff["field"] == "timezone"
+    } == {
+        (context, "America/New_York", "Asia/Tokyo")
+        for context in ("main", "iframe", "worker", "service_worker")
+    }

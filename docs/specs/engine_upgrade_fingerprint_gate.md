@@ -1,7 +1,7 @@
 ---
 slug: engine_upgrade_fingerprint_gate
 status: active
-tasks: [baseline]
+tasks: [baseline, t086]
 ---
 # 需求规范：引擎制品固定与本地指纹升级门禁 (engine_upgrade_fingerprint_gate)
 
@@ -38,6 +38,7 @@ tasks: [baseline]
 
 ## 3. 本地指纹基线与差异报告（AC-001）
 
+- t086 统一关闭引擎对 Canvas、WebGL 和音频的噪声注入。Runner 仍传递环境种子和平台，旧读值基线须用同一运行配置重采后再比较。
 - 探针 `cbrowser-fp-probe/v1`（`src/backend/cbrowser/fingerprint_verification/`）
     复用生产 `BrowserRunner` + 离线 CDP/字体探测，在真实 Docker 容器内访问同机
     受控 HTTPS 服务（TLS `MSG_PEEK` 抓 `ClientHello` 计算 JA3/JA4）。

@@ -278,6 +278,11 @@ async def test_browser_runner_passes_sdk_proxy_kwarg_and_hardening_flags(
     try:
         assert captured["proxy"] == "http://alice:p%40ss%3Aw%3Drd%251%21%2F%23%3F@203.0.113.20:18080"
         args = captured["args"]
+        assert [arg for arg in args if arg.startswith("--fingerprint-noise=")] == [
+            "--fingerprint-noise=false"
+        ]
+        assert f"--fingerprint={cfg.fingerprint_seed}" in args
+        assert "--fingerprint-platform=windows" in args
         assert not any(a.startswith("--proxy-server=") for a in args)
         for flag in PROXY_HARDENING_ARGS:
             assert flag in args

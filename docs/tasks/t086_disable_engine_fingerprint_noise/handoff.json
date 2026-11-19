@@ -1,0 +1,15 @@
+{
+  "tid": "t086",
+  "attempt": 2,
+  "execution_id": "23727aa68cb848baa96a6185cc48e970",
+  "status": "done",
+  "branch": "t086_disable_engine_fingerprint_noise",
+  "base_sha": "ca50c816a1c8b35831040f2f533343486831f2ee",
+  "spec_source_sha": "ca50c816a1c8b35831040f2f533343486831f2ee",
+  "tests": "契约、单元、集成、依赖、协议、设计及前端各套件退出 0。替换后的 t068 E2E 复跑通过。",
+  "blackbox": "候选镜像生产 Runner 两次启动均返回准确像素和音频样本。全量 E2E 首批 14 项失败全部在旧部署镜像复现，已停止剩余串行复跑。夹具缺陷见 p145。",
+  "review": "Round 2 PASS，两个 AC 独立复验，零 finding。",
+  "review_scope": "6d2552d13fab8b3f",
+  "pending": [],
+  "findings": []
+}
