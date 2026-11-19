@@ -1,7 +1,10 @@
 ---
 pid: "p148"
 slug: "runtime_download_e2e_partial_file_race"
-status: "todo"
+status: "closed"
+resolution: "transferred"
+reason: "已确认完成路径和下载夹具断言之间的竞态并转交任务"
+fix_ref: "t093"
 ---
 # p148 下载 E2E 提前把 Chromium 临时文件判为完成
 
@@ -10,4 +13,4 @@ status: "todo"
 - 根因：第一个下载路径使用 `glob("*")` 把文件出现作为完成条件，Chrome 在内容写入完毕前就会暴露临时路径。后续下载虽然匹配内容，仍在目录枚举和读取的间隔暴露于临时文件重命名。现有生产下载扫描排除临时后缀。
 - 测试缺口：以完成事件关联路径与实际内容验证下载。分别覆盖临时文件先出现、最终文件重命名和转发清理，确保断言落在完成产物。
 - 线索：`.scratch/t091_all_gates/junit/e2e.xml` 原失败、`.scratch/t091_failed_e2e_recheck_eCHRtV/junit.xml` 同镜像复跑证据。
-- 处理：未开
+- 处理：t093；resolution=transferred；reason=已确认完成路径和下载夹具断言之间的竞态并转交任务
