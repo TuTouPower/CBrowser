@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -217,6 +218,7 @@ def test_selected_engine_cache_and_runner_build_match(
 
     monkeypatch.setattr(harness, "TARGET_ENGINE_VERSION", "146.0.7680.177.3")
     monkeypatch.setenv("CBROWSER_T029_ENGINE_CACHE", str(tmp_path))
+    monkeypatch.setenv("CBROWSER_T029_FONT_SET_ID", "a" * 32)
     binary = tmp_path / "chromium-146.0.7680.177.3" / "chrome"
     binary.parent.mkdir()
     binary.write_bytes(b"probe")
@@ -234,6 +236,18 @@ def test_selected_engine_cache_and_runner_build_match(
         engine_cache_dir=tmp_path,
     )
     assert runner.engine_build == "146.0.7680.177.3"
+
+
+def test_probe_snapshot_binds_selected_font_set(tmp_path, monkeypatch):
+    from automation_probe.harness import write_profile_snapshot
+
+    font_set_id = "b" * 32
+    monkeypatch.setenv("CBROWSER_T029_FONT_SET_ID", font_set_id)
+
+    snapshot = write_profile_snapshot(tmp_path, profile_id="p1", seed=290029)
+    config = json.loads(snapshot.read_text())["config"]
+    assert config["fingerprint_platform"] == "windows"
+    assert config["font_set_id"] == font_set_id
 
 
 def test_container_probe_retains_production_display_and_window_setup(monkeypatch):

@@ -70,11 +70,39 @@ class ProbeVerdict:
         }
 
 
+def select_probe_font_set(fonts_root: str) -> Path | None:
+    if not fonts_root:
+        return None
+
+    from cbrowser.font_sets import (
+        compute_set_id,
+        get_font_set,
+        list_font_sets,
+        pick_default_font_set,
+    )
+
+    root = Path(fonts_root).resolve()
+    candidates = []
+    for item in list_font_sets(root):
+        if item["platform"] != "windows" or not item["integrity"]["ok"]:
+            continue
+        resolved = get_font_set("windows", item["set_id"], root)
+        if resolved is None:
+            continue
+        _, manifest = resolved
+        if compute_set_id(manifest.get("files", [])) != item["set_id"]:
+            continue
+        candidates.append(item)
+    set_id = pick_default_font_set(candidates, "windows")
+    return root / "windows" / set_id if set_id else None
+
+
 def preflight_problems(
     *,
     image_id: str | None,
     image_os_arch: str | None,
     engine_present: bool,
+    font_set_present: bool,
     xvfb_present: bool,
     permissions_ok: bool,
     report_dir_empty: bool,
@@ -89,6 +117,8 @@ def preflight_problems(
         )
     if not engine_present:
         problems.append("selected target engine executable missing")
+    if not font_set_present:
+        problems.append("verified Windows font set missing from CBROWSER_E2E_FONTS_DIR")
     if not xvfb_present:
         problems.append("Xvfb unavailable in probe image")
     if not permissions_ok:
@@ -145,7 +175,8 @@ def evaluate_evidence(
     for problem in preflight_problems(
         image_id=identity.get("id"),
         image_os_arch=f"{identity.get('os')}/{identity.get('architecture')}",
-        engine_present=True, xvfb_present=True, permissions_ok=True, report_dir_empty=True,
+        engine_present=True, font_set_present=True, xvfb_present=True,
+        permissions_ok=True, report_dir_empty=True,
         expected_platform=expected_platform,
     ):
         reasons.append(f"image_identity: {problem}")
@@ -256,7 +287,8 @@ def main(argv: list[str] | None = None) -> int:
     preflight = preflight_problems(
         image_id=identity.get("id"),
         image_os_arch=f"{identity.get('os')}/{identity.get('architecture')}",
-        engine_present=True, xvfb_present=True, permissions_ok=True, report_dir_empty=True,
+        engine_present=True, font_set_present=True, xvfb_present=True,
+        permissions_ok=True, report_dir_empty=True,
         expected_platform=args.expected_platform,
     )
     verdict = evaluate_evidence(

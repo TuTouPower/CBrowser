@@ -886,6 +886,8 @@ def write_profile_snapshot(
         "config": {
             "name": f"Probe {profile_id}",
             "fingerprint_seed": seed,
+            "fingerprint_platform": "windows",
+            "font_set_id": os.environ["CBROWSER_T029_FONT_SET_ID"],
             "screen_width": width,
             "screen_height": height,
             "timezone": "UTC",

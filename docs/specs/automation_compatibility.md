@@ -1,13 +1,15 @@
 ---
 slug: automation_compatibility
 status: active
-tasks: [baseline]
+tasks: [baseline, t092]
 ---
 # 需求规范：自动化兼容性基线（t029 探针结论）
 
 本文记录 t029 探针在云端取得的实测基线：目标引擎为 `cloakbrowser==0.6.4` 下载的 CloakBrowser linux-x64 二进制（146.0.7680.177.5），生产 launch args、固定 seed 290029、视口 1280x800、Xvfb 有头；普通 Chromium（Chrome for Testing 156）只用于验证探针机制与链路语义，不作为目标引擎结论。真实 arm64 镜像、容器化 X11/Stream 与真实 Mac Chrome Viewer 的复核由 t032 用同一探针执行，结论冲突时以 t032 为准。
 
 探针组成（`tests/fixtures/automation_probe/`）：观测页与信号采集（`harness.py`）、外部客户端（`probe_client.py`，matrix/hold/raw_hold/dialog/input 五种模式）、L0–L6 采样驱动（`run_levels.py`）、全链集成测试（`tests/integration/test_automation_probe_chain.py`）、t032 复核入口（`tests/e2e/test_automation_compatibility_probe_e2e.py`，`CBROWSER_T029_PROBE_E2E=1` 门控）。报告格式 `automation-probe-report/v1`，含 toolchain 版本、预登记阈值与脱敏后的字段样本；报告不含任何 token 真值。
+
+独立真实引擎探针从 `CBROWSER_E2E_FONTS_DIR` 选取通过 manifest 完整性校验的默认 Windows 字体集。探针容器只读挂载该字体集，真实 BrowserRunner 快照绑定同一集合。缺少有效资产时，必跑模式预检失败。
 
 ## 正式通路与候选矩阵（AC-001/AC-003）
 
