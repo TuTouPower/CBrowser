@@ -1405,6 +1405,42 @@ print(json.dumps({
             shutil.rmtree(dir_work, ignore_errors=True)
 
 
+async def wait_for_captured_download(
+    container: str,
+    directory: Path,
+    filename: str,
+    content: bytes,
+    *,
+    timeout: float,
+) -> tuple[Path, dict[str, Any], list[dict[str, Any]]]:
+    async def observe():
+        status, history = await asyncio.to_thread(
+            uds_http, container, "GET", "/events/downloads"
+        )
+        assert status == 200
+        completed = [
+            event for event in history
+            if event["state"] == "completed" and event["suggested_filename"] == filename
+        ]
+        if not completed:
+            return None
+        (event,) = completed
+        path = directory / Path(event["download_path"]).name
+        assert event["download_path"] == f"/exchange/downloads/{event['guid']}"
+        return (path, event, history) if path.is_file() else None
+
+    download = await poll_until(
+        observe,
+        lambda observation: observation is not None,
+        timeout=timeout,
+        interval=0.2,
+        description=f"completed download {filename}",
+    )
+    assert download is not None
+    assert download[0].read_bytes() == content
+    return download
+
+
 @pytest.mark.asyncio
 async def test_ac004_download_capture_and_recovery(http_server: str) -> None:
     """AC-004: HTTP download capture and recovery after disconnect."""
@@ -1456,19 +1492,9 @@ async def test_ac004_download_capture_and_recovery(http_server: str) -> None:
         exec_uds_cdp(c_name, dl1_script)
 
         dl_dir = dir_work / "downloads"
-        found_file1 = None
-        for _ in range(30):
-            files = list(dl_dir.glob("*"))
-            if files:
-                found_file1 = files[0]
-                break
-            await asyncio.sleep(0.5)
-
-        assert found_file1 is not None, (
-            "First download did not land in /exchange/downloads!"
-        )
-        assert (
-            b"E2E_VERIFICATION_CONTENT_FIRST_DOWNLOAD_11111" in found_file1.read_bytes()
+        await wait_for_captured_download(
+            c_name, dl_dir, "download-1.txt",
+            b"E2E_VERIFICATION_CONTENT_FIRST_DOWNLOAD_11111", timeout=15,
         )
 
         # The first client disconnect must have rearmed capture before we
@@ -1531,24 +1557,10 @@ async def test_ac004_download_capture_and_recovery(http_server: str) -> None:
 
         # Confirm the intermediate download was still captured by the Agent in
         # the default directory, and nothing leaked into the attempted target.
-        intermediate_payload = (
-            b"E2E_VERIFICATION_CONTENT_INTERMEDIATE_DOWNLOAD_OVERRIDE_ACTIVE"
-        )
-        mid_file = None
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline:
-            for candidate in dl_dir.glob("*"):
-                if (
-                    candidate.is_file()
-                    and candidate.read_bytes() == intermediate_payload
-                ):
-                    mid_file = candidate
-                    break
-            if mid_file is not None:
-                break
-            await asyncio.sleep(0.2)
-        assert mid_file is not None, (
-            "Intermediate download was not captured in /exchange/downloads!"
+        await wait_for_captured_download(
+            c_name, dl_dir, "download-intermediate.txt",
+            b"E2E_VERIFICATION_CONTENT_INTERMEDIATE_DOWNLOAD_OVERRIDE_ACTIVE",
+            timeout=10,
         )
         current_default_files = [f for f in dl_dir.glob("*") if f.is_file()]
         assert len(current_default_files) == 2, (
@@ -1601,48 +1613,11 @@ async def test_ac004_download_capture_and_recovery(http_server: str) -> None:
 """
         exec_uds_cdp(c_name, dl2_script)
 
-        second_payload = b"E2E_VERIFICATION_CONTENT_SECOND_DOWNLOAD_22222"
-        found_file2 = None
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            for candidate in dl_dir.glob("*"):
-                if candidate.is_file() and candidate.read_bytes() == second_payload:
-                    found_file2 = candidate
-                    break
-            if found_file2 is not None:
-                break
-            await asyncio.sleep(0.5)
-
-        assert found_file2 is not None, (
-            "Second download did not recover to /exchange/downloads!"
-        )
-
-        # Event storage is append-only: begin and completion records have distinct
-        # IDs and share a GUID. Require the matching completion, independent of
-        # directory/name order, and verify its physical file and byte count.
-        deadline = time.monotonic() + 10
-        second_event = None
-        while time.monotonic() < deadline:
-            code_dls, dl_events = uds_http(c_name, "GET", "/events/downloads")
-            assert code_dls == 200
-            completed = [
-                event
-                for event in dl_events
-                if event["guid"] == found_file2.name
-                and event["state"] == "completed"
-                and event["suggested_filename"] == "download-2.txt"
-            ]
-            if completed:
-                assert len(completed) == 1
-                second_event = completed[0]
-                break
-            await asyncio.sleep(0.2)
-        assert second_event is not None, "Second download completion was not persisted"
-        assert (
-            second_event["download_path"] == f"/exchange/downloads/{found_file2.name}"
-        )
+        # Match the completion and begin records for the same download GUID.
         expected = b"E2E_VERIFICATION_CONTENT_SECOND_DOWNLOAD_22222"
-        assert found_file2.read_bytes() == expected
+        _, second_event, dl_events = await wait_for_captured_download(
+            c_name, dl_dir, "download-2.txt", expected, timeout=40,
+        )
         assert second_event["received_bytes"] == len(expected)
         assert second_event["total_bytes"] == len(expected)
         matching_begin = [
@@ -1676,8 +1651,6 @@ async def test_t008_download_reconcile_after_agent_restart(
     uploads = artifact_root / profile_id / "uploads"
     uploads.mkdir(parents=True, exist_ok=True)
     (uploads / "visible.txt").write_text("upload-visible", encoding="utf-8")
-    events_dir = dir_work / "runtime-events" / profile_id / "events" / "downloads"
-
     snap_file = dir_work / "snapshot.json"
     create_snapshot_file(
         snap_file,
@@ -1832,27 +1805,10 @@ async def test_t008_download_reconcile_after_agent_restart(
         print("RESULT:" + json.dumps({{"status": "ok"}}))
 """,
         )
-        deadline = time.monotonic() + 15
-        while time.monotonic() < deadline:
-            if [f for f in downloads.glob("*") if f.is_file()]:
-                break
-            await asyncio.sleep(0.5)
-        downloaded = [f for f in downloads.glob("*") if f.is_file()]
-        assert downloaded, "download missing"
-
-        deadline = time.monotonic() + 15
-        while time.monotonic() < deadline:
-            completed = [
-                json.loads(path.read_text(encoding="utf-8"))
-                for path in events_dir.glob("*.json")
-            ]
-            completed = [
-                event for event in completed if event.get("state") == "completed"
-            ]
-            if completed:
-                break
-            await asyncio.sleep(0.5)
-        assert completed, "completed download event missing"
+        downloaded, _, _ = await wait_for_captured_download(
+            c_name, downloads, "download-1.txt",
+            b"E2E_VERIFICATION_CONTENT_FIRST_DOWNLOAD_11111", timeout=30,
+        )
         forwarder = DownloadArtifactForwarder(dir_work, forwarder_client)
         assert await forwarder.forward_pending() >= 1
         artifacts = await artifact_list()
@@ -1865,7 +1821,7 @@ async def test_t008_download_reconcile_after_agent_restart(
                 b"E2E_VERIFICATION_CONTENT_FIRST_DOWNLOAD_11111"
             ).hexdigest()
         )
-        assert not downloaded[0].exists()
+        assert not downloaded.exists()
 
         stop_and_rm_container(c_name)
         manual_payload = b"manual-download-without-event"
