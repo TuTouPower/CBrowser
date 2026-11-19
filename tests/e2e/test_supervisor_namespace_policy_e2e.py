@@ -49,9 +49,14 @@ import docker
 import pytest
 
 from e2e_env import require_e2e_env
+from e2e_volumes import (
+    ContainerPolicyAgentClient,
+    init_prefix_volumes,
+    policy_agent_socket_mount,
+    remove_prefix_volumes,
+)
 from cbrowser.supervisor.container_spec import policy_agent_environment
 from cbrowser.supervisor.network_policy import NetworkPolicySpec
-from cbrowser.supervisor.policy_agent_client import PolicyAgentClient
 from cbrowser.supervisor.policy_agent_protocol import PolicyAgentIdentity
 
 pytestmark = [pytest.mark.serial, pytest.mark.e2e_images('CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_SUPERVISOR_TEST_IMAGE')]
@@ -92,10 +97,11 @@ def docker_client() -> docker.DockerClient:
 
 
 @pytest.fixture
-def resource_tracker():
-    """Tracks created containers and networks for deterministic cleanup."""
+def resource_tracker(docker_client: docker.DockerClient):
+    """Tracks created containers, networks, and volume prefixes for cleanup."""
     containers: list[docker.models.containers.Container] = []
     networks: list[docker.models.networks.Network] = []
+    volume_prefixes: list[str] = []
 
     class Tracker:
         def register_container(
@@ -109,6 +115,10 @@ def resource_tracker():
         ) -> docker.models.networks.Network:
             networks.append(network)
             return network
+
+        def register_volume_prefix(self, prefix: str) -> None:
+            if prefix not in volume_prefixes:
+                volume_prefixes.append(prefix)
 
     tracker = Tracker()
     yield tracker
@@ -134,6 +144,9 @@ def resource_tracker():
             pass
         except Exception as exc:  # noqa: BLE001
             logger.debug("Network remove error: %s", type(exc).__name__)
+
+    for vp in reversed(volume_prefixes):
+        remove_prefix_volumes(docker_client, vp)
 
 
 def test_startup_gate_subprocess_sentinel(tmp_path: Path) -> None:
@@ -326,16 +339,17 @@ def _start_policy_agent(
     image: str,
     prefix: str,
     target: docker.models.containers.Container,
-    socket_root: Path,
-) -> PolicyAgentClient:
+    socket_root: Path | None = None,
+) -> ContainerPolicyAgentClient:
     """Start the target's persistent Policy Agent and return its client.
 
     Mirrors the production creation shape (docker_adapter): policy
     image, NET_ADMIN only, read-only root, the target's netns, and a
-    single bind mount carrying only this Agent's socket directory.
+    single named-volume subpath carrying only this Agent's socket directory.
     """
-    socket_dir = socket_root / f"agent-{prefix}"
-    socket_dir.mkdir(parents=True, exist_ok=True)
+    del socket_root
+    init_prefix_volumes(docker_client, prefix, image, roles=("runtime",))
+    resource_tracker.register_volume_prefix(prefix)
     identity = PolicyAgentIdentity(
         deployment_id="e2e",
         profile_id=f"e2e-{prefix}",
@@ -363,25 +377,23 @@ def _start_policy_agent(
                 role=identity.role,
                 target_container_id=identity.target_container_id,
             ),
-            volumes={
-                str(socket_dir): {
-                    "bind": "/run/cbrowser_policy_agent",
-                    "mode": "rw",
-                }
-            },
+            mounts=[policy_agent_socket_mount(prefix)],
             detach=True,
         )
     )
     agent.start()
-    socket_path = socket_dir / "agent.sock"
-    deadline = time.monotonic() + 15.0
-    while not socket_path.exists():
-        if time.monotonic() > deadline:
-            logs = agent.logs().decode("utf-8", errors="replace")
-            raise TimeoutError(f"Policy Agent socket never appeared: {logs}")
-        time.sleep(0.05)
-    client = PolicyAgentClient(socket_path, identity, timeout=10.0)
-    health = client.health()
+    client = ContainerPolicyAgentClient(
+        docker_client,
+        prefix,
+        image,
+        identity,
+        timeout=10.0,
+    )
+    try:
+        health = client.wait_ready_health(timeout_sec=15.0)
+    except TimeoutError as exc:
+        logs = agent.logs().decode("utf-8", errors="replace")
+        raise TimeoutError(f"{exc}: {logs}") from None
     assert health.get("identity") == identity.model_dump(mode="json")
     return client
 

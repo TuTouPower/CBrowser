@@ -23,6 +23,7 @@ class LabelLookupError(RuntimeError):
 class CleanupPlan:
     containers: frozenset[str]
     networks: frozenset[str]
+    volumes: frozenset[str] = frozenset()
 
 
 def run_has_ended(run_id: str, runs_dir: Path) -> bool:
@@ -46,6 +47,8 @@ def select_cleanup_targets(
     container_labels: dict[str, dict[str, str]] | None = None,
     network_labels: dict[str, dict[str, str]] | None = None,
     runs_dir: Path | None = None,
+    volume_names: list[str] | None = None,
+    volume_labels: dict[str, dict[str, str]] | None = None,
 ) -> CleanupPlan:
     def ended(name, labels):
         return runs_dir is not None and run_has_ended(
@@ -55,6 +58,7 @@ def select_cleanup_targets(
     return CleanupPlan(
         frozenset(n for n in container_names if ended(n, container_labels)),
         frozenset(n for n in network_names if ended(n, network_labels)),
+        frozenset(n for n in (volume_names or []) if ended(n, volume_labels)),
     )
 
 
@@ -62,6 +66,8 @@ def collect_targets(client: Any, runs_dir: Path | None = None) -> CleanupPlan:
     try:
         containers = client.containers.list(all=True, sparse=True)
         networks = client.networks.list()
+        volumes_api = getattr(client, "volumes", None)
+        volumes = volumes_api.list() if volumes_api is not None else []
         container_labels = {
             c.id: dict(
                 c.attrs.get("Labels", c.attrs.get("Config", {}).get("Labels")) or {}
@@ -69,6 +75,10 @@ def collect_targets(client: Any, runs_dir: Path | None = None) -> CleanupPlan:
             for c in containers
         }
         network_labels = {n.id: dict(n.attrs.get("Labels") or {}) for n in networks}
+        volume_labels = {
+            v.name: dict((getattr(v, "attrs", None) or {}).get("Labels") or {})
+            for v in volumes
+        }
     except Exception as exc:
         raise LabelLookupError(f"resource ownership lookup failed: {exc}") from exc
     return select_cleanup_targets(
@@ -77,6 +87,8 @@ def collect_targets(client: Any, runs_dir: Path | None = None) -> CleanupPlan:
         container_labels,
         network_labels,
         runs_dir,
+        list(volume_labels),
+        volume_labels,
     )
 
 
@@ -95,6 +107,13 @@ def run_cleanup(client: Any, runs_dir: Path | None = None) -> CleanupPlan:
             client.networks.get(name).remove()
         except NotFound:
             continue
+    volumes_api = getattr(client, "volumes", None)
+    if volumes_api is not None:
+        for name in sorted(plan.volumes):
+            try:
+                volumes_api.get(name).remove(force=True)
+            except NotFound:
+                continue
     return plan
 
 
@@ -116,9 +135,10 @@ def main() -> int:
         logger.error("gate cleanup failed: %s", exc)
         return 1
     logger.info(
-        "gate cleanup: removed %d containers, %d networks",
+        "gate cleanup: removed %d containers, %d networks, %d volumes",
         len(plan.containers),
         len(plan.networks),
+        len(plan.volumes),
     )
     return 0
 

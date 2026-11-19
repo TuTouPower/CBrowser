@@ -17,7 +17,6 @@ import json
 import logging
 import os
 import secrets
-import shutil
 import socket
 import stat
 import uuid
@@ -25,13 +24,23 @@ from pathlib import Path
 
 import aiohttp
 import docker
+from docker.types import Mount
 import httpx
 import pytest
 
-from e2e_env import require_e2e_env
+from e2e_env import require_e2e_env, worker_resource_offsets
+from e2e_volumes import (
+    api_volume_mounts,
+    init_prefix_volumes,
+    prepare_minimal_e2e_fonts_root,
+    remove_prefix_volumes,
+    supervisor_volume_mounts,
+)
 from wait import poll_until
+from supervisor_recovery_probe.offline_fixture import sync_supervisor_state_notice
 from cbrowser.shared.endpoints import DEFAULT_GATEWAY_PORT
 from cbrowser.shared.viewer_grants import ViewerGrantAuthority
+from cbrowser.supervisor.storage_layout import volume_name
 
 from api_auth import create_auth_context
 
@@ -81,28 +90,12 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
     data = tmp_path / "data"
     data.mkdir(parents=True)
     # The whole tree is confined under a 0o700 parent (t024 AC-014/A43):
-    # the data subdirectories are bind-mounted into containers running as
-    # other uids and therefore stay group/other-writable, but no path
-    # component above them is traversable by unrelated local users.
+    # secrets are mounted read-only into containers and runtime storage lives
+    # inside Docker named volumes matching production compose.yaml.
     data.chmod(0o700)
     control = data / "control"
     control.mkdir(parents=True)
     control.chmod(0o700)
-    for name in (
-        "profiles",
-        "runtime",
-        "runtime-events",
-        "artifacts",
-        "spool",
-        "sockets",
-    ):
-        (data / name).mkdir(parents=True, exist_ok=True)
-        (data / name).chmod(0o777)
-    cache = data / "engine_cache"
-    shutil.copytree(os.environ["CBROWSER_RUNTIME_ENGINE_CACHE"], cache)
-    shutil.copytree(
-        os.environ["CBROWSER_RUNTIME_GEOIP_CACHE"], cache / "geoip", dirs_exist_ok=True
-    )
     keys = {}
     for name in ("supervisor", "agent", "gateway", "gateway_api", "viewer_grant"):
         key = control / (name + "_key")
@@ -111,9 +104,10 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
         assert stat.S_IMODE(key.stat().st_mode) == 0o600
         keys[name] = key
     headers = {"Authorization": "Bearer " + keys["supervisor"].read_text()}
-    metadata = tmp_path / "api_metadata"
-    metadata.mkdir()
-    metadata.chmod(0o777)
+    instance_id = (
+        os.environ.get("CBROWSER_INSTANCE_ID")
+        or worker_resource_offsets()["CBROWSER_INSTANCE_ID"]
+    )
     edge = None
     viewer = None
     stop_task = None
@@ -123,6 +117,21 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
         assert value.startswith("sha256:")
         client.images.get(value)
         return value
+
+    fonts_root, _ = prepare_minimal_e2e_fonts_root(
+        tmp_path / "e2e_fonts",
+        browser_image=image("CBROWSER_RUNTIME_TEST_IMAGE"),
+        docker_client=client,
+    )
+    init_prefix_volumes(
+        client,
+        prefix,
+        image("CBROWSER_SUPERVISOR_TEST_IMAGE"),
+        engine_cache_src=Path(os.environ["CBROWSER_RUNTIME_ENGINE_CACHE"]),
+        geoip_cache_src=Path(os.environ["CBROWSER_RUNTIME_GEOIP_CACHE"]),
+        fonts_root_src=fonts_root,
+        extra_labels={"com.cbrowser.instance-id": instance_id},
+    )
 
     def run(role, image_id, **kwargs):
         container = client.containers.run(
@@ -138,7 +147,7 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                 "com.cbrowser.prefix": prefix,
                 "com.cbrowser.managed-by": "supervisor",
                 "com.cbrowser.role": role,
-                "com.cbrowser.instance-id": os.environ["CBROWSER_INSTANCE_ID"],
+                "com.cbrowser.instance-id": instance_id,
             },
             **kwargs,
         )
@@ -158,28 +167,43 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
             "api",
             image("CBROWSER_API_TEST_IMAGE"),
             environment={
-                "CBROWSER_DB_PATH": "/metadata/control.db",
+                "CBROWSER_DB_PATH": "/data/db/control.db",
+                "CBROWSER_DATA_ROOT": "/data",
+                "CBROWSER_FONTS_DIR": "/fonts",
                 "CBROWSER_SUPERVISOR_TOKEN_FILE": "/run/secrets/key",
                 "CBROWSER_GATEWAY_API_TOKEN_FILE": "/run/secrets/gateway_api",
                 "CBROWSER_ADMIN_PASSWORD_FILE": "/run/secrets/admin_pass",
                 "CBROWSER_VIEWER_GRANT_KEY_FILE": "/run/secrets/viewer_grant_key",
             },
-            volumes={
-                str(metadata): {"bind": "/metadata", "mode": "rw"},
-                str(keys["supervisor"]): {"bind": "/run/secrets/key", "mode": "ro"},
-                str(keys["gateway_api"]): {
-                    "bind": "/run/secrets/gateway_api",
-                    "mode": "ro",
-                },
-                str(auth_ctx.admin_password_file): {
-                    "bind": "/run/secrets/admin_pass",
-                    "mode": "ro",
-                },
-                str(keys["viewer_grant"]): {
-                    "bind": "/run/secrets/viewer_grant_key",
-                    "mode": "ro",
-                },
-            },
+            mounts=api_volume_mounts(
+                prefix,
+                extra_mounts=[
+                    Mount(
+                        target="/run/secrets/key",
+                        source=str(keys["supervisor"]),
+                        type="bind",
+                        read_only=True,
+                    ),
+                    Mount(
+                        target="/run/secrets/gateway_api",
+                        source=str(keys["gateway_api"]),
+                        type="bind",
+                        read_only=True,
+                    ),
+                    Mount(
+                        target="/run/secrets/admin_pass",
+                        source=str(auth_ctx.admin_password_file),
+                        type="bind",
+                        read_only=True,
+                    ),
+                    Mount(
+                        target="/run/secrets/viewer_grant_key",
+                        source=str(keys["viewer_grant"]),
+                        type="bind",
+                        read_only=True,
+                    ),
+                ],
+            ),
             ports={"8000/tcp": ("127.0.0.1", api_host_port)},
         )
         gateway = run(
@@ -227,26 +251,39 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
         gateway_ip = gateway.attrs["NetworkSettings"]["Networks"][edge.name][
             "IPAddress"
         ]
-        mounts = {
-            str(data / name): {"bind": str(data / name), "mode": "rw"}
-            for name in (
-                "engine_cache",
-                "profiles",
-                "runtime",
-                "runtime-events",
-                "artifacts",
-                "spool",
-                "control",
-                "sockets",
-            )
-        }
-        mounts["/var/run/docker.sock"] = {"bind": "/var/run/docker.sock", "mode": "ro"}
+        sup_mounts = supervisor_volume_mounts(
+            prefix,
+            data_root="/data",
+            socket_root="/run/cb/socks",
+            policy_agent_root="/run/cb/policy-agents",
+            fonts_root="/fonts",
+            extra_mounts=[
+                Mount(
+                    target="/run/secrets/supervisor_key",
+                    source=str(keys["supervisor"]),
+                    type="bind",
+                    read_only=True,
+                ),
+                Mount(
+                    target="/run/secrets/agent_key",
+                    source=str(keys["agent"]),
+                    type="bind",
+                    read_only=True,
+                ),
+                Mount(
+                    target="/run/secrets/gateway_key",
+                    source=str(keys["gateway"]),
+                    type="bind",
+                    read_only=True,
+                ),
+            ],
+        )
         supervisor = run(
             "supervisor",
             image("CBROWSER_SUPERVISOR_TEST_IMAGE"),
             cap_add=["FOWNER", "DAC_OVERRIDE", "CHOWN"],
             environment={
-                "CBROWSER_INSTANCE_ID": os.environ["CBROWSER_INSTANCE_ID"],
+                "CBROWSER_INSTANCE_ID": instance_id,
                 "CBROWSER_BROWSER_IMAGE": image("CBROWSER_RUNTIME_TEST_IMAGE"),
                 "CBROWSER_STREAM_IMAGE": image("CBROWSER_STREAM_TEST_IMAGE"),
                 "CBROWSER_NETWORK_POLICY_IMAGE": image(
@@ -261,22 +298,31 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                 "CBROWSER_MEDIA_SUBNET_POOL": os.environ.get(
                     "CBROWSER_E2E_MEDIA_POOL", "10.251.0.0/16"
                 ),
+                "CBROWSER_DATA_ROOT": "/data",
+                "CBROWSER_SOCKET_ROOT": "/run/cb/socks",
+                "CBROWSER_POLICY_AGENT_ROOT": "/run/cb/policy-agents",
+                "CBROWSER_ENGINE_CACHE": "/data/engine-cache",
+                "CBROWSER_GEOIP_CACHE": "/data/engine-cache/geoip",
+                "CBROWSER_FONTS_DIR": "/fonts",
+                "CBROWSER_MANAGE_OWNERSHIP": "1",
             },
-            volumes=mounts,
+            mounts=sup_mounts,
             ports={"8005/tcp": ("127.0.0.1", None)},
             command=[
                 "--api-url",
                 f"http://{api_ip}:8000",
                 "--data-root",
-                str(data),
+                "/data",
                 "--engine-cache",
-                str(cache),
+                "/data/engine-cache",
+                "--geoip-cache",
+                "/data/engine-cache/geoip",
                 "--token-file",
-                str(keys["supervisor"]),
+                "/run/secrets/supervisor_key",
                 "--agent-key-file",
-                str(keys["agent"]),
+                "/run/secrets/agent_key",
                 "--gateway-token-file",
-                str(keys["gateway"]),
+                "/run/secrets/gateway_key",
                 "--gateway-control-url",
                 f"http://{gateway_ip}:{DEFAULT_GATEWAY_PORT}",
                 "--gateway-port",
@@ -303,6 +349,15 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
             ) as sup_http,
             aiohttp.ClientSession() as viewer_http,
         ):
+            for _ in range(100):
+                font_resp = await api_http.get("/api/v1/font-sets")
+                if font_resp.status_code == 200 and (
+                    (font_resp.json().get("default_font_set_id") or {}).get("windows")
+                ):
+                    break
+                await asyncio.sleep(0.15)
+            else:
+                raise AssertionError("API font catalog did not adopt default windows font set")
             assert (
                 await sup_http.get(
                     "/supervisor/v1/health", headers={"Authorization": "Bearer wrong"}
@@ -321,6 +376,7 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                         json={"desired_state": "running"},
                     )
                 ).status_code == 200
+            await sync_supervisor_state_notice(api_http, sup_http, api_headers=headers)
             ordered = sorted(profiles)
             started = await asyncio.gather(
                 *[
@@ -410,9 +466,26 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                         if mount["Destination"] == "/run/cbrowser_policy"
                     )
                     assert gate_mount["RW"] is False
-                    gate = Path(gate_mount["Source"])
-                    assert gate.is_relative_to(data / "control" / "gates" / profile)
-                    assert json.loads((gate / "ready.json").read_text()) == {
+                    assert gate_mount["Type"] == "volume"
+                    assert gate_mount["Name"] == volume_name(prefix, "runtime")
+                    gate_host_mount = next(
+                        mount
+                        for mount in box.attrs["HostConfig"]["Mounts"]
+                        if mount["Target"] == "/run/cbrowser_policy"
+                    )
+                    gate_subpath = (
+                        (gate_host_mount.get("VolumeOptions") or {}).get("Subpath")
+                        or ""
+                    )
+                    assert gate_subpath.startswith(
+                        f"gates/{profile}/{session['runtime_instance_id']}/{role}_"
+                    ), gate_subpath
+                    gate_rel = gate_subpath.removeprefix("gates/")
+                    gate_res = supervisor.exec_run(
+                        ["cat", f"/data/control/gates/{gate_rel}/ready.json"]
+                    )
+                    assert gate_res.exit_code == 0, gate_res.output
+                    assert json.loads(gate_res.output) == {
                         "instance_id": session["runtime_instance_id"],
                         "role": role,
                         "status": "ready",
@@ -492,12 +565,22 @@ sys.stdout.write(json.dumps(result))
                 ]
                 assert bool(sockets) == (box.id == supervisor.id)
             assert not any(
-                mount["Source"] == str(metadata) for mount in supervisor.attrs["Mounts"]
+                mount.get("Name") == volume_name(prefix, "db")
+                for mount in supervisor.attrs["Mounts"]
             )
+            allowed_volumes = {
+                volume_name(prefix, "data"),
+                volume_name(prefix, "runtime"),
+                volume_name(prefix, "fonts"),
+            }
             for mount in supervisor.attrs["Mounts"]:
-                if mount["Destination"] != "/var/run/docker.sock":
+                if mount["Destination"] == "/var/run/docker.sock":
+                    continue
+                if mount["Type"] == "volume":
+                    assert mount.get("Name") in allowed_volumes
+                else:
                     assert (
-                        Path(mount["Source"]).resolve().is_relative_to(data.resolve())
+                        Path(mount["Source"]).resolve().is_relative_to((data / "control").resolve())
                     )
             no_db = supervisor.exec_run(
                 [
@@ -538,6 +621,7 @@ sys.stdout.write(json.dumps(result))
                 f"/api/v1/profiles/{target}/runtime/desired-state",
                 json={"desired_state": "stopped"},
             )
+            await sync_supervisor_state_notice(api_http, sup_http, api_headers=headers)
             stop_body = {
                 "profile_id": target,
                 "runtime_instance_id": old["runtime_instance_id"],
@@ -565,6 +649,7 @@ sys.stdout.write(json.dumps(result))
                 f"/api/v1/profiles/{target}/runtime/desired-state",
                 json={"desired_state": "running"},
             )
+            await sync_supervisor_state_notice(api_http, sup_http, api_headers=headers)
             replacement = await sup_http.post(
                 "/supervisor/v1/profiles/start",
                 json={"profile_id": target, "config_version": 1, "profile_number": profile_numbers[target]},
@@ -590,7 +675,9 @@ sys.stdout.write(json.dumps(result))
             }
             browser_pids = {
                 profile: json.loads(
-                    (data / "runtime" / profile / "runner_info.json").read_text()
+                    supervisor.exec_run(
+                        ["cat", f"/data/runtime/{profile}/runner_info.json"]
+                    ).output
                 )["browser_pid"]
                 for profile in ordered
             }
@@ -634,7 +721,9 @@ sys.stdout.write(json.dumps(result))
             for profile, pid in browser_pids.items():
                 assert (
                     json.loads(
-                        (data / "runtime" / profile / "runner_info.json").read_text()
+                        supervisor.exec_run(
+                            ["cat", f"/data/runtime/{profile}/runner_info.json"]
+                        ).output
                     )["browser_pid"]
                     == pid
                 )
@@ -792,6 +881,7 @@ sys.stdout.write(json.dumps(result))
                     continue
                 cleanup_errors.append(f"network_not_empty({n_name})")
 
+        cleanup_errors.extend(remove_prefix_volumes(client, prefix))
         client.close()
 
     if ownership_violations:

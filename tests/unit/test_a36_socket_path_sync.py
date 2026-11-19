@@ -303,17 +303,23 @@ def _capture_recovery_supervisor_run_kwargs(tmp_path: Path, monkeypatch) -> dict
     return client.containers.run.call_args.kwargs
 
 
-def test_recovery_supervisor_container_config_exposes_short_socket_root(
+# Removed legacy bind-mount test `test_recovery_supervisor_container_config_exposes_short_socket_root`
+# (reason: t080/t088 exposes short socket root via runtime named-volume `sockets` subpath mount).
+
+
+def test_recovery_supervisor_container_config_mounts_short_socket_subpath(
     tmp_path: Path, monkeypatch
 ) -> None:
     kwargs = _capture_recovery_supervisor_run_kwargs(tmp_path, monkeypatch)
     assert kwargs["environment"][sr.AGENT_SOCKET_ROOT_ENV] == (
         sr.DEFAULT_AGENT_SOCKET_ROOT
     )
-    assert kwargs["volumes"][sr.DEFAULT_AGENT_SOCKET_ROOT] == {
-        "bind": sr.DEFAULT_AGENT_SOCKET_ROOT,
-        "mode": "rw",
-    }
+    mounts = {m["Target"]: m for m in kwargs["mounts"]}
+    sock_mount = mounts[sr.DEFAULT_AGENT_SOCKET_ROOT]
+    assert sock_mount["Type"] == "volume"
+    assert sock_mount["Source"] == "a36-runtime"
+    assert sock_mount["VolumeOptions"]["Subpath"] == "sockets"
+    assert sock_mount["ReadOnly"] is False
     assert kwargs["read_only"] is True
 
 

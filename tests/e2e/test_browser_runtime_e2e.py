@@ -36,6 +36,7 @@ import pytest
 from wait import poll_until
 
 from e2e_env import require_e2e_env
+from e2e_volumes import prepare_minimal_e2e_fonts_root
 import uvicorn
 from cbrowser.adapters.database.migrations import run_database_migrations
 from cbrowser.adapters.database.repository import ProfileRepository
@@ -58,6 +59,17 @@ ACTIVE_TEST_NETWORK: str | None = None
 SCRATCH_ROOT = Path(tempfile.mkdtemp(prefix="cbrowser-t003-e2e-", dir="/tmp"))
 ENGINE_CACHE = Path(os.environ.get("CBROWSER_RUNTIME_ENGINE_CACHE", "")).resolve()
 LOGS_DIR = Path(tempfile.mkdtemp(prefix="cbrowser-t003-logs-", dir="/tmp"))
+_MINIMAL_FONTS: tuple[Path, str] | None = None
+
+
+def _ensure_minimal_fonts() -> tuple[Path, str]:
+    global _MINIMAL_FONTS
+    if _MINIMAL_FONTS is None:
+        root, set_id = prepare_minimal_e2e_fonts_root(
+            SCRATCH_ROOT / "minimal_fonts", browser_image=IMAGE_TAG or None
+        )
+        _MINIMAL_FONTS = (root, set_id)
+    return _MINIMAL_FONTS
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -71,6 +83,7 @@ def _require_runtime_prerequisites():
     IMAGE_TAG = env["CBROWSER_RUNTIME_TEST_IMAGE"]
     ENGINE_CACHE = Path(env["CBROWSER_RUNTIME_ENGINE_CACHE"])
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    _ensure_minimal_fonts()
 
 
 def _free_port() -> int:
@@ -265,6 +278,9 @@ def create_snapshot_file(
 ) -> None:
     """Helper to create valid t002 ConfigVersionSnapshot file."""
     config_kwargs.setdefault("geoip", False)
+    if "font_set_id" not in config_kwargs:
+        _, font_set_id = _ensure_minimal_fonts()
+        config_kwargs["font_set_id"] = font_set_id
     cfg = ProfileConfig(**config_kwargs)
     snapshot = ConfigVersionSnapshot(
         id=f"snap_{uuid.uuid4().hex[:12]}",
@@ -350,6 +366,19 @@ def run_docker_container(
         shutil.copy2(snapshot_path, target_snap)
     os.chmod(target_snap, 0o644)
 
+    font_mount_args: list[str] = []
+    snap_cfg = json.loads(target_snap.read_text(encoding="utf-8")).get("config", {})
+    snap_font_id = snap_cfg.get("font_set_id")
+    snap_platform = snap_cfg.get("fingerprint_platform", "windows")
+    if snap_font_id:
+        fonts_root, _ = _ensure_minimal_fonts()
+        host_font_dir = fonts_root / snap_platform / snap_font_id
+        if host_font_dir.is_dir():
+            font_mount_args = [
+                "-v",
+                f"{host_font_dir}:/run/cbrowser/fonts/{snap_platform}/{snap_font_id}:ro",
+            ]
+
     cmd = [
         "docker",
         "run",
@@ -379,6 +408,7 @@ def run_docker_container(
         "/home/cbrowser:rw,mode=0755,size=64m",
         "-v",
         f"{ENGINE_CACHE}:/data/engine-cache:ro",
+        *font_mount_args,
         "-v",
         f"{host_profile_dir}:/data/profiles/{profile_id}/profile",
         "-v",
@@ -1663,7 +1693,11 @@ async def test_t008_download_reconcile_after_agent_restart(
     run_database_migrations(api_db)
     engine, maker = create_engine_and_maker(api_db)
     await ProfileRepository(maker).create_profile(
-        ProfileConfig(name="Reconcile", fingerprint_seed=1),
+        ProfileConfig(
+            name="Reconcile",
+            fingerprint_seed=1,
+            font_set_id=_ensure_minimal_fonts()[1],
+        ),
         profile_id=profile_id,
     )
     await engine.dispose()
@@ -2875,7 +2909,11 @@ async def test_t013_state_copy_restores_cookies_in_clone(http_server: str) -> No
     engine, maker = create_engine_and_maker(db)
     repo = ProfileRepository(maker)
     await repo.create_profile(
-        ProfileConfig(name="Cookie Source", fingerprint_seed=999),
+        ProfileConfig(
+            name="Cookie Source",
+            fingerprint_seed=999,
+            font_set_id=_ensure_minimal_fonts()[1],
+        ),
         profile_id="source",
         user_data_dir=str(source_dir),
     )

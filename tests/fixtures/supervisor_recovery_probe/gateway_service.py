@@ -12,7 +12,6 @@ import logging
 import secrets
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
 
 import httpx
 from aiohttp import web
@@ -36,16 +35,24 @@ class ApiRuntimeLookup:
         )
 
     async def __call__(self, profile_id: str) -> dict[str, Any] | None:
-        path = (
-            "/api/v1/internal/supervisor/profiles/"
-            f"{quote(profile_id, safe='')}/runtime"
-        )
+        cursor: str | None = None
         try:
-            response = await self._client.get(path)
-            if response.status_code == 404:
-                return None
-            response.raise_for_status()
-            return response.json()
+            while True:
+                params = {"cursor": cursor} if cursor else None
+                response = await self._client.get(
+                    "/api/v1/internal/supervisor/state/snapshot",
+                    params=params,
+                )
+                if response.status_code == 404:
+                    return None
+                response.raise_for_status()
+                snapshot = response.json()
+                for item in snapshot.get("profiles") or []:
+                    if item.get("profile_id") == profile_id:
+                        return item
+                cursor = snapshot.get("next_cursor")
+                if not cursor:
+                    return None
         except Exception as exc:  # noqa: BLE001 - transport/decode failure means unavailable
             logger.warning(
                 "Runtime lookup failed for profile %s: %s",

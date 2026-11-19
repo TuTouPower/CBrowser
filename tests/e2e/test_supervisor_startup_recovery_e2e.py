@@ -237,8 +237,7 @@ async def test_supervisor_authoritative_observation_and_retry_e2e(
 
         # Verify API state is bound with running intent, but Docker has no container
         rt_check = await api_client.get(
-            f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime",
-            headers={"Authorization": f"Bearer {auth_token}"},
+            f"/api/v1/profiles/{profile_id}/runtime",
         )
         assert rt_check.status_code == 200
         rt_data = rt_check.json()
@@ -254,8 +253,7 @@ async def test_supervisor_authoritative_observation_and_retry_e2e(
             await coordinator.tick()
             rt_during_lock = (
                 await api_client.get(
-                    f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime",
-                    headers={"Authorization": f"Bearer {auth_token}"},
+                    f"/api/v1/profiles/{profile_id}/runtime",
                 )
             ).json()
             assert rt_during_lock["runtime_instance_id"] == active_inst
@@ -271,8 +269,7 @@ async def test_supervisor_authoritative_observation_and_retry_e2e(
         # with desired_state=running preserved
         rt_after = (
             await api_client.get(
-                f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime",
-                headers={"Authorization": f"Bearer {auth_token}"},
+                f"/api/v1/profiles/{profile_id}/runtime",
             )
         ).json()
         assert rt_after["runtime_instance_id"] is None
@@ -289,8 +286,7 @@ async def test_supervisor_authoritative_observation_and_retry_e2e(
         await coordinator.tick()
         rt_repeat = (
             await api_client.get(
-                f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime",
-                headers={"Authorization": f"Bearer {auth_token}"},
+                f"/api/v1/profiles/{profile_id}/runtime",
             )
         ).json()
         assert rt_repeat["failure_count"] == 1
@@ -450,8 +446,7 @@ async def test_supervisor_native_exit_priority_over_synthetic_e2e(
         # Authoritative API check: still in original bound state, failure_count=0
         rt_after_tick = (
             await real_api_client.get(
-                f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime",
-                headers={"Authorization": f"Bearer {auth_token}"},
+                f"/api/v1/profiles/{profile_id}/runtime",
             )
         ).json()
         assert rt_after_tick["runtime_instance_id"] == native_inst
@@ -466,8 +461,7 @@ async def test_supervisor_native_exit_priority_over_synthetic_e2e(
 
         rt_final = (
             await real_api_client.get(
-                f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime",
-                headers={"Authorization": f"Bearer {auth_token}"},
+                f"/api/v1/profiles/{profile_id}/runtime",
             )
         ).json()
         assert rt_final["desired_state"] == "running"

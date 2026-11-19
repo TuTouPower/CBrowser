@@ -558,3 +558,9 @@ bash scripts/run_automation_probe.sh
 - API 侧以真实迁移库 + TestClient 验证（`tests/unit/test_t083_state_protocol_api.py`）：state_revision 在 desired/bind/observed 三条写路径上逐次自增；快照端点服务鉴权（无 token 401）、键集分批（limit=2 三个 Profile 两批读完）、DTO 键集恰为最小集；旧内部 `GET /profiles` 与 `GET /profiles/{id}/runtime` 返回 404；publish 汇聚点推送 StateChangeNotice（最小状态恰一份、删除走 removed 名单）；runtime GET 的 coordinator 刷新方法被装配为抛错 spy 时仍正常返回（读纯度）。
 - 稳态探针计数口径以纯聚合函数验证（`tests/unit/test_t083_steady_state_probe.py`）：exec_create 计一次、exec_start/exec_die 只入阶段计数、测量标记 exec 排除出栈计数、policy helper/Agent 的 create+destroy 计 churn、异前缀栈事件忽略；同一文件锁定 Compose 无 healthcheck/service_healthy、deploy.sh 以 service_readiness_probe 做真实 readiness 等待且不再出现 `--wait`。
 - 真实栈验收属 [deploy]：4 Profile/10 分钟零 churn/零稳态 exec/零字体正文读取（p134）与故障矩阵（API/Supervisor/Gateway 重启、通知丢失、策略漂移、单 Profile 慢响应 + CPU/rchar/宿主日志样本，p135）在 Mac 隔离栈本地补验，云端单元/集成证据不替代。
+
+## 真实 Docker E2E 命名卷与受管字体夹具契约（t088）
+
+- 全部 Docker E2E 拓扑夹具（`GatewayTopologyHarness`、`RealSupervisorContainer`、`RealApiProcess`、`conftest.py::real_api_server`）与独立容器驱动测试统一通过 `tests/fixtures/e2e_volumes.py` 构造 `<prefix>-{db,data,runtime,fonts}` 命名卷与最小平台字体集（优先复用 `CBROWSER_E2E_FONTS_DIR`，缺失时从不可变 Browser 镜像提取基础字体），保持 `MountPlanner` 与 `FontSetUnavailableError` fail-closed 逻辑不被绕过。
+- macOS VirtioFS 无法从宿主机 `connect()` 容器创建的 Unix domain socket，涉及策略与 spool/x11 验证的 E2E 改为通过 named volume subpath + Linux 辅助容器入口（`ContainerPolicyAgentClient`、`SpoolDirectoryWatcher`、`run_volume_json`）执行，且结束及门禁清理阶段按 `com.cbrowser.prefix` / `com.cbrowser.gate-run` 精确清理容器、网络与命名卷。
+- `tests/unit/test_a36_socket_path_sync.py` 与 `tests/unit/test_baseline_fixture_regressions.py` 已将失效的 bind-mount 前提用例整体替换为对 `e2e_volumes` 命名卷布局、前缀隔离回收及清理器卷归属规则的单元测试。

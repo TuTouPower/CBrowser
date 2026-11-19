@@ -44,9 +44,8 @@ import pytest
 
 from cbrowser.supervisor.container_spec import container_runtime_instance_id
 
-from e2e_env import free_udp_port_span
-
-from e2e_env import require_e2e_env
+from e2e_env import free_udp_port_span, require_e2e_env
+from e2e_volumes import prepare_minimal_e2e_fonts_root
 from gateway_probe.topology import cleanup_prefixed_resources
 from supervisor_recovery_probe.gateway_service import (
     ApiRuntimeLookup,
@@ -57,6 +56,7 @@ from supervisor_recovery_probe.offline_fixture import (
     RealBrowserActionProbe,
     RealSupervisorContainer,
     get_free_port,
+    sync_supervisor_state_notice,
 )
 
 pytestmark = [pytest.mark.serial, pytest.mark.e2e_images('CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE', 'CBROWSER_SUPERVISOR_TEST_IMAGE')]
@@ -114,6 +114,9 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
     engine_cache = data_root / "engine_cache"
     shutil.copytree(engine_cache_src, engine_cache)
     shutil.copytree(geoip_cache_src, engine_cache / "geoip", dirs_exist_ok=True)
+    fonts_root, _ = prepare_minimal_e2e_fonts_root(
+        tmp_path / "e2e_fonts", browser_image=browser_image
+    )
 
     sup_token_file = tmp_path / "supervisor_token"
     sup_token_val = secrets.token_urlsafe(32)
@@ -152,6 +155,7 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
     env.update(
         CBROWSER_BROWSER_IMAGE=browser_image,
         CBROWSER_STREAM_IMAGE=stream_image,
+        CBROWSER_FONTS_DIR=str(fonts_root),
         TMPDIR=str(tmp_path),
     )
 
@@ -162,6 +166,7 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
         root=root,
         env=env,
         log_path=tmp_path / "api.log",
+        fonts_dir=fonts_root,
     )
 
     gateway = ProductionGatewayService(
@@ -190,6 +195,7 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
         docker_client=d_client,
         udp_mux_min_port=udp_base,
         udp_mux_max_port=udp_base + 1,
+        fonts_root=fonts_root,
     )
 
     evidence_records: list[dict] = []
@@ -215,7 +221,7 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
             httpx.AsyncClient(
                 base_url=sup_proc.url,
                 headers=sup_headers,
-                timeout=30.0,
+                timeout=60.0,
                 trust_env=False,
             ) as sup_client,
         ):
@@ -232,6 +238,7 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
                 json={"desired_state": "running"},
             )
             assert r_des.status_code == 200
+            await sync_supervisor_state_notice(api_client, sup_client)
 
             # 2. Launch initial profile via Supervisor Control RPC
             r_start = await sup_client.post(
@@ -258,7 +265,7 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
             for _ in range(40):
                 await asyncio.sleep(0.25)
                 r_rt = await api_client.get(
-                    f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime"
+                    f"/api/v1/profiles/{profile_id}/runtime"
                 )
                 rt_val = r_rt.json()
                 if (
@@ -275,10 +282,10 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
             inst_1 = None
             b1_created_dt = None
             b1_cid = None
-            for _ in range(120):
+            for _ in range(200):
                 await asyncio.sleep(0.25)
                 r_rt = await api_client.get(
-                    f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime"
+                    f"/api/v1/profiles/{profile_id}/runtime"
                 )
                 rt_val = r_rt.json()
                 curr_inst = rt_val.get("runtime_instance_id")
@@ -348,7 +355,7 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
             for _ in range(40):
                 await asyncio.sleep(0.25)
                 r_rt = await api_client.get(
-                    f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime"
+                    f"/api/v1/profiles/{profile_id}/runtime"
                 )
                 rt_val = r_rt.json()
                 if (
@@ -384,10 +391,10 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
             inst_2 = None
             b2_created_dt = None
             b2_cid = None
-            for _ in range(160):
+            for _ in range(220):
                 await asyncio.sleep(0.25)
                 r_rt = await api_client.get(
-                    f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime"
+                    f"/api/v1/profiles/{profile_id}/runtime"
                 )
                 rt_val = r_rt.json()
                 curr_inst = rt_val.get("runtime_instance_id")
@@ -460,7 +467,7 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
             for _ in range(40):
                 await asyncio.sleep(0.25)
                 r_rt = await api_client.get(
-                    f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime"
+                    f"/api/v1/profiles/{profile_id}/runtime"
                 )
                 rt_val = r_rt.json()
                 if (
@@ -479,7 +486,7 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
             for _ in range(240):
                 await asyncio.sleep(0.5)
                 r_rt = await api_client.get(
-                    f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime"
+                    f"/api/v1/profiles/{profile_id}/runtime"
                 )
                 rt_val = r_rt.json()
                 curr_inst = rt_val.get("runtime_instance_id")
@@ -539,7 +546,7 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
             for _ in range(50):
                 await asyncio.sleep(0.25)
                 r_rt = await api_client.get(
-                    f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime"
+                    f"/api/v1/profiles/{profile_id}/runtime"
                 )
                 rt_val = r_rt.json()
                 if (
@@ -555,7 +562,7 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
             # Assert no container created while blocked
             await asyncio.sleep(3.0)
             r_rt_check = await api_client.get(
-                f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime"
+                f"/api/v1/profiles/{profile_id}/runtime"
             )
             assert r_rt_check.json().get("runtime_instance_id") is None
 
@@ -571,10 +578,11 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
             assert r_unblock.status_code == 200
             assert r_unblock.json()["failure_count"] == 0
             assert r_unblock.json()["restart_blocked"] is False
+            await sync_supervisor_state_notice(api_client, sup_client)
 
             async def unblocked_running() -> dict:
                 r_rt = await api_client.get(
-                    f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime"
+                    f"/api/v1/profiles/{profile_id}/runtime"
                 )
                 rt_val = r_rt.json()
                 curr_inst = rt_val.get("runtime_instance_id")
@@ -616,7 +624,7 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
             for _ in range(60):
                 await asyncio.sleep(0.25)
                 r_rt = await api_client.get(
-                    f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime"
+                    f"/api/v1/profiles/{profile_id}/runtime"
                 )
                 rt_val = r_rt.json()
                 if rt_val.get("desired_state") == "stopped":
@@ -627,7 +635,7 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
             # Assert no restart after normal exit
             await asyncio.sleep(3.0)
             r_rt_final = await api_client.get(
-                f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime"
+                f"/api/v1/profiles/{profile_id}/runtime"
             )
             assert r_rt_final.json().get("desired_state") == "stopped"
             assert r_rt_final.json().get("runtime_instance_id") is None

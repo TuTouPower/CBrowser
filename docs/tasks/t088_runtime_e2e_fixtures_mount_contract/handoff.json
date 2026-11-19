@@ -1,0 +1,15 @@
+{
+  "tid": "t088",
+  "attempt": 1,
+  "execution_id": "06345bfc6de44cddaf091bc7428db391",
+  "status": "done",
+  "branch": "t088_runtime_e2e_fixtures_mount_contract",
+  "base_sha": "1f949747dc2d93a935aa9ed9448f0bd25b928b1d",
+  "spec_source_sha": "1f949747dc2d93a935aa9ed9448f0bd25b928b1d",
+  "tests": "全量门禁 `CBROWSER_E2E_REQUIRED=1 CBROWSER_RUN_E2E=1 CBROWSER_GATE_WORKERS=2 ./scripts/run_gates.sh` 全部 `exit 0`（`all_passed: true`，`protocol_drift_check` / `requirements_check` / `contract` 389 / `unit` 2474 / `integration` 228 / `design_lint` / `design_check` / `frontend_test` / `frontend_build` / `image_packages` / `e2e` 108 \\[106 passed, 2 skipped optional `CBROWSER_T029_PROBE_E2E=1` probe\\]）；Round 1–2 处置后 `tests/unit/test_baseline_fixture_regressions.py` + `tests/unit/test_t045_gate_container_cleanup.py` `36 passed`、`contract` `388 passed, 1 skipped`、`core`/`offline`/`retry` 真实容器 E2E 全部通过",
+  "blackbox": "真实 Docker 拓扑、Policy Agent UDS 容器内通信、Browser/Stream 沙箱隔离与全链路 UI/WebRTC 在 Mac Docker Daemon 不可变 `sha256` 镜像与真实字体集下通过；`real_engine` 未启用（不在本 task 门禁范围内）。",
+  "review": "Round 3 PASS（3/3 AC `TICK-VALID`，`f001`–`f004` 全部已修，零 finding）",
+  "review_scope": "e850f776973cf5f6",
+  "pending": [],
+  "findings": []
+}

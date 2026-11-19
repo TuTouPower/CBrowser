@@ -17,14 +17,94 @@ from cbrowser.engine_artifacts import (
     verify_extracted_engine_cache,
 )
 from cbrowser.fingerprint_verification.comparator import compare_reports
-from cbrowser.supervisor.docker_adapter import DockerAdapter, DockerSandboxError
-from cbrowser.supervisor.path_validator import PathValidator
 from e2e_env import complete_font_set_dir, require_e2e_available, require_e2e_env
+from e2e_volumes import init_prefix_volumes, remove_prefix_volumes, run_volume_json
 
 pytestmark = [
     pytest.mark.serial,
-    pytest.mark.e2e_images("CBROWSER_RUNTIME_TEST_IMAGE", "CBROWSER_STREAM_TEST_IMAGE"),
+    pytest.mark.e2e_images(
+        "CBROWSER_RUNTIME_TEST_IMAGE",
+        "CBROWSER_STREAM_TEST_IMAGE",
+        "CBROWSER_SUPERVISOR_TEST_IMAGE",
+    ),
 ]
+
+
+_T068_CACHE_DRIVER = """
+import asyncio
+import json
+import os
+from pathlib import Path
+
+import docker
+from cbrowser.supervisor.docker_adapter import DockerAdapter, DockerSandboxError
+from cbrowser.supervisor.path_validator import PathValidator
+
+
+async def main() -> None:
+    root = Path("/data")
+    engine = root / "engine-cache"
+    for marker in ("latest_version", "latest_version_linux-arm64", ".last_update_check"):
+        (engine / marker).unlink(missing_ok=True)
+
+    client = docker.from_env()
+    try:
+        adapter = DockerAdapter(
+            PathValidator(root),
+            engine,
+            docker_client=client,
+            resource_prefix=os.environ["CB_TEST_PREFIX"],
+            browser_image=os.environ["CB_TEST_BROWSER_IMAGE"],
+            stream_image=os.environ["CB_TEST_STREAM_IMAGE"],
+            engine_build="146.0.7680.177.3",
+        )
+        # 1. Real cache_init helper runs the pinned verification script and completes.
+        await adapter.ensure_runtime_cache(need_geoip=False)
+        markers_after_ok = [
+            (engine / ".last_update_check").exists(),
+            (engine / "latest_version_linux-arm64").exists(),
+        ]
+
+        # 3b. Tamper a supporting shared library inside volume -> helper fails closed.
+        lib_file = engine / "chromium-146.0.7680.177.3" / "libGLESv2.so"
+        original_lib = lib_file.read_bytes()
+        lib_file.write_bytes(b"corrupted-lib")
+        adapter._binary_ready = False
+        corrupted_err = None
+        try:
+            await adapter.ensure_runtime_cache(need_geoip=False)
+        except DockerSandboxError as exc:
+            corrupted_err = str(exc)
+        assert corrupted_err is not None, "Expected DockerSandboxError on corrupted lib"
+
+        # Restore lib and verify auto-update bypass env refuses before helper run.
+        lib_file.write_bytes(original_lib)
+        os.environ["CLOAKBROWSER_AUTO_UPDATE"] = "true"
+        bypass_err = None
+        try:
+            await adapter.ensure_runtime_cache(need_geoip=False)
+        except DockerSandboxError as exc:
+            bypass_err = str(exc)
+        finally:
+            os.environ.pop("CLOAKBROWSER_AUTO_UPDATE", None)
+        assert bypass_err is not None and (
+            "pinning" in bypass_err or "CLOAKBROWSER_AUTO_UPDATE" in bypass_err
+        ), bypass_err
+
+        # 7. With no bypass, the restored tree passes cache_init again.
+        adapter._binary_ready = False
+        adapter._validate_cache_paths()
+        await adapter.ensure_runtime_cache(need_geoip=False)
+        print(
+            "CBROWSER_E2E_RESULT="
+            + json.dumps({"markers_after_ok": markers_after_ok, "restored": True})
+        )
+    finally:
+        client.close()
+
+
+asyncio.run(main())
+"""
 
 
 def _run_container_measure(
@@ -104,6 +184,7 @@ async def test_ac003_cache_init_and_runner_pinning_fail_closed(
     env = require_e2e_env(
         "CBROWSER_RUNTIME_TEST_IMAGE",
         "CBROWSER_STREAM_TEST_IMAGE",
+        "CBROWSER_SUPERVISOR_TEST_IMAGE",
         "CBROWSER_RUNTIME_ENGINE_CACHE",
         "CBROWSER_RUNTIME_GEOIP_CACHE",
         paths=("CBROWSER_RUNTIME_ENGINE_CACHE", "CBROWSER_RUNTIME_GEOIP_CACHE"),
@@ -111,6 +192,7 @@ async def test_ac003_cache_init_and_runner_pinning_fail_closed(
     )
     browser_img = env["CBROWSER_RUNTIME_TEST_IMAGE"]
     stream_img = env["CBROWSER_STREAM_TEST_IMAGE"]
+    supervisor_img = env["CBROWSER_SUPERVISOR_TEST_IMAGE"]
     engine_src = Path(env["CBROWSER_RUNTIME_ENGINE_CACHE"])
     geoip_src = Path(env["CBROWSER_RUNTIME_GEOIP_CACHE"])
 
@@ -124,35 +206,42 @@ async def test_ac003_cache_init_and_runner_pinning_fail_closed(
     client = docker.from_env()
     prefix = f"t068_cache_{uuid.uuid4().hex[:10]}"
     try:
-        adapter = DockerAdapter(
-            PathValidator(root),
-            engine,
-            docker_client=client,
-            resource_prefix=prefix,
-            browser_image=browser_img,
-            stream_image=stream_img,
-            engine_build="146.0.7680.177.3",
+        init_prefix_volumes(
+            client,
+            prefix,
+            supervisor_img,
+            roles=("data", "runtime", "fonts"),
+            engine_cache_src=engine_src,
+            geoip_cache_src=geoip_src,
         )
-        # 1. Real cache_init helper runs the pinned verification script and completes.
-        await adapter.ensure_runtime_cache(need_geoip=False)
-        assert not (engine / ".last_update_check").exists()
-        assert not (engine / "latest_version_linux-arm64").exists()
+        # 1 + 3b + 6b + 7: Real cache_init helper inside Supervisor named-volume env.
+        driver_res = run_volume_json(
+            client,
+            prefix,
+            supervisor_img,
+            _T068_CACHE_DRIVER,
+            roles=("data", "runtime", "fonts"),
+            mount_docker_sock=True,
+            env={
+                "CB_TEST_PREFIX": prefix,
+                "CB_TEST_BROWSER_IMAGE": browser_img,
+                "CB_TEST_STREAM_IMAGE": stream_img,
+            },
+        )
+        assert driver_res == {"markers_after_ok": [False, False], "restored": True}
 
         # 2. Direct extracted-cache verification passes on the real pinned tree.
         ok = verify_extracted_engine_cache(engine, run_version_probe=False)
         assert ok.verified_files_count == 15
         assert ok.engine_build == "146.0.7680.177.3"
 
-        # 3. Tamper a supporting shared library -> both direct verify and real cache_init container fail closed.
+        # 3. Tamper a supporting shared library -> direct verify fails closed.
         lib_file = engine / "chromium-146.0.7680.177.3" / "libGLESv2.so"
         original_lib = lib_file.read_bytes()
         lib_file.write_bytes(b"corrupted-lib")
         with pytest.raises(EngineArtifactError) as exc_lib:
             verify_extracted_engine_cache(engine, run_version_probe=False)
         assert exc_lib.value.code == "corrupted_engine_file"
-        adapter._binary_ready = False
-        with pytest.raises(DockerSandboxError):
-            await adapter.ensure_runtime_cache(need_geoip=False)
 
         # 4. Tamper the chrome binary -> fail closed.
         lib_file.write_bytes(original_lib)
@@ -184,20 +273,12 @@ async def test_ac003_cache_init_and_runner_pinning_fail_closed(
                 expected_build="146.0.7680.177.3",
             )
         assert exc_env.value.code == "auto_update_bypass_env"
-        monkeypatch.setenv("CLOAKBROWSER_AUTO_UPDATE", "true")
-        with pytest.raises(DockerSandboxError, match="pinning|CLOAKBROWSER_AUTO_UPDATE"):
-            await adapter.ensure_runtime_cache(need_geoip=False)
-        monkeypatch.delenv("CLOAKBROWSER_AUTO_UPDATE")
-
-        # 7. With no bypass, the restored tree passes cache_init again.
-        adapter._binary_ready = False
-        adapter._validate_cache_paths()
-        await adapter.ensure_runtime_cache(need_geoip=False)
     finally:
         for container in client.containers.list(
             all=True, filters={"label": f"com.cbrowser.prefix={prefix}"}
         ):
             container.remove(force=True)
+        remove_prefix_volumes(client, prefix)
         client.close()
 
 

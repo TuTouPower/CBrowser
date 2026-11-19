@@ -40,15 +40,18 @@ import pytest
 from unittest.mock import MagicMock
 
 from e2e_env import free_udp_port_span, require_e2e_env
+from e2e_volumes import prepare_minimal_e2e_fonts_root
 from api_auth import create_auth_context
 from cbrowser.domain.models import RuntimeEventReportRequest
-from cbrowser.runtime_agent.event_storage import atomic_write_json
 from gateway_probe.topology import cleanup_prefixed_resources
 from supervisor_recovery_probe.gateway_service import (
     ApiRuntimeLookup,
     ProductionGatewayService,
 )
-from supervisor_recovery_probe.offline_fixture import RealSupervisorContainer
+from supervisor_recovery_probe.offline_fixture import (
+    RealSupervisorContainer,
+    SpoolDirectoryWatcher,
+)
 from wait import poll_until
 
 pytestmark = [pytest.mark.serial, pytest.mark.e2e_images('CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE', 'CBROWSER_SUPERVISOR_TEST_IMAGE')]
@@ -133,11 +136,13 @@ def real_api_and_sup(tmp_path: Path):
         "all_proxy",
     ):
         env.pop(name, None)
+    fonts_root, _ = prepare_minimal_e2e_fonts_root(tmp_path / "e2e_fonts")
     env.update(
         PYTHONPATH=str(root / "src/backend"),
         PYTHONDONTWRITEBYTECODE="1",
         TMPDIR=str(tmp_path),
         CBROWSER_DB_PATH=str(tmp_path / "control.db"),
+        CBROWSER_FONTS_DIR=str(fonts_root),
         CBROWSER_SUPERVISOR_TOKEN_FILE=str(sup_token_file),
         **auth_ctx.env,
     )
@@ -167,14 +172,30 @@ def real_api_and_sup(tmp_path: Path):
 
             api_url = f"http://127.0.0.1:{api_port}"
             with httpx.Client(base_url=api_url, trust_env=False) as c:
+                health_ok = False
                 for _ in range(100):
                     try:
                         if c.get("/api/v1/health").status_code == 200:
+                            health_ok = True
                             break
                     except httpx.TransportError:
                         pass
                     time.sleep(0.1)
                 auth_headers = auth_ctx.login_sync(api_url, c)
+                if health_ok:
+                    for _ in range(100):
+                        f_resp = c.get("/api/v1/font-sets", headers=auth_headers)
+                        if f_resp.status_code == 200 and (
+                            (f_resp.json().get("default_font_set_id") or {}).get(
+                                "windows"
+                            )
+                        ):
+                            break
+                        time.sleep(0.15)
+                    else:
+                        raise TimeoutError(
+                            "API font catalog did not adopt default windows font set"
+                        )
 
             yield {
                 "api_url": api_url,
@@ -188,6 +209,7 @@ def real_api_and_sup(tmp_path: Path):
                 "root": root,
                 "env": env,
                 "auth_headers": auth_headers,
+                "fonts_root": fonts_root,
                 "managed_procs": managed_procs,
             }
         finally:
@@ -314,6 +336,7 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
         docker_client=d_client,
         udp_mux_min_port=udp_base,
         udp_mux_max_port=udp_base + 1,
+        fonts_root=real_api_and_sup["fonts_root"],
     )
     await asyncio.to_thread(sup.start)
     c1_id = sup.container_id
@@ -434,7 +457,7 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
             ) as api_client_check:
                 for _ in range(120):
                     r_rt = await api_client_check.get(
-                        f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime"
+                        f"/api/v1/profiles/{profile_id}/runtime"
                     )
                     if (
                         r_rt.status_code == 200
@@ -560,6 +583,7 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
         docker_client=d_client,
         udp_mux_min_port=udp_base,
         udp_mux_max_port=udp_base + 1,
+        fonts_root=real_api_and_sup["fonts_root"],
     )
     await asyncio.to_thread(sup.start)
     c1_id = sup.container_id
@@ -827,6 +851,7 @@ async def test_supervisor_replays_diagnostic_spool_without_stopping_live_runtime
         docker_client=d_client,
         udp_mux_min_port=udp_base,
         udp_mux_max_port=udp_base + 1,
+        fonts_root=real_api_and_sup["fonts_root"],
     )
     await asyncio.to_thread(sup.start)
     c1_id = sup.container_id
@@ -880,11 +905,20 @@ async def test_supervisor_replays_diagnostic_spool_without_stopping_live_runtime
         assert browser_pid_pre is not None and browser_pid_pre > 0
         assert cdp_port_pre is not None and cdp_port_pre > 0
 
-        # 3. Simulate durable diagnostic event queued in spool directory.
+        # 3. SIGKILL Supervisor before queuing the durable spool event so the
+        #    active forwarder loop cannot consume it before step 5's restart.
+        await asyncio.to_thread(sup.sigkill)
+
+        # Assert Browser and Stream containers STILL running during Supervisor absence
+        b_c.reload()
+        s_c.reload()
+        assert b_c.status == "running"
+        assert s_c.status == "running"
+
+        # 4. Simulate durable diagnostic event queued in spool directory.
         # Uses production RuntimeEventReportRequest schema (exit_type=exit,
         # normal reason, bound config_version=1, valid ISO/Unix fields).
-        spool_dir = data_root / "spool"
-        spool_dir.mkdir(parents=True, exist_ok=True)
+        spool_watcher = SpoolDirectoryWatcher(volume_prefix=prefix, docker_client=d_client)
         evt_id = f"evt_diag_{uuid.uuid4().hex[:8]}"
 
         event_model = RuntimeEventReportRequest(
@@ -899,11 +933,13 @@ async def test_supervisor_replays_diagnostic_spool_without_stopping_live_runtime
         )
         event_payload = event_model.model_dump()
         spool_key = hashlib.sha256(evt_id.encode("utf-8")).hexdigest()
-        spool_file = spool_dir / f"{spool_key}.json"
-        await asyncio.to_thread(atomic_write_json, spool_file, event_payload)
-        assert spool_file.exists()
+        spool_file = await asyncio.to_thread(
+            spool_watcher.write_spool_file, f"{spool_key}.json", event_payload
+        )
+        assert await asyncio.to_thread(spool_watcher.exists, spool_file)
 
-        # Check health again after spool write: living browser unaffected
+        # Check health again after spool write while Supervisor is down:
+        # living browser remains unaffected.
         health_post_write = await asyncio.to_thread(
             _probe_in_container_agent_health, b_cname
         )
@@ -914,15 +950,6 @@ async def test_supervisor_replays_diagnostic_spool_without_stopping_live_runtime
         assert health_post_write["runtime_instance_id"] == inst_id
         assert health_post_write["config_version"] == 1
         assert health_post_write["details"]["browser_pid"] == browser_pid_pre
-
-        # 4. SIGKILL Supervisor container while event is spooled!
-        await asyncio.to_thread(sup.sigkill)
-
-        # Assert Browser and Stream containers STILL running during Supervisor absence
-        b_c.reload()
-        s_c.reload()
-        assert b_c.status == "running"
-        assert s_c.status == "running"
 
         # 5. Restart Supervisor container: on startup, spool replayer delivers event
         # to API, while ActiveSession reconciles running Docker containers.
@@ -944,18 +971,16 @@ async def test_supervisor_replays_diagnostic_spool_without_stopping_live_runtime
                 await asyncio.sleep(0.1)
 
             # Wait for spool forwarder to deliver and unlink the event file
-            for _ in range(60):
-                if not spool_file.exists():
-                    break
-                await asyncio.sleep(0.5)
-            assert not spool_file.exists(), (
+            await spool_watcher.wait_for_spool_cleared(spool_file, timeout_sec=30.0)
+            assert not await asyncio.to_thread(spool_watcher.exists, spool_file), (
                 "Delivered spool event file must be unlinked after delivery"
             )
 
             # Quarantine directory must not have captured this event as invalid
-            quarantine_file = spool_dir / "quarantine" / spool_file.name
-            assert not quarantine_file.exists(), (
-                f"Valid event was unexpectedly quarantined: {quarantine_file}"
+            assert not await asyncio.to_thread(
+                spool_watcher.quarantine_exists, spool_file
+            ), (
+                f"Valid event was unexpectedly quarantined: {spool_file.name}"
             )
 
             # Verify resurrected supervisor reports running state and
@@ -995,7 +1020,7 @@ async def test_supervisor_replays_diagnostic_spool_without_stopping_live_runtime
         ) as api_client:
             for _ in range(60):
                 r_rt = await api_client.get(
-                    f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime"
+                    f"/api/v1/profiles/{profile_id}/runtime"
                 )
                 if (
                     r_rt.status_code == 200
@@ -1035,7 +1060,7 @@ async def test_supervisor_replays_diagnostic_spool_without_stopping_live_runtime
 
             # Duplicate replay must still NOT clear running intent
             r_rt_after_dup = await api_client.get(
-                f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime"
+                f"/api/v1/profiles/{profile_id}/runtime"
             )
             assert r_rt_after_dup.status_code == 200
             rt_data_after_dup = r_rt_after_dup.json()
