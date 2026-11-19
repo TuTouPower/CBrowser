@@ -541,6 +541,7 @@ class BrowserRunner:
             self.run_dir,
             font_dirs,
             include_cjk_fonts=cfg.include_cjk_fonts,
+            platform=cfg.fingerprint_platform,
         )
         verdict: dict | None = None
         if self.fontconfig_path is not None:

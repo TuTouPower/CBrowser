@@ -1,7 +1,7 @@
 ---
 slug: fingerprint_platform
 status: active
-tasks: [baseline, t075, t080, t081]
+tasks: [baseline, t075, t080, t081, t087]
 ---
 # 需求规范：指纹平台与平台字体集 (fingerprint_platform)
 
@@ -23,10 +23,16 @@ tasks: [baseline, t075, t080, t081]
 
 ### 2.2 字体分层与 fontconfig 白名单
 
+- Windows 环境从绑定字体集中的原始 `SegUIVar.ttf` 公开 Text、Display、Small 命名实例。网页查询对应家族名时匹配原字体光学尺寸（t087）。
+
 - 基础开源字体六项（`fonts-noto-color-emoji` / `fonts-freefont-ttf` / `fonts-unifont` / `fonts-ipafont-gothic` / `fonts-wqy-zenhei` / `fonts-tlwg-loma-otf`）在 Browser 镜像 `/opt/cbrowser-base-fonts`，位于 fontconfig 默认扫描路径之外，且**不进入**指纹 Profile 白名单（仅满足 CloakBrowser 安装要求）。
+
 - 平台字体集在宿主 `CBROWSER_FONTS_DIR/{platform}/{set_id}/`，内容寻址 `set_id` + `manifest.json`（来源、来源系统版本、逐文件 sha256），导入后不可修改；经 `.worktreeinclude` 供各 worktree 共享同一份。
+
 - Supervisor 只把 Profile 绑定的字体集只读挂载到 Browser 容器 `/run/cbrowser/fonts/{platform}/{set_id}`（默认扫描路径之外），不挂整个字体根目录，不挂给 Stream 容器。
+
 - Runner 生成 `FONTCONFIG_FILE`：只以 `<dir>` 白名单声明绑定集目录，不 include `/etc/fonts/fonts.conf`，也不声明基础字体目录；Liberation / Nimbus / 文泉驿 / Unifont / FreeFont / IPAGothic / Loma 等 Linux 专属字体对两平台都不可见（真实 146 引擎 E2E 与 `fc-list` 实测命中 0，见 `d033`）。t075 起**无基础字体回退**：未绑定（仅旧快照可能出现）时白名单为空，Runner 启动前验证失败封闭，不再以暴露 Linux 基础字体的方式启动。
+
 - `font_bundle`（文泉驿按 Profile 三态）已删除：字段、镜像字体包、代码、文档与测试引用一并清理（AC-009）。
 
 ### 2.3 平台一致性

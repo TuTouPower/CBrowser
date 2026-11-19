@@ -85,10 +85,48 @@ def profile_font_dirs(platform: str, font_set_id: str | None) -> list[Path]:
     return []
 
 
+def _segoe_variable_scan_rules() -> list[str]:
+    family = "Segoe UI Variable"
+    faces = [
+        (name, [f'    <test name="style" compare="contains"><string>{name}</string></test>'])
+        for name in ("Text", "Display", "Small")
+    ]
+    # Fontconfig folds the regular Text named instance into the default
+    # static face. The variable face shares its index, so distinguish them.
+    faces.append(
+        (
+            "Text",
+            [
+                '    <test name="style" compare="eq"><string>Regular</string></test>',
+                '    <test name="index" compare="eq"><int>0</int></test>',
+                '    <test name="variable" compare="eq"><bool>false</bool></test>',
+            ],
+        )
+    )
+    rules: list[str] = []
+    for name, tests in faces:
+        rules.extend(
+            [
+                '  <match target="scan">',
+                f'    <test name="family" compare="eq"><string>{family}</string></test>',
+                '    <test name="postscriptname" compare="contains">'
+                '<string>SegoeUIVariable</string></test>',
+                *tests,
+                '    <edit name="family" mode="append" binding="strong">',
+                f"      <string>{family} {name}</string>",
+                "    </edit>",
+                "  </match>",
+            ]
+        )
+    return rules
+
+
 def build_fontconfig_xml(
     dirs: list[Path | str],
     include_cjk_fonts: bool = True,
     cache_dir: Path | str | None = None,
+    *,
+    platform: str | None = None,
 ) -> str:
     """Render a fontconfig file that scans only ``dirs``.
 
@@ -102,6 +140,9 @@ def build_fontconfig_xml(
     invisible to the Profile; ``True`` appends no rejection. ``cache_dir``
     overrides the default cache location (tests use an isolated
     directory).
+
+    A Windows font set exposes Segoe UI Variable optical names on the
+    original scanned faces, preserving their variable-font coordinates.
     """
     lines = [
         '<?xml version="1.0"?>',
@@ -111,6 +152,8 @@ def build_fontconfig_xml(
     ]
     for directory in dirs:
         lines.append(f"  <dir>{escape(str(directory))}</dir>")
+    if dirs and platform == "windows":
+        lines.extend(_segoe_variable_scan_rules())
     if not include_cjk_fonts:
         for tag in CHINESE_LANG_TAGS:
             lines.extend(
@@ -133,6 +176,8 @@ def prepare_profile_fontconfig(
     dirs: list[Path | str],
     include_cjk_fonts: bool = True,
     cache_dir: Path | str | None = None,
+    *,
+    platform: str | None = None,
 ) -> Path | None:
     """Write the profile fontconfig file into ``run_dir``.
 
@@ -145,7 +190,10 @@ def prepare_profile_fontconfig(
     target = run_dir / PROFILE_FONTCONFIG_FILENAME
     try:
         xml = build_fontconfig_xml(
-            dirs, include_cjk_fonts=include_cjk_fonts, cache_dir=cache_dir
+            dirs,
+            include_cjk_fonts=include_cjk_fonts,
+            cache_dir=cache_dir,
+            platform=platform,
         )
         run_dir.mkdir(parents=True, exist_ok=True)
         atomic_write_text(target, xml, mode=0o600)

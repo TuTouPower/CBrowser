@@ -22,9 +22,9 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：Windows 环境挂载包含所需实例的官方字体集后，网页按 Segoe UI Variable Text 或 Segoe UI Variable Display 选择到对应的实际字体光学实例。两者的文本度量可以区分，未识别的字体名仍走正常回退。
+- [x] AC-001：Windows 环境挂载包含所需实例的官方字体集后，网页按 Segoe UI Variable Text 或 Segoe UI Variable Display 选择到对应的实际字体光学实例。两者的文本度量可以区分，未识别的字体名仍走正常回退。
 
-- [ ] AC-002：仅 Windows 环境公开上述真实命名实例，现有字体挂载隔离、原字体校验和中文覆盖过滤继续生效。
+- [x] AC-002：仅 Windows 环境公开上述真实命名实例，现有字体挂载隔离、原字体校验和中文覆盖过滤继续生效。
 
 ### 可测试性声明
 
