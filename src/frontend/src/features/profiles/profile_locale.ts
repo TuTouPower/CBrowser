@@ -70,6 +70,19 @@ export function timezoneForLocale(
   return currentTimezone ?? null;
 }
 
+function hasRegionTerm(text: string, terms: readonly string[]): boolean {
+  for (const term of terms) {
+    if (/^[a-z0-9 ]+$/.test(term)) {
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/ +/g, "\\s+");
+      const pattern = new RegExp(`(?:^|[^a-z])${escaped}(?:$|[^a-z])`, "i");
+      if (pattern.test(text)) return true;
+    } else if (text.includes(term)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function timezoneForProxy(
   proxy:
     | {
@@ -84,46 +97,46 @@ export function timezoneForProxy(
   const cc = (proxy.country_code ?? "").trim().toUpperCase();
   const text = `${proxy.region_label ?? ""} ${proxy.name ?? ""}`.toLowerCase();
 
-  if (text.includes("new york") || text.includes("ny") || text.includes("纽约") || text.includes("美东")) {
+  if (hasRegionTerm(text, ["new york", "ny", "纽约", "美东"])) {
     return "America/New_York";
   }
-  if (text.includes("chicago") || text.includes("芝加哥") || text.includes("美中")) {
+  if (hasRegionTerm(text, ["chicago", "芝加哥", "美中"])) {
     return "America/Chicago";
   }
-  if (text.includes("los angeles") || text.includes("california") || text.includes("la") || text.includes("洛杉矶") || text.includes("美西")) {
+  if (hasRegionTerm(text, ["los angeles", "california", "la", "洛杉矶", "美西"])) {
     return "America/Los_Angeles";
   }
-  if (text.includes("london") || text.includes("伦敦") || text.includes("英国") || cc === "GB" || cc === "UK") {
+  if (hasRegionTerm(text, ["london", "united kingdom", "uk", "伦敦", "英国"]) || cc === "GB" || cc === "UK") {
     return "Europe/London";
   }
-  if (text.includes("frankfurt") || text.includes("berlin") || text.includes("法兰克福") || text.includes("德国") || cc === "DE") {
+  if (hasRegionTerm(text, ["frankfurt", "berlin", "germany", "法兰克福", "德国"]) || cc === "DE") {
     return "Europe/Berlin";
   }
-  if (text.includes("paris") || text.includes("巴黎") || text.includes("法国") || cc === "FR") {
+  if (hasRegionTerm(text, ["paris", "france", "巴黎", "法国"]) || cc === "FR") {
     return "Europe/Paris";
   }
-  if (text.includes("singapore") || text.includes("新加坡") || cc === "SG") {
+  if (hasRegionTerm(text, ["singapore", "新加坡"]) || cc === "SG") {
     return "Asia/Singapore";
   }
-  if (text.includes("hong kong") || text.includes("香港") || cc === "HK") {
+  if (hasRegionTerm(text, ["hong kong", "香港"]) || cc === "HK") {
     return "Asia/Hong_Kong";
   }
-  if (text.includes("taipei") || text.includes("taiwan") || text.includes("台北") || text.includes("台湾") || cc === "TW") {
+  if (hasRegionTerm(text, ["taipei", "taiwan", "台北", "台湾"]) || cc === "TW") {
     return "Asia/Taipei";
   }
-  if (text.includes("macau") || text.includes("澳门") || cc === "MO") {
+  if (hasRegionTerm(text, ["macau", "澳门"]) || cc === "MO") {
     return "Asia/Macau";
   }
-  if (text.includes("shanghai") || text.includes("beijing") || text.includes("上海") || text.includes("北京") || text.includes("中国") || cc === "CN") {
+  if (hasRegionTerm(text, ["shanghai", "beijing", "china", "上海", "北京", "中国"]) || cc === "CN") {
     return "Asia/Shanghai";
   }
-  if (text.includes("tokyo") || text.includes("东京") || text.includes("日本") || cc === "JP") {
+  if (hasRegionTerm(text, ["tokyo", "japan", "东京", "日本"]) || cc === "JP") {
     return "Asia/Tokyo";
   }
-  if (text.includes("seoul") || text.includes("首尔") || text.includes("韩国") || cc === "KR") {
+  if (hasRegionTerm(text, ["seoul", "korea", "首尔", "韩国"]) || cc === "KR") {
     return "Asia/Seoul";
   }
-  if (text.includes("sydney") || text.includes("悉尼") || text.includes("澳大利亚") || cc === "AU") {
+  if (hasRegionTerm(text, ["sydney", "australia", "悉尼", "澳大利亚"]) || cc === "AU") {
     return "Australia/Sydney";
   }
   if (cc === "US") {

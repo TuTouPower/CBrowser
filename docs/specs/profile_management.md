@@ -1,7 +1,7 @@
 ---
 slug: profile_management
 status: active
-tasks: [baseline, t075, t076, t077, t078, t079]
+tasks: [baseline, t075, t076, t077, t078, t079, t090]
 ---
 # 需求规范：Profile 管理与外部标签页
 
@@ -107,7 +107,7 @@ tasks: [baseline, t075, t076, t077, t078, t079]
 - 时区 → 语言：中文地区时区（`Asia/Shanghai`、`Asia/Chongqing`、`Asia/Urumqi`、`Asia/Harbin`、`Asia/Hong_Kong`、`Asia/Macau`、`Asia/Taipei`）→ `zh-CN`，其余 → `en-US`；时区为空时语言保持当前值。
 - 代理 / 语言 / 平台参数自动联动：
     - 选择代理时，前端根据代理位置（国家码 / 地区标签 / 名称）自动匹配对应 IANA 时区，并联动切换对应语言（`zh-CN` / `en-US`）。
-    - 切换语言（`locale`）时，在已设时区时对齐对应地区时区；CJK 字体开关在用户未手动设置前随语言派生（中文开、英文关），用户手动切换后不再被语言联动改写（t075）。
+    - 切换语言（`locale`）时，仅在无代理推断且当前未设 `timezone` 时才按语言对齐默认时区；当已选代理存在推断时区或当前已有非空 `timezone` 时，切换 `locale` 不得改写 `timezone`（t090 修订，详见下文 t090 小节）。CJK 字体开关在用户未手动设置前随语言派生（中文开、英文关），用户手动切换后不再被语言联动改写（t075）。
     - 切换平台（`fingerprint_platform`）时，自动切换默认分辨率（Windows 默认 `1920×1080`，macOS 默认 `1440×900`）；字体集绑定由后端按新平台重绑，表单不参与（t075）。
 - 环境表单不再提供字体包与 GPU 选择（t075）：字体集在设置页平台字体区块只读展示人类可读名称（如「Windows 标准字体包」「Office 中文字体包」「macOS 苹方字体包」），不向用户展示冗长的 SHA256 哈希字符串；会话详情只读展示实际绑定。
 
@@ -152,3 +152,9 @@ tasks: [baseline, t075, t076, t077, t078, t079]
 ## 状态呈现（t079）
 
 - 环境运行状态的呈现统一走共享语义映射（见 ui_design_system §2.9）：列表、卡片、详情、状态筛选、工作台与自动化使用同一组状态词条；runtime 未加载或状态不在枚举内时显式呈「未知」，不回退为「已停止」。
+
+## 代理对齐摘要、词边界匹配与语言不回改时区（t090）
+
+- 编辑或异步拉取代理列表后，只要 `timezone` 或有效 `locale` 与 `timezoneForProxy` / `localeForTimezone` 推断默认值存在任一不一致，`ProfileForm` 对齐摘要必须渲染偏离提示（`formAlignProxyOverriddenSummary`，绝不显示「已按代理默认对齐」）并显示「恢复默认对齐」按钮；仅当二者与代理默认值一致时展示 `formAlignProxySummary` 且隐藏重置提示。
+- 对齐摘要中的 `fontRule` 始终按表单当前 `values.include_cjk_fonts` 渲染（含中文字体/不含中文字体），不以 `locale` 替代实际开关状态。
+- `timezoneForProxy` 对 ASCII 英文地域关键字与缩写执行非字母边界匹配，防止 `"Tokyo Relay"` 命中 `"la"` 或 `"Germany"` 命中 `"ny"` 误判；当已选代理存在推断时区或当前已有非空 `timezone` 时，切换 `locale` 不得改写 `timezone`（仅未选代理且时区为空的新建默认沿用 `Asia/Shanghai` 联动），保持语言枚举仍为 `zh-CN` / `en-US`。

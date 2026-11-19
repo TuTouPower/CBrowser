@@ -1,0 +1,15 @@
+{
+  "tid": "t090",
+  "attempt": 1,
+  "execution_id": "7831580d10b247e185797bde31ee1714",
+  "status": "done",
+  "branch": "t090_profile_proxy_alignment_and_locale_rules",
+  "base_sha": "1f949747dc2d93a935aa9ed9448f0bd25b928b1d",
+  "spec_source_sha": "1f949747dc2d93a935aa9ed9448f0bd25b928b1d",
+  "tests": "全量非 E2E 门禁 `./scripts/run_gates.sh` 9 个套件全部 `exit 0`（主仓 `.scratch/t090_non_e2e_gates/manifest.json` `all_passed: true`）；Round 1 修复后复跑 `npm test`（`87 files / 722 tests passed`）、`npm run test:types`、`npm run build`、`npm run design:lint`、`npm run design:check` 全部退出 0",
+  "blackbox": "浏览器表单交互在 Vitest + Testing Library + i18n（真实 Radix Select / Combobox / React Query 异步加载）下完整验证，UI tokener/design lint/build 全部通过",
+  "review": "Round 2 PASS（3/3 AC `TICK-VALID`，零 finding）",
+  "review_scope": "b5688e428f1894a4",
+  "pending": [],
+  "findings": []
+}
