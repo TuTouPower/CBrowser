@@ -1,0 +1,15 @@
+{
+  "tid": "t092",
+  "attempt": 1,
+  "execution_id": "fb802226d3e240bf915c22c07e342087",
+  "status": "done",
+  "branch": "t092_real_engine_probe_font_fixture",
+  "base_sha": "f11e4f4f1857d8de7c8d832cdb81de41be5e6473",
+  "spec_source_sha": "f11e4f4f1857d8de7c8d832cdb81de41be5e6473",
+  "tests": "f001 修复后新增非规范目录红测，并完成全量门禁 `python3 scripts/gate_run.py`（退出 0）；探针相关单测 `test_a38_probe_evidence.py` + `test_automation_probe_harness.py` 38 项通过，模板契约 388 项通过。Shell 语法、Markdown 格式、Git diff 检查通过。",
+  "blackbox": "真实入口缺字体时退出 2。带字体的真实 Linux arm64 探针 2 项通过、零跳过，链路子套件 16 项通过。",
+  "review": "单路 general review Round 1 PASS（1 minor，已修防遮蔽）；Round 2 PASS（零 finding，`reviewed_scope=f3326e6656a24b73`，AC 2/2 复核有效）。",
+  "review_scope": "f3326e6656a24b73",
+  "pending": [],
+  "findings": []
+}

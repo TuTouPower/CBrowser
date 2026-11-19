@@ -74,6 +74,7 @@ def _preflight_ok() -> dict:
         image_id="sha256:" + "b" * 64,
         image_os_arch="linux/arm64",
         engine_present=True,
+        font_set_present=True,
         xvfb_present=True,
         permissions_ok=True,
         report_dir_empty=True,
@@ -89,6 +90,7 @@ def test_preflight_problems_lists_every_missing_item_at_once() -> None:
         image_id="latest",
         image_os_arch="linux/amd64",
         engine_present=False,
+        font_set_present=True,
         xvfb_present=False,
         permissions_ok=False,
         report_dir_empty=False,
@@ -98,6 +100,83 @@ def test_preflight_problems_lists_every_missing_item_at_once() -> None:
 
 def test_preflight_clean_when_all_present() -> None:
     assert evidence.preflight_problems(**_preflight_ok()) == []
+
+
+def test_preflight_rejects_missing_verified_font_asset() -> None:
+    prereqs = _preflight_ok() | {"font_set_present": False}
+    assert evidence.preflight_problems(**prereqs) == [
+        "verified Windows font set missing from CBROWSER_E2E_FONTS_DIR"
+    ]
+
+
+def test_probe_selects_only_integrity_verified_windows_fonts(tmp_path: Path) -> None:
+    from cbrowser.font_sets import import_font_set
+
+    fonts_root = tmp_path / "sets"
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "test.ttf").write_bytes(b"test-font")
+    import_font_set("macos", [source], "test", root=fonts_root, source="unit")
+    assert evidence.select_probe_font_set(str(fonts_root)) is None
+
+    windows = import_font_set("windows", [source], "test", root=fonts_root, source="unit")
+    selected = fonts_root / "windows" / windows["set_id"]
+    assert evidence.select_probe_font_set(str(fonts_root)) == selected
+
+    (selected / "test.ttf").write_bytes(b"changed")
+    assert evidence.select_probe_font_set(str(fonts_root)) is None
+
+
+def test_newer_directory_with_invalid_id_does_not_shadow_valid_asset(
+    tmp_path: Path,
+) -> None:
+    from cbrowser.font_sets import import_font_set
+
+    fonts_root = tmp_path / "sets"
+    source = tmp_path / "source"
+    source.mkdir()
+    font = source / "test.ttf"
+    font.write_bytes(b"first")
+    older = import_font_set(
+        "windows", [source], "older", root=fonts_root, source="unit",
+        created_at="2026-11-01T00:00:00+00:00",
+    )
+    font.write_bytes(b"second")
+    newer = import_font_set(
+        "windows", [source], "newer", root=fonts_root, source="unit",
+        created_at="2026-11-02T00:00:00+00:00",
+    )
+    windows = fonts_root / "windows"
+    (windows / newer["set_id"]).rename(windows / "invalid-id")
+
+    assert evidence.select_probe_font_set(str(fonts_root)) == windows / older["set_id"]
+
+
+def test_newer_noncanonical_directory_does_not_shadow_valid_asset(
+    tmp_path: Path,
+) -> None:
+    from cbrowser.font_sets import import_font_set
+
+    fonts_root = tmp_path / "sets"
+    source = tmp_path / "source"
+    source.mkdir()
+    font = source / "test.ttf"
+    font.write_bytes(b"first")
+    older = import_font_set(
+        "windows", [source], "older", root=fonts_root, source="unit",
+        created_at="2026-11-01T00:00:00+00:00",
+    )
+    font.write_bytes(b"second")
+    newer = import_font_set(
+        "windows", [source], "newer", root=fonts_root, source="unit",
+        created_at="2026-11-02T00:00:00+00:00",
+    )
+    windows = fonts_root / "windows"
+    noncanonical = "a" * 64
+    assert noncanonical != older["set_id"] and noncanonical != newer["set_id"]
+    (windows / newer["set_id"]).rename(windows / noncanonical)
+
+    assert evidence.select_probe_font_set(str(fonts_root)) == windows / older["set_id"]
 
 
 def test_parse_junit_classifies_statuses() -> None:

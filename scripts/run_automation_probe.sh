@@ -24,6 +24,17 @@ architecture="$(
     "$CBROWSER_PROBE_TEST_IMAGE" 2>/dev/null || true
 )"
 other_files="$(ls -A "$report_dir" | grep -v -x 'preflight.txt' || true)"
+font_set_dir="$(
+  PYTHONPATH="$REPO_ROOT/src/backend:$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+    python3 - "${CBROWSER_E2E_FONTS_DIR:-}" <<'SELECT_FONT'
+import sys
+from scripts.automation_probe_evidence import select_probe_font_set
+
+font_set = select_probe_font_set(sys.argv[1])
+if font_set:
+    print(font_set)
+SELECT_FONT
+)"
 runtime_probe=""
 if [ "$architecture" = "linux/arm64" ]; then
   runtime_probe="$(
@@ -34,6 +45,8 @@ if [ "$architecture" = "linux/arm64" ]; then
 fi
 engine_present=0
 [ -x "$CBROWSER_T029_ENGINE_CACHE/chromium-$version/chrome" ] && engine_present=1
+font_set_present=0
+[ -n "$font_set_dir" ] && font_set_present=1
 xvfb_present=0
 printf '%s\n' "$runtime_probe" | grep -q '^xvfb=.' && xvfb_present=1
 permissions_ok=0
@@ -41,13 +54,14 @@ printf '%s\n' "$runtime_probe" | grep -q '^uid=.' && permissions_ok=1
 # Shell preflight and evidence CLI share the same validation function.
 PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 - \
   "$CBROWSER_PROBE_TEST_IMAGE" "$architecture" "$engine_present" \
-  "$xvfb_present" "$permissions_ok" "$other_files" > "$preflight_file" <<'CHECK'
+  "$font_set_present" "$xvfb_present" "$permissions_ok" "$other_files" > "$preflight_file" <<'CHECK'
 import sys
 from scripts.automation_probe_evidence import preflight_problems
 for problem in preflight_problems(
     image_id=sys.argv[1], image_os_arch=sys.argv[2],
-    engine_present=sys.argv[3] == "1", xvfb_present=sys.argv[4] == "1",
-    permissions_ok=sys.argv[5] == "1", report_dir_empty=not sys.argv[6],
+    engine_present=sys.argv[3] == "1", font_set_present=sys.argv[4] == "1",
+    xvfb_present=sys.argv[5] == "1", permissions_ok=sys.argv[6] == "1",
+    report_dir_empty=not sys.argv[7],
 ):
     print(problem)
 CHECK
@@ -107,12 +121,15 @@ for name in filter(None, paths):
 PY_SNAPSHOT
 
 cache_dir="$(cd "$CBROWSER_T029_ENGINE_CACHE" && pwd)"
+font_set_id="${font_set_dir##*/}"
 docker run --rm --init --name "$name" --platform linux/arm64 --shm-size=1g \
   --mount "type=bind,src=$snapshot,dst=/repo,readonly" \
   --mount "type=bind,src=$cache_dir,dst=/data/engine-cache,readonly" \
+  --mount "type=bind,src=$font_set_dir,dst=/run/cbrowser/fonts/windows/$font_set_id,readonly" \
   --mount "type=bind,src=$report_dir,dst=/evidence" \
   -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/repo/src/backend:/repo/tests/fixtures \
   -e CBROWSER_T029_ENGINE_CACHE=/data/engine-cache \
+  -e "CBROWSER_T029_FONT_SET_ID=$font_set_id" \
   -e "CBROWSER_T029_TARGET_ENGINE_VERSION=$version" \
   -e "CBROWSER_PROBE_CHROMIUM_EXECUTABLE=/data/engine-cache/chromium-$version/chrome" \
   -e CBROWSER_PROBE_CONTAINER_RUNTIME=1 \

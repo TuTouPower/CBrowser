@@ -348,11 +348,12 @@ docker build -f config/docker/automation_probe/Dockerfile \
   --build-arg BROWSER_IMAGE=cbrowser-probe-base:local -t cbrowser-probe:local .
 export CBROWSER_PROBE_TEST_IMAGE="$(docker image inspect --format '{{.Id}}' cbrowser-probe:local)"
 export CBROWSER_T029_ENGINE_CACHE="${HOME}/kar/code/.cbrowser/engine-cache"
+export CBROWSER_E2E_FONTS_DIR="$PWD/data/fonts"
 export CBROWSER_T029_REPORT_DIR="$PWD/.scratch/t032/probe-evidence"
 bash scripts/run_automation_probe.sh
 ```
 
-入口要求 Linux arm64 镜像、可执行目标引擎和空证据目录。仓库及引擎只读挂载，独立容器不挂 Docker socket 或生产数据；提供 Xvfb/XTEST；链路 Dialog 与执行器测试的显式浏览器路径同样指向选中目标引擎。容器中的生产 Python 组件通过 loopback 建立 API → Supervisor → Agent → CDP 链路；这不替代独立 Stream/Viewer 容器 E2E。子测试 JUnit 不得含 skip，报告和镜像身份留在证据目录。AC-012 外站不可达或样本不足记 `INCONCLUSIVE`；AC-013 人工项按用户决定记 `OUT_OF_SCOPE_BY_USER`。
+入口要求 Linux arm64 镜像、可执行目标引擎、已验证的 Windows 字体集和空证据目录。脚本选择有效的默认字体集，只读挂载其目录，并将同一 `font_set_id` 写入真实 BrowserRunner 探针快照。字体集缺失或校验失败会进入预检报告，必跑模式退出。仓库及引擎只读挂载，独立容器不挂 Docker socket 或生产数据；提供 Xvfb/XTEST；链路 Dialog 与执行器测试的显式浏览器路径同样指向选中目标引擎。容器中的生产 Python 组件通过 loopback 建立 API → Supervisor → Agent → CDP 链路；这不替代独立 Stream/Viewer 容器 E2E。子测试 JUnit 不得含 skip，报告和镜像身份留在证据目录。AC-012 外站不可达或样本不足记 `INCONCLUSIVE`；AC-013 人工项按用户决定记 `OUT_OF_SCOPE_BY_USER`。
 
 ## t041 指纹平台与平台字体集验收映射
 
