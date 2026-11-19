@@ -1,0 +1,15 @@
+{
+  "tid": "t087",
+  "attempt": 2,
+  "execution_id": "dd6a08d55c0c4dba9dbe33cd79a65e3a",
+  "status": "done",
+  "branch": "t087_windows_variable_font_named_instances",
+  "base_sha": "1531b20999354236467897f8e02eacfee0d447b8",
+  "spec_source_sha": "1531b20999354236467897f8e02eacfee0d447b8",
+  "tests": "首轮项目门禁各非 E2E 套件退出 0。最终代码相关单测 31 passed、7 skipped，真实字体 E2E 3 passed。",
+  "blackbox": "最终 Browser 镜像经真实 Runner 两次启动验证字体度量、字体就绪及中文覆盖过滤。原字体改名后照常匹配 Text、Display、Small 的真实实例。共享 Docker E2E 老夹具缺陷见 p145。",
+  "review": "Round 2 PASS，两项 AC 独立复验，前轮 finding 已修，无新 finding。",
+  "review_scope": "84be80b684be89aa",
+  "pending": [],
+  "findings": []
+}

@@ -65,6 +65,38 @@ def test_build_xml_escapes_directory_paths() -> None:
     assert element.text == raw
 
 
+def test_windows_variable_font_names_use_scanned_faces_from_bound_set() -> None:
+    bound = Path("/run/fonts/windows/a&b")
+    root = ET.fromstring(
+        build_fontconfig_xml([bound], include_cjk_fonts=False, platform="windows")
+    )
+    rules = root.findall("match")
+    assert len(rules) == 4
+    assert root.findall("selectfont/rejectfont")
+    aliases = []
+    for rule in rules:
+        assert rule.get("target") == "scan"
+        assert rule.find("test[@name='file']") is None
+        assert rule.findtext("test[@name='family']/string") == "Segoe UI Variable"
+        assert rule.findtext("test[@name='postscriptname']/string") == "SegoeUIVariable"
+        edit = rule.find("edit[@name='family']")
+        assert edit is not None
+        assert edit.get("mode") == "append" and edit.get("binding") == "strong"
+        aliases.append(edit.findtext("string"))
+    assert sorted(aliases) == [
+        "Segoe UI Variable Display",
+        "Segoe UI Variable Small",
+        "Segoe UI Variable Text",
+        "Segoe UI Variable Text",
+    ]
+    default_text = next(rule for rule in rules if rule.find("test[@name='index']") is not None)
+    assert default_text.findtext("test[@name='index']/int") == "0"
+    assert default_text.findtext("test[@name='variable']/bool") == "false"
+    assert not ET.fromstring(build_fontconfig_xml([bound], platform="macos")).findall(
+        "match"
+    )
+
+
 def test_build_xml_accepts_empty_whitelist_without_any_dir() -> None:
     """``build_fontconfig_xml([])`` yields a valid config with zero
     <dir> entries and no system include; the null-Profile fallback is decided
