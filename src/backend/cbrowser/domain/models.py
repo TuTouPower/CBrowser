@@ -1094,3 +1094,77 @@ class ProfileDeletionOperation(BaseModel):
 class ProfileDeletionBatchResponse(BaseModel):
     batch_id: str
     operations: list[ProfileDeletionOperation]
+
+
+# --- Proxy egress probe jobs (t094) ----------------------------------------
+# A batch probe is a durable server-side job: the client submits a frozen
+# target set and gets an immediate receipt; progress is read from this job
+# (and pushed over SSE), not from a client-side loop.  The observation table
+# stays the per-item result store; the job owns total/completed/failed.
+
+ProxyProbeJobState = Literal["running", "done"]
+ProxyProbeMemberState = Literal["pending", "ok", "failed"]
+
+
+class ProxyProbeJobFilters(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    search: str | None = Field(default=None, max_length=255)
+    country_code: str | None = Field(default=None, max_length=8)
+    city: str | None = Field(default=None, max_length=255)
+    scheme: PROXY_SCHEMES | None = None
+
+
+class ProxyProbeJobRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    proxy_ids: list[str] | None = None
+    filters: ProxyProbeJobFilters | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one_scope(self):
+        if (self.proxy_ids is None) == (self.filters is None):
+            raise ValueError("provide exactly one of proxy_ids or filters")
+        if self.proxy_ids is not None and not self.proxy_ids:
+            raise ValueError("proxy_ids must not be empty when provided")
+        return self
+
+
+class ProxyProbeJobMember(BaseModel):
+    proxy_id: str
+    state: ProxyProbeMemberState
+    error_code: str | None = None
+    observed_at: str | None = None
+
+
+class ProxyProbeJob(BaseModel):
+    """Authoritative read model for one probe job (t094 AC-004)."""
+
+    job_id: str
+    state: ProxyProbeJobState
+    total: int
+    completed: int
+    failed: int
+    created_at: str
+    updated_at: str
+    members: list[ProxyProbeJobMember]
+
+
+class ProxyProbeJobAccepted(BaseModel):
+    """Immediate `202` receipt: submission is a short request (t094 AC-003)."""
+
+    job_id: str
+    state: ProxyProbeJobState
+    total: int
+    completed: int = 0
+    failed: int = 0
+
+
+ProfileBatchAction = Literal["start", "stop", "moveToGroup"]
+
+
+class ProfileBatchJobRequest(BaseModel):
+    """Frozen target set + action for a server-driven environment batch (t094 AC-007)."""
+
+    model_config = ConfigDict(extra="forbid")
+    action: ProfileBatchAction
+    profile_ids: list[str] = Field(min_length=1)
+    group_id: str | None = None

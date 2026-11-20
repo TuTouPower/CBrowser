@@ -410,6 +410,25 @@ function makeStub(options: StubOptions = {}) {
       retrySearchDefaults: mockFn(async () => runtime("p1", "running")),
       restoreControl: mockFn(() => undefined),
     },
+    profileBatchJobs: {
+      submit: mockFn(async (input: { action: string; profile_ids: string[]; group_id?: string | null }) => ({
+        job_id: "job-test",
+        state: "running",
+        total: input.profile_ids.length,
+        completed: 0,
+        failed: 0,
+      })),
+      get: mockFn(async () => ({
+        job_id: "job-test",
+        state: "running",
+        total: 2,
+        completed: 0,
+        failed: 0,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+        members: [],
+      })),
+    },
     groups: {
       list: mockFn(async () => groups),
       // t076 review f006: filter options and the move menu read the
@@ -925,8 +944,8 @@ describe("EnvironmentListPage t076 集合分页", () => {
   });
 });
 
-describe("EnvironmentListPage AC-005 批量操作", () => {
-  it("starts each selected item with its own idempotency key", async () => {
+describe("EnvironmentListPage AC-007 环境批量作业", () => {
+  it("submits one frozen-scope start job for all selected items", async () => {
     renderPage();
     await screen.findByTestId("env-table");
     selectRow("p1");
@@ -934,18 +953,14 @@ describe("EnvironmentListPage AC-005 批量操作", () => {
     await screen.findByTestId("env-batch-bar");
     fireEvent.click(screen.getByTestId("env-batch-start"));
     await waitFor(() =>
-      expect(stub.spies.profiles.setDesiredState).toHaveBeenCalledTimes(2),
+      expect(stub.spies.profileBatchJobs.submit).toHaveBeenCalledTimes(1),
     );
-    const calls = stub.spies.profiles.setDesiredState.mock.calls;
-    const keys = calls.map((call) => call[2]);
-    expect(keys.every((key) => typeof key === "string" && key.length > 0)).toBe(
-      true,
-    );
-    expect(new Set(keys).size).toBe(2);
-    expect(calls.map((call) => call[1])).toEqual(["running", "running"]);
+    const input = stub.spies.profileBatchJobs.submit.mock.calls[0]![0];
+    expect(input.action).toBe("start");
+    expect(new Set(input.profile_ids)).toEqual(new Set(["p1", "p2"]));
   });
 
-  it("stops each selected item with its own idempotency key", async () => {
+  it("submits one frozen-scope stop job for all selected items", async () => {
     renderPage();
     await screen.findByTestId("env-table");
     selectRow("p1");
@@ -953,16 +968,27 @@ describe("EnvironmentListPage AC-005 批量操作", () => {
     await screen.findByTestId("env-batch-bar");
     fireEvent.click(screen.getByTestId("env-batch-stop"));
     await waitFor(() =>
-      expect(stub.spies.profiles.stop).toHaveBeenCalledTimes(2),
+      expect(stub.spies.profileBatchJobs.submit).toHaveBeenCalledTimes(1),
     );
-    const keys = stub.spies.profiles.stop.mock.calls.map((call) => call[1]);
-    expect(keys.every((key) => typeof key === "string" && key.length > 0)).toBe(
-      true,
-    );
-    expect(new Set(keys).size).toBe(2);
+    const input = stub.spies.profileBatchJobs.submit.mock.calls[0]![0];
+    expect(input.action).toBe("stop");
+    expect(new Set(input.profile_ids)).toEqual(new Set(["p1", "p3"]));
   });
 
-  it("moves each selected item to a group with its own idempotency key", async () => {
+  it("shows the batch job progress bar after submission", async () => {
+    renderPage();
+    await screen.findByTestId("env-table");
+    selectRow("p1");
+    selectRow("p2");
+    await screen.findByTestId("env-batch-bar");
+    fireEvent.click(screen.getByTestId("env-batch-start"));
+    await screen.findByTestId("env-batch-job-status");
+    expect(screen.getByTestId("env-batch-job-status").textContent).toContain(
+      "0/2",
+    );
+  });
+
+  it("submits one moveToGroup job carrying the target group", async () => {
     renderPage();
     await screen.findByTestId("env-table");
     selectRow("p1");
@@ -971,17 +997,12 @@ describe("EnvironmentListPage AC-005 批量操作", () => {
     fireEvent.click(screen.getByTestId("env-batch-move"));
     fireEvent.click(screen.getByTestId("env-move-group-g2"));
     await waitFor(() =>
-      expect(stub.spies.profiles.update).toHaveBeenCalledTimes(2),
+      expect(stub.spies.profileBatchJobs.submit).toHaveBeenCalledTimes(1),
     );
-    const calls = stub.spies.profiles.update.mock.calls;
-    expect(
-      calls.every((call) => (call[1] as { group_id?: string }).group_id === "g2"),
-    ).toBe(true);
-    const keys = calls.map((call) => call[2]);
-    expect(keys.every((key) => typeof key === "string" && key.length > 0)).toBe(
-      true,
-    );
-    expect(new Set(keys).size).toBe(2);
+    const input = stub.spies.profileBatchJobs.submit.mock.calls[0]![0];
+    expect(input.action).toBe("moveToGroup");
+    expect(input.group_id).toBe("g2");
+    expect(new Set(input.profile_ids)).toEqual(new Set(["p1", "p2"]));
   });
 
   // t078 AC-002/AC-005: 旧两条用例锁定「逐个 DELETE + 幂等键 + toast

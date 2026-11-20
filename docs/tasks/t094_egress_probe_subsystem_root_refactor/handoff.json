@@ -1,0 +1,17 @@
+{
+  "tid": "t094",
+  "attempt": 1,
+  "execution_id": "b14ea457a0994e0da7a9d9dc165784fc",
+  "status": "done",
+  "branch": "t094_egress_probe_subsystem_root_refactor",
+  "base_sha": "b1f979ba5e7ea2ee3a1bfb22d9d5d52703834434",
+  "spec_source_sha": "b1f979ba5e7ea2ee3a1bfb22d9d5d52703834434",
+  "tests": "全量门禁 `scripts/run_gates.sh` EXIT=0——契约 388、单元 2410、集成 216、前端 730（88 文件）+ 生产构建全绿；依赖锁/requirements 与锁文件一致，迁移 head 为 f1a2b3c4d5e6。",
+  "blackbox": "AC-008/009 真实 Docker/Chrome 拓扑因 `REQUIRED_E2E_ENV` 不可变镜像 ID 未配置本机不可执行，按项目既定 USER_WAIVED 口径与 `[deploy]` 处置注记登记 p151，未以 mock/skip/历史结果冒充。",
+  "review": "full 双轴 code/test 均 PASS（code Round4、test Round3），`review_scope=ok`、`ac_review=ok`、`next_action=finalize`；9 条 AC 全部 TICK-VALID（AC-001~007 re_verified，AC-008/009 处置型）。",
+  "review_scope": "e79f445344eca869",
+  "pending": [
+    "p151"
+  ],
+  "findings": []
+}

@@ -23,6 +23,10 @@ import type {
   ProxyCandidateEntry,
   ProxyCountryRange,
   ProxyUsedByResponse,
+  ProxyProbeJob,
+  ProxyProbeJobAccepted,
+  ProxyProbeJobMember,
+  ProxyProbeJobRequest,
   RuntimeSummaryResponse,
   RuntimeSummaryEntry,
   GroupResponse,
@@ -45,6 +49,13 @@ export const profileKeys = {
     [...profileKeys.all, "collection", params] as const,
   /** t076 review f003: prefix covering every collection page. */
   collectionPrefix: () => [...profileKeys.all, "collection"] as const,
+};
+
+/** t094: server-owned probe jobs. The accepted receipt pre-seeds the detail
+ * cache; SSE `probe_job_progress` events keep it current without refetching. */
+export const probeJobKeys = {
+  all: ["probeJobs"] as const,
+  detail: (jobId: string) => [...probeJobKeys.all, "detail", jobId] as const,
 };
 
 /** t076 review f003: collection pages live under a separate key
@@ -914,12 +925,28 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
         invalidateProfileLists(queryClient);
       });
 
+    // t094: probe-job progress is authoritative read-model data. Write it
+    // straight into the job cache; steady-state progress never triggers a
+    // refetch. The proxy lists are refreshed once on submission.
+    const unsubscribeProbeJob: (() => void) | undefined =
+      sseClient.onProbeJobProgress?.((event) => {
+        const { event: _event, ...job } = event;
+        // Write the shared job cache key; both the proxy speed-test page and
+        // the environment batch bar read this key, so one SSE handler keeps
+        // both pages live (t094 AC-005/AC-007).
+        queryClient.setQueryData<ProxyProbeJob>(
+          probeJobKeys.detail(job.job_id),
+          job,
+        );
+      });
+
     sseClient.start();
 
     return () => {
       unsubscribe();
       unsubscribePreview?.();
       unsubscribeReference?.();
+      unsubscribeProbeJob?.();
       sseClient.stop();
     };
   }, [sseClient, queryClient]);
@@ -1124,15 +1151,66 @@ export function useDeleteProxyMutation(
   });
 }
 
-export function useProbeProxyMutation(
+/** t094: submit one server-owned probe job. The 202 receipt is written into
+ * the job read-model cache immediately so the page can drive row state before
+ * the first SSE snapshot arrives; the proxy lists are invalidated once so
+ * fresh observations surface. */
+export function useSubmitProbeJobMutation(
   client: ApiClient = defaultApiClient,
-): UseMutationResult<ProxyResponse, Error, string> {
+): UseMutationResult<ProxyProbeJobAccepted, Error, ProxyProbeJobRequest> {
   const queryClient = useQueryClient();
-  return useActionKeyMutation({
-    mutationFn: ({ input }) => client.proxies.probe(input),
-    onSuccess: () => {
+  return useMutation({
+    mutationFn: (input) => client.probes.createProbeJob(input),
+    onSuccess: (accepted, input) => {
+      const now = new Date().toISOString();
+      const members: ProxyProbeJobMember[] = (input.proxy_ids ?? []).map(
+        (proxyId) => ({ proxy_id: proxyId, state: "pending" }),
+      );
+      queryClient.setQueryData<ProxyProbeJob>(
+        probeJobKeys.detail(accepted.job_id),
+        {
+          job_id: accepted.job_id,
+          state: accepted.state,
+          total: accepted.total,
+          completed: accepted.completed,
+          failed: accepted.failed,
+          created_at: now,
+          updated_at: now,
+          members,
+        },
+      );
       invalidateProxyLists(queryClient);
       invalidateProfileLists(queryClient);
     },
+  });
+}
+
+/** t094: read one probe job. Pre-seeded from the submit receipt, then kept
+ * current by `probe_job_progress` SSE events written directly to this cache. */
+export function useProbeJobQuery(
+  jobId: string | null | undefined,
+  enabled: boolean = true,
+  client: ApiClient = defaultApiClient,
+): UseQueryResult<ProxyProbeJob, Error> {
+  return useQuery({
+    queryKey: probeJobKeys.detail(jobId || ""),
+    queryFn: () => client.probes.getProbeJob(jobId!),
+    enabled: Boolean(jobId) && enabled,
+    staleTime: 30_000,
+  });
+}
+
+/** t094 AC-007: read model for a server-driven environment batch job.
+ * Uses the same cache key as proxy probe jobs so the single SSE
+ * `probe_job_progress` handler keeps both pages live (no key divergence). */
+export function useProfileBatchJobQuery(
+  jobId: string | null | undefined,
+  client: ApiClient = defaultApiClient,
+): UseQueryResult<ProxyProbeJob, Error> {
+  return useQuery({
+    queryKey: probeJobKeys.detail(jobId || ""),
+    queryFn: () => client.profileBatchJobs.get(jobId!),
+    enabled: Boolean(jobId),
+    staleTime: 30_000,
   });
 }

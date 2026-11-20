@@ -1,8 +1,8 @@
 """Egress probe I/O: echo fetch + local GeoIP lookup (t052, t062, t074).
 
-Neutral home: the probe runs in the API process, in the Supervisor's
-helper flow and inside the Browser image, so it cannot live in any
-one service package (t062).
+Neutral home: the probe runs in the API process (t094 in-process runner)
+and inside the Browser image, so it cannot live in any one service package
+(t062). The former Supervisor helper flow was removed in t094.
 
 The egress IP is discovered by asking an IP-echo endpoint *through the
 proxy* (never directly from the API process, whose egress may differ

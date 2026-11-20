@@ -18,7 +18,6 @@ from cbrowser.shared.egress_plan import (
     ProxyCredentialsChangedError,
     derive_supervisor_egress_plan,
     format_proxy_url,
-    probe_egress_plan,
     resolve_runtime_egress_plan,
 )
 from cbrowser.supervisor.network_policy import (
@@ -122,8 +121,20 @@ def test_derive_supervisor_egress_plan_fails_closed_on_missing_or_corrupt_creds(
     }
 
 
-def test_domain_proxy_vs_literal_ip_dns_policy_for_browser_and_probe() -> None:
-    domain_plan = probe_egress_plan("http", "proxy.example.com", 8080)
+def test_domain_proxy_vs_literal_ip_dns_policy_for_browser(tmp_path: Path) -> None:
+    creds_path = tmp_path / "proxy_credentials.json"
+    _write_creds(
+        creds_path,
+        {
+            "scheme": "http",
+            "host": "proxy.example.com",
+            "port": 8080,
+            "username": None,
+            "password": None,
+            "credential_revision": 1,
+        },
+    )
+    domain_plan = resolve_runtime_egress_plan("px_1", 1, creds_path)
     assert domain_plan.needs_proxy_dns is True
     assert domain_plan.to_network_policy_spec([("93.184.216.34", 8080)]) == {
         "role": "browser",
@@ -133,7 +144,18 @@ def test_domain_proxy_vs_literal_ip_dns_policy_for_browser_and_probe() -> None:
         "proxy_enforced": True,
     }
 
-    ip_plan = probe_egress_plan("https", "fd00:22::10", 18443)
+    _write_creds(
+        creds_path,
+        {
+            "scheme": "https",
+            "host": "fd00:22::10",
+            "port": 18443,
+            "username": None,
+            "password": None,
+            "credential_revision": 2,
+        },
+    )
+    ip_plan = resolve_runtime_egress_plan("px_1", 2, creds_path)
     assert ip_plan.needs_proxy_dns is False
     assert ip_plan.to_network_policy_spec([("fd00:22::10", 18443)]) == {
         "role": "browser",

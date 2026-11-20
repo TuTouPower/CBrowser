@@ -39,6 +39,7 @@ import {
   useGroupCandidatesQuery,
   useGroupQuery,
   useProfilesCollectionQuery,
+  useProfileBatchJobQuery,
   useProxyCandidatesQuery,
   useProxyQuery,
   useRetryDeletionMutation,
@@ -236,6 +237,18 @@ export function EnvironmentListPage() {
     rows: visibleRows,
     clearSelection,
   });
+  // t094 AC-007: track the submitted batch job and render progress/summary
+  // with the same read model the proxy probe page uses.
+  const [activeBatchJobId, setActiveBatchJobId] = useState<string | null>(null);
+  const activeBatchJob = useProfileBatchJobQuery(activeBatchJobId, client).data;
+  const runBatch = useCallback(
+    (action: "start" | "stop" | "moveToGroup", options?: { groupId?: string | null }) => {
+      void run(action, options).then((id) => {
+        if (id) setActiveBatchJobId(id);
+      });
+    },
+    [run],
+  );
 
   const startMutation = useSetDesiredStateMutation(client);
   const stopMutation = useStopProfileMutation(client);
@@ -314,7 +327,7 @@ export function EnvironmentListPage() {
   );
 
   const handleMove = (groupId: string | null) => {
-    void run("moveToGroup", { groupId });
+    runBatch("moveToGroup", { groupId });
   };
 
   const profilesError = profilesQuery.isError
@@ -417,11 +430,30 @@ export function EnvironmentListPage() {
         </div>
       )}
 
+      {activeBatchJob && (
+        <div data-testid="env-batch-job-status" className="batch-job-status" role="status">
+          {activeBatchJob.state === "running"
+            ? t("envBatchJobProgress", {
+                completed: activeBatchJob.completed + activeBatchJob.failed,
+                total: activeBatchJob.total,
+              })
+            : activeBatchJob.failed === 0
+              ? t("envBatchJobDone", {
+                  ok: activeBatchJob.completed,
+                  total: activeBatchJob.total,
+                })
+              : t("envBatchJobPartial", {
+                  ok: activeBatchJob.completed,
+                  failed: activeBatchJob.failed,
+                })}
+        </div>
+      )}
+
       {selected.size > 0 && (
         <BatchActionBar
           count={selected.size}
-          onStart={() => void run("start")}
-          onStop={() => void run("stop")}
+          onStart={() => runBatch("start")}
+          onStop={() => runBatch("stop")}
           moveControl={
             <MoveGroupMenu
               groups={groups}

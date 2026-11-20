@@ -43,6 +43,24 @@ logger = logging.getLogger("cbrowser.api.runtime_coordinator")
 _PLATFORM_DETECTION_LABELS = PLATFORM_DETECTION_LABELS
 
 
+@dataclass(frozen=True)
+class TypedSseEvent:
+    """An SSE event with an arbitrary name and a JSON-serializable payload.
+
+    Used for t094 probe-job progress so the event participates in the same
+    replay history and `Last-Event-ID` semantics as runtime_state events.
+    """
+
+    id: str
+    event: str
+    data: Any
+
+    def payload_json(self) -> str:
+        if hasattr(self.data, "model_dump_json"):
+            return self.data.model_dump_json()
+        return json.dumps(self.data, separators=(",", ":"))
+
+
 class ReconcileOutcome(Enum):
     CONVERGED = "converged"
     RETRYABLE = "retryable"
@@ -108,8 +126,8 @@ class RuntimeEventBroadcaster:
     def __init__(self, maxlen: int = 1000):
         self._epoch = secrets.token_hex(16)
         self._next_event_id: int = 1
-        self._history: deque[ProfileRuntimeEvent] = deque(maxlen=maxlen)
-        self._subscribers: set[asyncio.Queue[ProfileRuntimeEvent | str]] = set()
+        self._history: deque[ProfileRuntimeEvent | TypedSseEvent] = deque(maxlen=maxlen)
+        self._subscribers: set[asyncio.Queue[ProfileRuntimeEvent | TypedSseEvent | str]] = set()
         self._lock = asyncio.Lock()
 
     def _format_event_id(self, sequence: int) -> str:
@@ -143,6 +161,35 @@ class RuntimeEventBroadcaster:
                     except asyncio.QueueFull:
                         pass
             return event
+
+    async def publish_typed(self, event_name: str, data: Any) -> TypedSseEvent:
+        """Publish a named event into the replay history (t094)."""
+        async with self._lock:
+            event_id = self._format_event_id(self._next_event_id)
+            self._next_event_id += 1
+            event = TypedSseEvent(id=event_id, event=event_name, data=data)
+            self._history.append(event)
+            for q in list(self._subscribers):
+                try:
+                    q.put_nowait(event)
+                except asyncio.QueueFull:
+                    try:
+                        q.get_nowait()
+                    except asyncio.QueueEmpty:
+                        pass
+                    try:
+                        q.put_nowait(event)
+                    except asyncio.QueueFull:
+                        pass
+            return event
+
+    @staticmethod
+    def _payload(event: ProfileRuntimeEvent | TypedSseEvent) -> str:
+        return (
+            event.payload_json()
+            if isinstance(event, TypedSseEvent)
+            else event.data.model_dump_json()
+        )
 
     async def publish_transient(self, event_name: str, data: Any) -> None:
         payload = (
@@ -218,11 +265,18 @@ class RuntimeEventBroadcaster:
                     snapshot_data_list = raw_res
                 base_id = self._format_event_id(self._next_event_id - 1)
                 for data in snapshot_data_list:
-                    initial_events.append(
-                        ProfileRuntimeEvent(
-                            id=base_id, event="runtime_state", data=data
+                    # A snapshot provider may include typed events (e.g.
+                    # in-flight t094 probe jobs) alongside runtime data so a
+                    # reconnect can rebuild job progress after the ring buffer
+                    # window is exceeded (t094 AC-004/AC-005).
+                    if isinstance(data, TypedSseEvent):
+                        initial_events.append(data)
+                    else:
+                        initial_events.append(
+                            ProfileRuntimeEvent(
+                                id=base_id, event="runtime_state", data=data
+                            )
                         )
-                    )
             elif not replayed and last_event_id:
                 # The caller asked to resume from an id we cannot serve and
                 # no snapshot provider exists: say so explicitly instead of
@@ -238,7 +292,7 @@ class RuntimeEventBroadcaster:
             if resync_required:
                 yield ": resync-required\n\n"
             for event in initial_events:
-                payload = event.data.model_dump_json()
+                payload = self._payload(event)
                 yield f"id: {event.id}\nevent: {event.event}\ndata: {payload}\n\n"
 
             while True:
@@ -247,7 +301,7 @@ class RuntimeEventBroadcaster:
                     if isinstance(event, str):
                         yield event
                         continue
-                    payload = event.data.model_dump_json()
+                    payload = self._payload(event)
                     yield f"id: {event.id}\nevent: {event.event}\ndata: {payload}\n\n"
                 except TimeoutError:
                     yield ": ping\n\n"
@@ -409,20 +463,12 @@ class RuntimeCoordinator:
             self._last_errors.pop(profile_id, None)
 
     def egress_probe_runner(self):
-        """Production egress-probe runner (t052): probes run in the
-        Supervisor's helper container, which shares the Browser network
-        perspective.  Returns ``None`` when no Supervisor is configured —
-        the service then records a failed observation instead of probing
-        from the API process (whose egress would be the wrong one)."""
-        from cbrowser.services.egress_probe import SupervisorEgressProbeRunner
+        """Production egress-probe runner (t094): in-process, explicit-proxy
+        only. The container sandbox and Supervisor RPC were removed; the
+        runner is always available and never falls back to direct egress."""
+        from cbrowser.services.egress_probe import InProcessEgressProbeRunner
 
-        if not self.is_enabled():
-            return None
-        return SupervisorEgressProbeRunner(
-            supervisor_url=self.supervisor_url,
-            supervisor_token=self._token_str,
-            transport=self.transport,
-        )
+        return InProcessEgressProbeRunner()
 
     async def get_font_runtime(
         self, profile_id: str, runtime=None

@@ -358,10 +358,19 @@ def create_app(
 
         adopt_task.add_done_callback(_log_adoption_failure)
 
-        # t052: egress probes run in the Supervisor helper (Browser
-        # network perspective).  Without a Supervisor the service records
-        # a failed observation instead of probing from this process.
+        # t094: egress probes run in-process through an explicit proxy; no
+        # container sandbox or Supervisor RPC is involved any more.
         service.set_egress_probe_runner(coordinator.egress_probe_runner())
+
+        async def _publish_probe_job(job_id: str) -> None:
+            job = await service.get_probe_job(job_id)
+            if job is not None:
+                await coordinator.broadcaster.publish_typed(
+                    "probe_job_progress", job
+                )
+
+        service.set_probe_job_progress(_publish_probe_job)
+        await service.resume_pending_probe_jobs()
 
         # t031: human-priority control state. The API is the sole
         # business-DB writer; the service's hooks close tunnels (API

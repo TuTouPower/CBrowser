@@ -1408,6 +1408,171 @@
         ]
       }
     },
+    "/api/v1/profile-batch-jobs": {
+      "post": {
+        "tags": [
+          "profiles"
+        ],
+        "summary": "Create Profile Batch Job",
+        "description": "Submit a server-driven environment batch (t094 AC-007).\n\nThe target set and action are frozen at submission; progress is read\nfrom the job and pushed over SSE like proxy probe jobs.",
+        "operationId": "create_profile_batch_job_api_v1_profile_batch_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileBatchJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProxyProbeJobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ]
+      }
+    },
+    "/api/v1/profile-batch-jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "profiles"
+        ],
+        "summary": "Get Profile Batch Job",
+        "operationId": "get_profile_batch_job_api_v1_profile_batch_jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProxyProbeJob"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/profile-deletions/{operation_id}/retry": {
       "post": {
         "tags": [
@@ -4307,22 +4472,99 @@
         ]
       }
     },
-    "/api/v1/proxies/{proxy_id}/probe": {
+    "/api/v1/proxies/probe-jobs": {
       "post": {
         "tags": [
           "proxies"
         ],
-        "summary": "Probe Proxy",
-        "description": "Manual egress probe (t052 AC-006/AC-009).\n\nThe request carries no body: only the proxy id is accepted, and the\nstored endpoint + credentials are loaded server-side, so a caller can\nnever redirect the stored password to another host, port, scheme or\nusername.  Any request body is rejected (AC-009 negative path).",
-        "operationId": "probe_proxy_api_v1_proxies__proxy_id__probe_post",
+        "summary": "Create Probe Job",
+        "description": "Submit a server-owned probe job (t094).\n\nThe target set is resolved to explicit proxy ids and frozen before any\nwork runs; submission returns immediately. Both the global \"probe all\"\nand the per-row button use this endpoint (the latter with one id).",
+        "operationId": "create_probe_job_api_v1_proxies_probe_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProxyProbeJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProxyProbeJobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ]
+      }
+    },
+    "/api/v1/proxies/probe-jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "proxies"
+        ],
+        "summary": "Get Probe Job",
+        "operationId": "get_probe_job_api_v1_proxies_probe_jobs__job_id__get",
         "parameters": [
           {
-            "name": "proxy_id",
+            "name": "job_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Proxy Id"
+              "title": "Job Id"
             }
           }
         ],
@@ -4332,7 +4574,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProxyResponse"
+                  "$ref": "#/components/schemas/ProxyProbeJob"
                 }
               }
             }
@@ -4390,8 +4632,7 @@
         },
         "security": [
           {
-            "sessionCookie": [],
-            "csrfHeader": []
+            "sessionCookie": []
           }
         ]
       }
@@ -7471,6 +7712,46 @@
         ],
         "title": "LoginResponse"
       },
+      "ProfileBatchJobRequest": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "start",
+              "stop",
+              "moveToGroup"
+            ],
+            "title": "Action"
+          },
+          "profile_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Profile Ids"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "action",
+          "profile_ids"
+        ],
+        "title": "ProfileBatchJobRequest",
+        "description": "Frozen target set + action for a server-driven environment batch (t094 AC-007)."
+      },
       "ProfileControlStateData": {
         "properties": {
           "profile_id": {
@@ -9029,6 +9310,235 @@
         ],
         "title": "ProxyCreateRequest",
         "description": "Link-only entry (t052): the proxy link is the single source of\ntruth for the endpoint; ``name`` defaults to ``host:port``."
+      },
+      "ProxyProbeJob": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "done"
+            ],
+            "title": "State"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "completed": {
+            "type": "integer",
+            "title": "Completed"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/ProxyProbeJobMember"
+            },
+            "type": "array",
+            "title": "Members"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "state",
+          "total",
+          "completed",
+          "failed",
+          "created_at",
+          "updated_at",
+          "members"
+        ],
+        "title": "ProxyProbeJob",
+        "description": "Authoritative read model for one probe job (t094 AC-004)."
+      },
+      "ProxyProbeJobAccepted": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "done"
+            ],
+            "title": "State"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "completed": {
+            "type": "integer",
+            "title": "Completed",
+            "default": 0
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "state",
+          "total"
+        ],
+        "title": "ProxyProbeJobAccepted",
+        "description": "Immediate `202` receipt: submission is a short request (t094 AC-003)."
+      },
+      "ProxyProbeJobFilters": {
+        "properties": {
+          "search": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Search"
+          },
+          "country_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 8
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Code"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "scheme": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "http",
+                  "https",
+                  "socks5"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheme"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ProxyProbeJobFilters"
+      },
+      "ProxyProbeJobMember": {
+        "properties": {
+          "proxy_id": {
+            "type": "string",
+            "title": "Proxy Id"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "ok",
+              "failed"
+            ],
+            "title": "State"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "proxy_id",
+          "state"
+        ],
+        "title": "ProxyProbeJobMember"
+      },
+      "ProxyProbeJobRequest": {
+        "properties": {
+          "proxy_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proxy Ids"
+          },
+          "filters": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProxyProbeJobFilters"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ProxyProbeJobRequest"
       },
       "ProxyResponse": {
         "properties": {

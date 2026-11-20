@@ -1,10 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { AlertCircle, Pencil, Trash2, Zap } from "lucide-react";
 import { useI18n } from "../../i18n";
 import { ApiError } from "../../shared/api/client";
 import { useApiClient } from "../../shared/api/client_context";
-import type { ProxyResponse, ProxyUsedByEntry } from "../../shared/api/types";
+import type {
+  ProxyProbeJob,
+  ProxyProbeJobAccepted,
+  ProxyProbeJobRequest,
+  ProxyResponse,
+  ProxyUsedByEntry,
+} from "../../shared/api/types";
 import {
   Banner,
   Button,
@@ -24,9 +30,10 @@ import {
 } from "../../shared/presentation";
 import {
   useDeleteProxyMutation,
-  useProbeProxyMutation,
+  useProbeJobQuery,
   useProxiesCollectionQuery,
   useProxyCountriesQuery,
+  useSubmitProbeJobMutation,
 } from "../profiles/useProfilesQuery";
 import { ProxyFormDialog } from "./ProxyFormDialog";
 import { ProxyListToolbar } from "./ProxyListToolbar";
@@ -121,6 +128,28 @@ function usedByLabel(
     : t("proxyUsedByCount", { count });
 }
 
+/** t094: one line of job feedback — live progress while running, then a
+ * success / partial-failure / total-failure summary once the job is done. */
+function probeJobStatusText(
+  job: ProxyProbeJob,
+  t: ReturnType<typeof useI18n>["t"],
+): string {
+  if (job.state === "running") {
+    return t("proxyProbeJobProgress", {
+      completed: job.completed,
+      total: job.total,
+    });
+  }
+  const ok = job.total - job.failed;
+  if (job.failed === 0) {
+    return t("proxyProbeJobDone", { ok, total: job.total });
+  }
+  if (job.failed >= job.total) {
+    return t("proxyProbeJobAllFailed", { count: job.failed });
+  }
+  return t("proxyProbeJobPartial", { ok, failed: job.failed });
+}
+
 export function ProxyListPage() {
   const { t } = useI18n();
   const client = useApiClient();
@@ -152,10 +181,46 @@ export function ProxyListPage() {
   const totalPages = Math.max(1, Math.ceil(total / 50));
   const ranges = countriesQuery.data ?? [];
   const deleteMutation = useDeleteProxyMutation(client);
-  const probeMutation = useProbeProxyMutation(client);
+  const submitProbeJob = useSubmitProbeJobMutation(client);
 
-  const [probingId, setProbingId] = useState<string | null>(null);
-  const [probingAll, setProbingAll] = useState(false);
+  // t094: the server owns the job. The page remembers which job to watch;
+  // row state and summaries are derived from the job read model. The job id
+  // is persisted so a page refresh re-attaches to the in-flight job instead
+  // of losing its progress (t094 AC-004/AC-005).
+  const [activeJobId, setActiveJobId] = useState<string | null>(() => {
+    try {
+      return sessionStorage.getItem("proxyProbeActiveJobId") ?? null;
+    } catch {
+      return null;
+    }
+  });
+  const setProbeJobId = useCallback((id: string | null) => {
+    setActiveJobId(id);
+    try {
+      if (id) sessionStorage.setItem("proxyProbeActiveJobId", id);
+      else sessionStorage.removeItem("proxyProbeActiveJobId");
+    } catch {
+      /* storage unavailable: in-memory state still works */
+    }
+  }, []);
+  const activeJob = useProbeJobQuery(activeJobId, true, client).data;
+  // Once the job reaches a terminal state, clear the persisted id so a
+  // later refresh does not keep re-attaching to a finished job.
+  useEffect(() => {
+    if (activeJob?.state === "done") {
+      setProbeJobId(null);
+    }
+  }, [activeJob?.state, setProbeJobId]);
+  const probeJobRunning = activeJob?.state === "running";
+  const pendingProbeIds = useMemo(
+    () =>
+      new Set(
+        activeJob?.members
+          .filter((member) => member.state === "pending")
+          .map((member) => member.proxy_id) ?? [],
+      ),
+    [activeJob],
+  );
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<ProxyResponse | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProxyResponse | null>(null);
@@ -246,44 +311,42 @@ export function ProxyListPage() {
     });
   };
 
+  const onProbeSubmitted = (accepted: ProxyProbeJobAccepted) => {
+    setProbeJobId(accepted.job_id);
+    toast.show(t("proxyProbeSubmitted", { count: accepted.total }));
+  };
+
   const handleProbe = (proxy: ProxyResponse) => {
-    setProbingId(proxy.id);
-    probeMutation.mutate(proxy.id, {
-      onSuccess: (updated: ProxyResponse) => {
-        setProbingId(null);
-        // HTTP 200 with observation_status=failed is a real failure
-        // (t074 AC-004): never report success for it.
-        if (updated.observation_status === "failed") {
-          toast.show(t("proxyProbeFailed"));
-          return;
-        }
-        toast.show(t("proxyProbeSuccess"));
+    if (probeJobRunning) return;
+    submitProbeJob.mutate(
+      { proxy_ids: [proxy.id] },
+      {
+        onSuccess: onProbeSubmitted,
+        onError: (error: Error) => {
+          toast.show(`${t("proxyProbeFailed")}: ${error.message}`);
+        },
       },
+    );
+  };
+
+  const handleProbeAll = () => {
+    if (visible.length === 0 || probeJobRunning) return;
+    // t094: one server-owned job over the full filtered set. The server
+    // resolves filters across every page — never loop over the visible page.
+    const input: ProxyProbeJobRequest = {
+      filters: {
+        search: filters.q || undefined,
+        country_code: filters.country === "all" ? undefined : filters.country,
+        city: filters.city === "all" ? undefined : filters.city,
+        scheme: filters.scheme === "all" ? undefined : filters.scheme,
+      },
+    };
+    submitProbeJob.mutate(input, {
+      onSuccess: onProbeSubmitted,
       onError: (error: Error) => {
-        setProbingId(null);
         toast.show(`${t("proxyProbeFailed")}: ${error.message}`);
       },
     });
-  };
-
-  const handleProbeAll = async () => {
-    if (visible.length === 0 || probingAll) return;
-    setProbingAll(true);
-    let failed = 0;
-    for (const item of visible) {
-      try {
-        const updated = await probeMutation.mutateAsync(item.id);
-        if (updated.observation_status === "failed") failed += 1;
-      } catch {
-        failed += 1;
-      }
-    }
-    setProbingAll(false);
-    if (failed > 0) {
-      toast.show(`${t("proxyProbeFailed")} · ${failed}`);
-      return;
-    }
-    toast.show(t("proxyProbeAllSuccess", { count: visible.length }));
   };
 
   // t076 AC-004: count, detail, navigation and delete protection all
@@ -329,10 +392,19 @@ export function ProxyListPage() {
         cities={cityOptions}
         layout={layout}
         onLayoutChange={setLayout}
-        onProbeAll={() => void handleProbeAll()}
-        probingAll={probingAll}
+        onProbeAll={() => handleProbeAll()}
+        probingAll={probeJobRunning}
         onAdd={openCreate}
       />
+
+      {activeJob && (
+        <div
+          data-testid="proxy-probe-status"
+          className="rounded-md border border-outline bg-surface px-md py-sm font-ui text-body-sm text-on-surface"
+        >
+          {probeJobStatusText(activeJob, t)}
+        </div>
+      )}
 
       {loadError && (
         <Banner tone="danger" testId="proxy-list-load-error">
@@ -407,7 +479,9 @@ export function ProxyListPage() {
             const id = proxy.id;
             const blocked = proxy.used_by_count > 0;
             const isTesting =
-              probingId === id || proxy.observation_status === "pending";
+              probeJobRunning ||
+              proxy.observation_status === "pending" ||
+              pendingProbeIds.has(id);
             const count = proxy.used_by_count;
             return (
               <div
@@ -514,7 +588,8 @@ export function ProxyListPage() {
           onEdit={openEdit}
           onDelete={requestDelete}
           onProbe={handleProbe}
-          probingId={probingId}
+          pendingProbeIds={pendingProbeIds}
+          probeJobRunning={probeJobRunning}
           onUsedByClick={(proxy) => void handleUsedByClick(proxy)}
         />
       )}

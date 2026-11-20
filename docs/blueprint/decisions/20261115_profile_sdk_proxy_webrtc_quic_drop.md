@@ -12,3 +12,7 @@
     - 本轮实证基于 macOS OrbStack Linux aarch64 容器（CloakBrowser `0.6.4` + Chromium `146.0.7680.177.3`）；`linux-x64`（`146.0.7680.177.5`）沿用既定环境豁免记为 `NOT_RUN / USER_WAIVED`。
 - 复查条件：CloakBrowser 或 Chromium 主版本升级、或取消 `linux-x64` 豁免时，须重新执行 `s022` 同等双栈 netns 隔离与 WebRTC/QUIC/GeoIP 回归验证。
 - 替代：继续保留 `--proxy-server=` 与仅对 socks5 开放认证（拒绝：HTTP/HTTPS 认证与 GeoIP 代理路由不可用）；仅依赖 Chrome CLI 旗标而不封闭 netfilter `OUTPUT -j DROP`（拒绝：`d047` 已证 UDP/STUN/QUIC 可从内核层逃逸）。
+
+## t094 边界补注（探针策略退役，运行策略不变）
+
+ADR 038 的双栈 `OUTPUT -j DROP` 约束继续适用于 Browser/Stream 运行策略：配置代理的 Browser Profile 仍受其约束，`NetworkPolicySpec.proxy_enforced` 字段与由 `ProfileEgressPlan` / `derive_supervisor_egress_plan` 派生的 Browser 侧 plan 不受影响，巡检漂移仍触发 `fail_close_container`。t094 删除的是出口探测 helper 及其专属 `probe_egress_plan` 策略（连同内部控制路由 `POST /supervisor/v1/proxies/{id}/probe`、容器内 helper、专用 bridge 与探测专属 Policy Agent），测速改为 API 进程内经显式 `proxy=` + `trust_env=False` 的轻量探测，防泄露验证移交单元与真实 Docker E2E（见 `testing.md`）。上文关于「出口探测 helper」的表述仅记录 s022 当时的裁决背景，不代表现行实现。

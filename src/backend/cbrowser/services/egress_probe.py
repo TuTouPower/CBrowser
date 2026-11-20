@@ -1,25 +1,33 @@
-"""Egress probe runners (t052).
+"""Egress probe runners (t052, rebuilt in t094).
 
-The probe must run in the Supervisor's helper container — the only place
-that shares the Browser's network policy and proxy parameters (the API
-process has a different egress path, so probing there would observe the
-wrong exit).  The production runner is :class:`SupervisorEgressProbeRunner`
-(API -> Supervisor control API -> Docker helper).  :class:`LocalEgressProbeRunner`
-runs the same echo+GeoIP logic in-process and exists only for tests: it
-must never be wired into the production app.
+t094 removes the container sandbox: the probe now runs in the API process
+through an explicit proxy (``trust_env=False`` + an explicit ``proxy=`` so
+there is no direct egress fallback), allowlisted echo endpoints and local
+GeoIP. ``LocalEgressProbeRunner`` remains a deterministic, injectable
+runner for tests; ``InProcessEgressProbeRunner`` is the production runner.
+No Supervisor RPC, helper container, dedicated bridge or policy-agent is
+involved any more.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Protocol
-from urllib.parse import quote
 
 import httpx
 
-from cbrowser.shared.egress import EgressProbeError, GeoIpLookup, probe_egress
-from cbrowser.domain.proxy_endpoint import ProxyEndpoint
+from cbrowser.shared.egress import (
+    ECHO_URLS,
+    EgressProbeError,
+    GeoIpLookup,
+    probe_egress_detail,
+)
+from cbrowser.domain.proxy_endpoint import (
+    ProxyEndpoint,
+    map_endpoint_for_container,
+)
 
 logger = logging.getLogger("cbrowser.services.egress_probe")
 
@@ -31,6 +39,7 @@ class EgressProbeResult:
     country_name: str | None = None
     city: str | None = None
     latency_ms: int | None = None
+    source: str = "local_geoip"
 
 
 class EgressProbeRunner(Protocol):
@@ -40,13 +49,7 @@ class EgressProbeRunner(Protocol):
 
 
 class LocalEgressProbeRunner:
-    """In-process probe (tests only).
-
-    Runs :func:`cbrowser.shared.egress.probe_egress` in this
-    process.  Correct for logic tests with controlled echo/proxy fixtures,
-    wrong for production: this process does not share the Browser network
-    perspective, so its egress IP is not the Browser's.
-    """
+    """Deterministic injectable runner for tests (no real network)."""
 
     def __init__(
         self,
@@ -68,92 +71,78 @@ class LocalEgressProbeRunner:
             kwargs["echo_urls"] = self._echo_urls
         if self._geoip is not None:
             kwargs["geoip"] = self._geoip
-        egress_ip, country = probe_egress(endpoint.proxy_url(), **kwargs)
-        return EgressProbeResult(egress_ip=egress_ip, country_code=country)
+        detail = probe_egress_detail(endpoint.proxy_url(), **kwargs)
+        return EgressProbeResult(
+            egress_ip=detail.egress_ip,
+            country_code=detail.country_code,
+            country_name=detail.country_name,
+            city=detail.city,
+            latency_ms=detail.latency_ms,
+            source=detail.source,
+        )
 
 
-class SupervisorEgressProbeRunner:
-    """Production probe runner: ask the Supervisor control API to run the
-    egress probe in its helper container (Browser network perspective).
+class InProcessEgressProbeRunner:
+    """Production egress probe (t094): in-process, explicit-proxy only.
 
-    The endpoint credentials travel in the request body to the internal,
-    token-authenticated control API only (localhost); they are never
-    logged.  The public probe API accepts a proxy id alone and loads the
-    stored credentials server-side.
+    The endpoint URL always carries an explicit ``proxy=`` with
+    ``trust_env=False`` inside :func:`probe_egress_detail`, so a failed or
+    malformed proxy can never fall back to the API process's own egress.
+    Echo targets are the fixed allowlist in ``ECHO_URLS``; private/reserved
+    echo addresses are never contacted. No container/network is created,
+    so there is no churn and no sandbox to tear down.
     """
 
     def __init__(
         self,
-        supervisor_url: str | None,
-        supervisor_token: str | None,
-        transport: httpx.AsyncBaseTransport | None = None,
-        timeout: float = 90.0,
+        *,
+        timeout: float = 10.0,
+        echo_urls: tuple[str, ...] = ECHO_URLS,
+        geoip: GeoIpLookup | None = None,
+        map_loopback: bool = True,
     ) -> None:
-        self._url = supervisor_url.strip().rstrip("/") if supervisor_url else None
-        self._token = supervisor_token.strip() if supervisor_token else None
-        self._transport = transport
         self._timeout = timeout
+        self._echo_urls = echo_urls
+        self._geoip = geoip
+        self._map_loopback = map_loopback
 
     def is_enabled(self) -> bool:
-        return bool(self._url and self._token)
+        # Always available: no external Supervisor dependency.
+        return True
 
     async def probe(
         self, proxy_id: str, endpoint: ProxyEndpoint, credential_revision: int
     ) -> EgressProbeResult:
-        if not self.is_enabled():
+        # A loopback proxy stored as 127.0.0.1 must be rewritten to the
+        # host-gateway hostname: the API runs inside a compose container
+        # where 127.0.0.1 is the container itself, not the host (t094 AC-002).
+        # The stored endpoint keeps its loopback host for fingerprint
+        # stability; only the runtime probe endpoint is mapped.
+        probe_endpoint = (
+            map_endpoint_for_container(endpoint)
+            if self._map_loopback and getattr(endpoint, "is_loopback", False)
+            else endpoint
+        )
+        proxy_url = probe_endpoint.proxy_url()
+        if not proxy_url:
             raise EgressProbeError(
-                "supervisor_unavailable",
-                "Supervisor is not configured; egress probe cannot run",
+                "proxy_unavailable", "no proxy endpoint configured for probe"
             )
-        url = f"{self._url}/supervisor/v1/proxies/{quote(proxy_id, safe='')}/probe"
-        headers = {"Authorization": f"Bearer {self._token}"}
-        body = {
-            "scheme": endpoint.scheme,
-            "host": endpoint.host,
-            "port": endpoint.port,
-            "username": endpoint.username,
-            "password": endpoint.password,
-            "credential_revision": credential_revision,
-            "endpoint_fingerprint": endpoint.fingerprint,
-        }
-        try:
-            async with httpx.AsyncClient(
-                transport=self._transport, timeout=self._timeout, trust_env=False
-            ) as client:
-                resp = await client.post(url, json=body, headers=headers)
-        except Exception as exc:
-            raise EgressProbeError(
-                "supervisor_unavailable",
-                f"Supervisor probe request failed: {type(exc).__name__}",
-            ) from None
-        if resp.status_code != 200:
-            raise EgressProbeError(
-                "supervisor_unavailable",
-                f"Supervisor probe request failed: HTTP {resp.status_code}",
-            )
-        try:
-            data = resp.json()
-        except ValueError:
-            raise EgressProbeError(
-                "supervisor_unavailable", "Supervisor probe returned bad JSON"
-            ) from None
-        if not isinstance(data, dict):
-            # A non-dict body (list, string, ...) must not leak an
-            # AttributeError to the caller: the pending observation would
-            # otherwise hang forever with no failed row and no diagnosis.
-            raise EgressProbeError(
-                "probe_bad_response",
-                "Supervisor probe returned a non-object JSON body",
-            )
-        if data.get("status") != "ok" or not data.get("egress_ip"):
-            raise EgressProbeError(
-                data.get("error_code") or "probe_failed",
-                "Supervisor probe failed",
-            )
+        # The echo HTTP exchange is blocking I/O. Run it off the event loop
+        # so probe waiting never starves SSE progress or ordinary API calls
+        # (t094 AC-005). The timeout budget is passed into the HTTP client.
+        detail = await asyncio.to_thread(
+            probe_egress_detail,
+            proxy_url,
+            echo_urls=self._echo_urls,
+            geoip=self._geoip,
+            timeout=self._timeout,
+        )
         return EgressProbeResult(
-            egress_ip=data["egress_ip"],
-            country_code=data.get("country_code"),
-            country_name=data.get("country_name"),
-            city=data.get("city"),
-            latency_ms=data.get("latency_ms"),
+            egress_ip=detail.egress_ip,
+            country_code=detail.country_code,
+            country_name=detail.country_name,
+            city=detail.city,
+            latency_ms=detail.latency_ms,
+            source=detail.source,
         )

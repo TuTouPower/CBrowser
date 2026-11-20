@@ -202,6 +202,13 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 - 协调边界：stopping 阶段只经既有运行意愿通道置 stopped 并轮询观测/写者状态，不直接操作 Docker（Supervisor 唯一持有者边界不变）；超时即失败，不强行清理。cleaning 阶段先复核实例围栏（停止时快照 vs 当前绑定），再调用 Artifact 服务、文件系统与仓储完成清理；每步结果写入意图 `detail`，失败保留在失败阶段等待重试。
 - 恢复语义：意图是删除结果的唯一事实来源，客户端断开不影响推进；查询端点（批次/单项）只读意图表。旧单删端点同步驱动同一状态机，不存在第二条删除路径。
 
+### 5.10 服务端异步作业编排与轻量出口探测（t094）
+
+- **作业为编排权威**：代理测速不复用旧的客户端串行循环与同步探测端点（已删除）。提交 `POST /api/v1/proxies/probe-jobs`（`proxy_ids` 或 `filters` 二选一）只做解析与冻结目标 ID 集合的短请求，立即返回 `202` + `job_id`；`GET /api/v1/proxies/probe-jobs/{job_id}` 读权威读模型，SSE `probe_job_progress` 推送进度。作业与成员持久化在 `proxy_probe_jobs` / `proxy_probe_job_members` 两张表（增量迁移 `0015_proxy_probe_jobs.py`，只进不退）；作业持 `state`（`running` / `done`）、`total` / `completed` / `failed`，成员持 `state`（`pending` / `ok` / `failed`）、脱敏 `error_code` 与观测关联。
+- **冻结作用域与单一状态源**：作业作用于提交时解析出的过滤后目标 ID 集合，分页只影响视图、不参与作用域；行状态只由观测表的 `observation_status === "pending"` 表达，批量进度只由作业读模型与 SSE 表达，前端不持有并行进度状态。观测表 `proxy_egress_observations` 仍是逐项结果唯一存储，重复提交、自动探测与迟到结果不得覆盖在途作业归属，卡住的 pending 按预算收敛为终态；页面刷新由读模型恢复进度，API 进程重启按显式规则恢复或终结并暴露失败。
+- **轻量探测取代沙箱**：探测在 API 进程内执行（`services/egress_probe.py` + `shared/egress.py`），凭证由服务端从已存端点装载、不进命令行，显式 `proxy=` 且 `trust_env=False` 杜绝直连回退，回显目标限于固定白名单且私有/保留/回环地址拒绝，出口 IP / 城市取自身回显与本地 GeoIP，`latency_ms` 只计一次成功 HTTP 往返。不再创建 helper 容器、专用 bridge 或探测专属 Policy Agent，也不产生任何 Docker 网络 / 策略资源事件。`proxy_enforced=True` 双栈 `OUTPUT -j DROP` 只约束配置代理的 Browser/Stream 运行策略（ADR 038），与探测路径独立；探针只提供测速与出口信息展示，隔离 / 防泄露验证由单元与真实 Docker E2E 承担（见 [testing](testing.md)）。
+- **职责边界不变**：API 仍是唯一 SQLite 写入者，作业表随业务库由 API 独占写入；Supervisor 仍是唯一 Docker Socket 持有者，不参与探测。环境批量 start / stop / moveToGroup 复用同一作业提交与进度组件，与已有批量删除意图状态机并存、边界清晰。
+
 ## 6. 安全、网络与端口矩阵
 
 |来源|目标|允许操作与协议|安全约束|

@@ -1,10 +1,9 @@
-"""t052: Supervisor egress probe — Docker helper, loopback mapping, policy.
+"""t094: Browser-side egress policy and credential contracts.
 
-The real DockerAdapter runs against a purpose-built fake Docker client
-that models containers.run / exec_run / wait / remove and networks, so
-the helper sequence (create -> resolve -> install policy -> exec probe
--> cleanup) is exercised without Docker.  Real-Docker verification of the
-same sequence is a t032 / user-machine obligation (see progress.md).
+The Supervisor-side probe container, helper policy and control route are
+retired.  The remaining contracts exercised here are the Browser-side
+ones: proxy credential mapping/permissions, fail-closed policy derivation
+and loopback mapping on Browser startup.  No helper container is involved.
 """
 
 from __future__ import annotations
@@ -18,56 +17,27 @@ from unittest.mock import AsyncMock, MagicMock
 import docker.errors
 import httpx
 import pytest
-from cbrowser.domain.proxy_endpoint import parse_proxy_link
+from cbrowser.shared.egress_plan import DOCKER_EMBEDDED_DNS
 from cbrowser.supervisor.control_server import create_control_app
 from cbrowser.supervisor.core import SupervisorCore
 from cbrowser.supervisor.docker_adapter import (
     DockerAdapter,
-    DockerSandboxError,
-    EgressProbeFailure,
-    EgressProbeOutcome,
     LoopbackMappingError,
 )
 from cbrowser.supervisor.path_validator import PathValidator
 
 _SHA = "sha256:" + "a" * 64
 
-DNS_MAP = {
-    "proxy.example.com": "93.184.216.34",
-    "host.docker.internal": "192.168.65.254",
-}
-
-
-from collections import namedtuple
-
-_ExecResult = namedtuple("ExecResult", ["exit_code", "output"])
-
 
 class _FakeContainer:
-    def __init__(self, kind: str, calls: list, probe_result: dict | None = None):
+    def __init__(self, kind: str, calls: list):
         self.id = f"fake-{kind}-id"
         self.kind = kind
         self.calls = calls
-        self.probe_result = probe_result
         self.removed = False
         self.name = f"fake-{kind}"
         self.labels: dict = {}
         self.status = "running"
-
-    def exec_run(self, cmd, user=None):
-        self.calls.append({"exec": list(cmd), "user": user})
-        joined = " ".join(str(part) for part in cmd)
-        if "getaddrinfo" in joined:
-            host = cmd[5]
-            ip = DNS_MAP[host]
-            return _ExecResult(0, json.dumps([ip]).encode())
-        if "egress_probe" in joined:
-            payload = self.probe_result or {
-                "egress_ip": "203.0.113.7",
-                "country_code": "JP",
-            }
-            return _ExecResult(0, json.dumps(payload).encode())
-        raise AssertionError(f"unexpected exec: {cmd}")
 
     def start(self):
         self.started = True
@@ -102,15 +72,13 @@ class _FakeContainers:
         else:
             if self.fail_create is not None:
                 raise self.fail_create
-            container = _FakeContainer("probe", self.calls)
+            container = _FakeContainer("browser", self.calls)
         container.name = kwargs.get("name") or container.name
         container.labels = dict(kwargs.get("labels") or {})
         self.created.append(container)
         return container
 
     def create(self, image, **kwargs):
-        # Policy Agents are launched via create()+start(); record the
-        # launch exactly like run() so call-shape assertions see them.
         return self.run(image, **kwargs)
 
     def get(self, name):
@@ -162,159 +130,118 @@ def _adapter(tmp_path: Path, client=None):
 
     rig = PolicyAgentTestRig()
     rig.executor.resolutions.update(
-        {host: [ip] for host, ip in DNS_MAP.items()}
+        {
+            "proxy.example.com": ["93.184.216.34"],
+            "host.docker.internal": ["192.168.65.254"],
+        }
     )
     rig.install_on(adapter)
     adapter._test_rig = rig  # type: ignore[attr-defined]
     return adapter, fake, calls, root
 
 
-def _probe_kwargs(calls, entrypoint_part):
-    for call in calls:
-        if "run" not in call:
-            continue
-        kwargs = call["run"]
-        entrypoint = kwargs.get("entrypoint") or []
-        if any(entrypoint_part in str(part) for part in entrypoint):
-            return kwargs
-    raise AssertionError(f"no run call with entrypoint {entrypoint_part}")
-
-
-def test_probe_helper_maps_loopback_to_host_gateway(tmp_path):
-    """Loopback mapping unchanged; t074 returns a structured outcome."""
-    adapter, fake, calls, _root = _adapter(tmp_path)
-    endpoint = parse_proxy_link("http://user:pw@127.0.0.1:7890")
-    outcome = adapter.run_egress_probe(
-        proxy_id="px-1",
-        endpoint=endpoint,
-        credentials={"password": "pw", "credential_revision": 2},
+def _browser_policy(adapter, creds: dict | None, *, has_proxy: bool = True):
+    rig = adapter._test_rig
+    rig.stub_ensure(adapter)
+    container = SimpleNamespace(id="cid-browser-policy")
+    adapter.ensure_policy_agent(
+        container,
+        profile_id="p1",
+        instance_id="inst",
+        config_version=1,
+        role="browser",
     )
-    assert outcome.egress_ip == "203.0.113.7"
-    assert outcome.country_code == "JP"
-    probe = _probe_kwargs(calls, "time.sleep")
-    assert probe["extra_hosts"] == {"host.docker.internal": "host-gateway"}
-    # t082: the probe policy is installed by a one-shot Policy Agent
-    # joining the helper's namespace, speaking the same protocol.
-    agent_kwargs = _probe_kwargs(calls, "policy_agent")
-    assert agent_kwargs["network_mode"] == "container:fake-probe-id"
-    assert agent_kwargs["cap_add"] == ["NET_ADMIN"]
-    installed = adapter._test_rig.executor.installed  # type: ignore[attr-defined]
-    assert len(installed) == 1
-    # Only the mapped host-gateway address + the proxy port is allowed;
-    # no other private address is opened (AC-010 negative half).
-    assert installed[0][0].allowed_tcp == [("192.168.65.254", 7890)]
-
-
-def test_probe_helper_reports_error_code(tmp_path):
-    adapter, fake, calls, _root = _adapter(tmp_path)
-    endpoint = parse_proxy_link("http://proxy.example.com:8080")
-    # Make the probe exec report a GeoIP failure instead of an observation.
-    original_run = fake.containers.run
-
-    def run_with_failing_probe(image, **kwargs):
-        container = original_run(image, **kwargs)
-        if container.kind == "probe":
-            container.probe_result = {"error_code": "geoip_db_missing"}
-        return container
-
-    fake.containers.run = run_with_failing_probe
-    with pytest.raises(EgressProbeFailure) as excinfo:
-        adapter.run_egress_probe(
-            proxy_id="px-1",
-            endpoint=endpoint,
-            credentials={"password": None, "credential_revision": 1},
-        )
-    assert excinfo.value.code == "geoip_db_missing"
-
-
-def test_probe_helper_exit_1_json_error_code_is_preserved(tmp_path):
-    """t074 AC-004: exit_code=1 with a structured JSON error_code must
-    surface EgressProbeFailure(code). The old code raised a generic
-    DockerSandboxError here, which core.py collapsed to "probe_failed"."""
-    adapter, fake, _calls, _root = _adapter(tmp_path)
-    endpoint = parse_proxy_link("http://proxy.example.com:8080")
-    original_run = fake.containers.run
-
-    def run_with_exit_1(image, **kwargs):
-        container = original_run(image, **kwargs)
-        if container.kind == "probe":
-            real_exec = container.exec_run
-
-            def _fail(cmd, user=None):
-                if "egress_probe" in " ".join(str(part) for part in cmd):
-                    return _ExecResult(
-                        1,
-                        json.dumps({"error_code": "echo_unreachable"}).encode(),
-                    )
-                return real_exec(cmd, user=user)
-
-            container.exec_run = _fail
-        return container
-
-    fake.containers.run = run_with_exit_1
-    with pytest.raises(EgressProbeFailure) as excinfo:
-        adapter.run_egress_probe(
-            proxy_id="px-1",
-            endpoint=endpoint,
-            credentials={"password": None, "credential_revision": 1},
-        )
-    assert excinfo.value.code == "echo_unreachable"
-
-
-def test_probe_helper_crash_is_docker_error(tmp_path):
-    adapter, fake, calls, _root = _adapter(tmp_path)
-    endpoint = parse_proxy_link("http://proxy.example.com:8080")
-    original_run = fake.containers.run
-
-    def run_crashing(image, **kwargs):
-        container = original_run(image, **kwargs)
-        if container.kind == "probe":
-            real_exec = container.exec_run
-
-            def _crash(cmd, user=None):
-                if "egress_probe" in " ".join(str(part) for part in cmd):
-                    return _ExecResult(1, b"traceback")
-                return real_exec(cmd, user=user)
-
-            container.exec_run = _crash
-        return container
-
-    fake.containers.run = run_crashing
-    with pytest.raises(DockerSandboxError, match="probe helper failed"):
-        adapter.run_egress_probe(
-            proxy_id="px-1",
-            endpoint=endpoint,
-            credentials={"password": None, "credential_revision": 1},
-        )
-
-
-def test_loopback_mapping_failure_is_explicit(tmp_path):
-    calls: list = []
-    fake = _FakeDockerClient(
-        calls,
-        fail_create=docker.errors.APIError(
-            "extra_hosts host-gateway is not supported by this daemon"
-        ),
+    secret_dir = adapter.validator.get_secret_dir("p1")
+    secret_dir.mkdir(parents=True, exist_ok=True)
+    creds_file = secret_dir / "proxy_credentials.json"
+    if creds is None:
+        creds_file.unlink(missing_ok=True)
+    else:
+        creds_file.write_text(json.dumps(creds), encoding="utf-8")
+    spec = adapter._browser_egress_policy(
+        container, has_proxy=has_proxy, creds_file=creds_file
     )
-    adapter, _fake, _calls, _root = _adapter(tmp_path, client=fake)
-    endpoint = parse_proxy_link("http://127.0.0.1:7890")
-    with pytest.raises(LoopbackMappingError) as excinfo:
-        adapter.run_egress_probe(
-            proxy_id="px-1",
-            endpoint=endpoint,
-            credentials={"password": "pw", "credential_revision": 1},
-        )
-    assert "Loopback proxy mapping failed" in str(excinfo.value)
-    assert "host-gateway" in str(excinfo.value)
+    return spec, rig, creds_file
+
+
+def test_browser_policy_allows_only_mapped_proxy_for_loopback(tmp_path):
+    """Browser policy permits only the mapped gateway address + proxy port."""
+    adapter, _fake, _calls, _root = _adapter(tmp_path)
+    spec, _rig, _creds_file = _browser_policy(
+        adapter,
+        {
+            "scheme": "http",
+            "host": "host.docker.internal",
+            "port": 7890,
+            "credential_revision": 1,
+        },
+    )
+    assert spec["role"] == "browser"
+    assert spec["proxy_enforced"] is True
+    assert spec["allowed_tcp"] == [("192.168.65.254", 7890)]
+    assert spec["allowed_udp"] == [DOCKER_EMBEDDED_DNS]
+
+
+def test_browser_policy_fails_closed_on_missing_credentials(tmp_path):
+    adapter, _fake, _calls, _root = _adapter(tmp_path)
+    spec, _rig, _creds_file = _browser_policy(adapter, None)
+    assert spec["proxy_enforced"] is True
+    assert spec["allowed_tcp"] == []
+    assert spec["allowed_udp"] == []
+
+
+def test_browser_policy_direct_mode_allows_no_egress(tmp_path):
+    adapter, _fake, _calls, _root = _adapter(tmp_path)
+    spec, _rig, _creds_file = _browser_policy(adapter, None, has_proxy=False)
+    assert spec["proxy_enforced"] is False
+    assert spec["allowed_tcp"] == []
+    assert spec["allowed_udp"] == []
+
+
+def test_browser_policy_reuses_frozen_spec_for_unchanged_upstream(tmp_path):
+    adapter, _fake, _calls, _root = _adapter(tmp_path)
+    creds = {
+        "scheme": "http",
+        "host": "proxy.example.com",
+        "port": 8080,
+        "credential_revision": 1,
+    }
+    first, rig, creds_file = _browser_policy(adapter, creds)
+    second = adapter._browser_egress_policy(
+        SimpleNamespace(id="cid-browser-policy"),
+        has_proxy=True,
+        creds_file=creds_file,
+    )
+    assert first == second
+    assert len(rig.executor.installed) == 1
+
+
+def test_browser_policy_refreshes_when_upstream_changes(tmp_path):
+    adapter, _fake, _calls, _root = _adapter(tmp_path)
+    creds = {
+        "scheme": "http",
+        "host": "proxy.example.com",
+        "port": 8080,
+        "credential_revision": 1,
+    }
+    spec, rig, creds_file = _browser_policy(adapter, creds)
+    assert spec["allowed_tcp"] == [("93.184.216.34", 8080)]
+
+    changed = dict(creds, host="host.docker.internal", port=7890)
+    creds_file.write_text(json.dumps(changed), encoding="utf-8")
+    refreshed = adapter._browser_egress_policy(
+        SimpleNamespace(id="cid-browser-policy"),
+        has_proxy=True,
+        creds_file=creds_file,
+    )
+    assert refreshed["allowed_tcp"] == [("192.168.65.254", 7890)]
+    assert len(rig.executor.installed) == 2
 
 
 # ---- Browser start: extra_hosts + loopback failure (AC-010/AC-011) ---------
 
 
 def _stage_browser(adapter, tmp_path, creds: dict):
-    # t082: the Policy Agent seam is stubbed here like the install seam
-    # (in-process rig); agent lifecycle coverage lives in
-    # test_t082_adapter_policy_agents.
     adapter._test_rig.stub_ensure(adapter)  # type: ignore[attr-defined]
     adapter.remember_profile_number("p1", 1)
     dirs = adapter.prepare_profile_directories("p1")
@@ -440,107 +367,21 @@ async def test_browser_start_loopback_mapping_failure_is_explicit(tmp_path):
     assert "Loopback proxy mapping failed" in str(excinfo.value)
 
 
-# ---- core.probe_proxy_egress mapping ---------------------------------------
+# ---- core._write_proxy_credentials (Browser credential hand-off) ----------
 
 
-def _stub_core(docker):
-    core = SupervisorCore.__new__(SupervisorCore)
-    core.docker = docker
-    return core
-
-
-@pytest.mark.asyncio
-async def test_core_probe_maps_probe_failure_to_failed_dict():
-    docker = SimpleNamespace(
-        run_egress_probe=MagicMock(
-            side_effect=EgressProbeFailure("geoip_db_missing")
-        )
-    )
-    core = _stub_core(docker)
-    endpoint = parse_proxy_link("http://proxy.example.com:8080")
-    result = await core.probe_proxy_egress(
-        "px-1",
-        {
-            "scheme": "http",
-            "host": "proxy.example.com",
-            "port": 8080,
-            "username": None,
-            "password": None,
-            "credential_revision": 1,
-            "endpoint_fingerprint": endpoint.fingerprint,
-        },
-    )
-    assert result == {"status": "failed", "error_code": "geoip_db_missing"}
-
-
-@pytest.mark.asyncio
-async def test_core_probe_refuses_fingerprint_mismatch():
-    docker = SimpleNamespace(run_egress_probe=MagicMock())
-    core = _stub_core(docker)
-    result = await core.probe_proxy_egress(
-        "px-1",
-        {
-            "scheme": "http",
-            "host": "proxy.example.com",
-            "port": 8080,
-            "username": None,
-            "password": None,
-            "credential_revision": 1,
-            "endpoint_fingerprint": "0" * 64,
-        },
-    )
-    assert result == {"status": "failed", "error_code": "endpoint_mismatch"}
-    docker.run_egress_probe.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_core_probe_returns_full_observation_on_success():
-    """Replaces ``..._observation_on_success``: t074 propagates the full
-    structured outcome (country_name/city/latency_ms)."""
-    docker = SimpleNamespace(
-        run_egress_probe=MagicMock(
-            return_value=EgressProbeOutcome(
-                egress_ip="203.0.113.7",
-                country_code="JP",
-                country_name="Japan",
-                city="Tokyo",
-                latency_ms=42,
-            )
-        )
-    )
-    core = _stub_core(docker)
-    endpoint = parse_proxy_link("http://user:pw@proxy.example.com:8080")
-    result = await core.probe_proxy_egress(
-        "px-1",
-        {
-            "scheme": "http",
-            "host": "proxy.example.com",
-            "port": 8080,
-            "username": "user",
-            "password": "pw",
-            "credential_revision": 3,
-            "endpoint_fingerprint": endpoint.fingerprint,
-        },
-    )
-    assert result == {
-        "status": "ok",
-        "egress_ip": "203.0.113.7",
-        "country_code": "JP",
-        "country_name": "Japan",
-        "city": "Tokyo",
-        "latency_ms": 42,
-    }
-
-
-# ---- core._write_proxy_credentials loopback mapping (AC-010) -------------
+def _write_core_credentials(core, tmp_path: Path, creds: dict) -> Path:
+    target = tmp_path / "proxy_credentials.json"
+    core._write_proxy_credentials(target, creds)
+    return target
 
 
 def test_write_proxy_credentials_maps_loopback_host(tmp_path):
     core = SupervisorCore.__new__(SupervisorCore)
     core.docker = SimpleNamespace(manage_ownership=False)
-    target = tmp_path / "proxy_credentials.json"
-    core._write_proxy_credentials(
-        target,
+    target = _write_core_credentials(
+        core,
+        tmp_path,
         {
             "scheme": "http",
             "host": "127.0.0.1",
@@ -556,8 +397,9 @@ def test_write_proxy_credentials_maps_loopback_host(tmp_path):
     assert written["password"] == "pw"
     assert (target.stat().st_mode & 0o777) == 0o600
 
-    core._write_proxy_credentials(
-        target,
+    _write_core_credentials(
+        core,
+        tmp_path,
         {
             "scheme": "http",
             "host": "proxy.example.com",
@@ -571,70 +413,71 @@ def test_write_proxy_credentials_maps_loopback_host(tmp_path):
     assert written["host"] == "proxy.example.com"
 
 
-# ---- control-server probe endpoint -----------------------------------------
+def test_write_proxy_credentials_preserves_special_chars_privately(tmp_path):
+    core = SupervisorCore.__new__(SupervisorCore)
+    core.docker = SimpleNamespace(manage_ownership=False)
+    password = "p@ss:w=rd%1!/#?"
+    target = _write_core_credentials(
+        core,
+        tmp_path,
+        {
+            "scheme": "socks5",
+            "host": "proxy.example.com",
+            "port": 1080,
+            "username": "u@domain",
+            "password": password,
+            "credential_revision": 4,
+        },
+    )
+    written = json.loads(target.read_text(encoding="utf-8"))
+    assert written["password"] == password
+    assert written["username"] == "u@domain"
+    assert (target.stat().st_mode & 0o777) == 0o600
+
+
+def test_write_proxy_credentials_keeps_invalid_endpoint_unmapped(tmp_path):
+    core = SupervisorCore.__new__(SupervisorCore)
+    core.docker = SimpleNamespace(manage_ownership=False)
+    target = _write_core_credentials(
+        core,
+        tmp_path,
+        {
+            "scheme": "http",
+            "host": "bad@host",
+            "port": 8080,
+            "username": None,
+            "password": None,
+            "credential_revision": 1,
+        },
+    )
+    written = json.loads(target.read_text(encoding="utf-8"))
+    assert written["host"] == "bad@host"
+    assert (target.stat().st_mode & 0o777) == 0o600
+
+
+# ---- control server: removed probe route + retained auth ------------------
 
 
 @pytest.mark.asyncio
-async def test_control_probe_endpoint_requires_token_and_returns_observation(
-    tmp_path,
-):
+async def test_removed_probe_route_is_absent_and_auth_still_enforced(tmp_path):
     token = secrets.token_urlsafe(32)
     key = tmp_path / "key"
     key.write_text(token)
     key.chmod(0o600)
-    endpoint = parse_proxy_link("http://proxy.example.com:8080")
-    core = SimpleNamespace(
-        _sessions={},
-        _auth_headers=lambda: {},
-        probe_proxy_egress=AsyncMock(
-            return_value={
-                "status": "ok",
-                "egress_ip": "203.0.113.7",
-                "country_code": "JP",
-            }
-        ),
-    )
-    app = create_control_app(core, key)
+    app = create_control_app(SimpleNamespace(), key)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://supervisor"
     ) as client:
         denied = await client.post(
-            "/supervisor/v1/proxies/px-1/probe",
-            json={
-                "scheme": "http",
-                "host": "proxy.example.com",
-                "port": 8080,
-                "username": None,
-                "password": None,
-                "credential_revision": 1,
-                "endpoint_fingerprint": endpoint.fingerprint,
-            },
+            "/supervisor/v1/proxies/px-1/probe", json={"proxy_id": "px-1"}
         )
-        assert denied.status_code == 401
-        resp = await client.post(
-            "/supervisor/v1/proxies/px-1/probe",
-            json={
-                "scheme": "http",
-                "host": "proxy.example.com",
-                "port": 8080,
-                "username": None,
-                "password": None,
-                "credential_revision": 1,
-                "endpoint_fingerprint": endpoint.fingerprint,
-            },
+        assert denied.status_code == 404
+
+        no_auth = await client.get("/supervisor/v1/health")
+        assert no_auth.status_code == 401
+
+        allowed = await client.get(
+            "/supervisor/v1/health",
             headers={"Authorization": "Bearer " + token},
         )
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["status"] == "ok"
-        assert body["egress_ip"] == "203.0.113.7"
-        assert body["country_code"] == "JP"
-        assert "password" not in body
-
-
-# NOTE (t080): test_probe_helper_uses_browser_policy_and_returns_full_observation was removed wholesale because they asserted the
-# pre-t080 host bind-mount `volumes` dict representation; ADR 029
-# replaces it with typed named-volume subpath `mounts`.  The same
-# scenarios are covered under the new representation by
-# tests/unit/test_t080_adapter_mounts.py.
-
+        assert allowed.status_code == 200

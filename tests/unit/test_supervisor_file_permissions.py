@@ -329,11 +329,12 @@ async def test_stream_secrets_are_chowned_on_start_and_replace(
         await api.aclose()
 
 
-def test_probe_credentials_are_private_and_chowned_when_managed(
+def test_browser_proxy_credentials_are_private_and_chowned_when_managed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from cbrowser.domain.proxy_endpoint import parse_proxy_link
-    from tests.unit.test_t052_supervisor_probe import _adapter as probe_adapter
+    from types import SimpleNamespace
+
+    from cbrowser.supervisor.core import SupervisorCore
 
     chown_calls: list[tuple[Path, int, int]] = []
     monkeypatch.setattr(
@@ -341,18 +342,24 @@ def test_probe_credentials_are_private_and_chowned_when_managed(
         "chown",
         lambda path, uid, gid: chown_calls.append((Path(path), uid, gid)),
     )
-    adapter, _fake, _calls, _root = probe_adapter(tmp_path)
-    adapter.manage_ownership = True
-    outcome = adapter.run_egress_probe(
-        proxy_id="px-1",
-        endpoint=parse_proxy_link("http://user:pw@proxy.example.com:8080"),
-        credentials={"password": "pw", "credential_revision": 1},
+    core = SupervisorCore.__new__(SupervisorCore)
+    core.docker = SimpleNamespace(
+        manage_ownership=True, runtime_uid=1000, runtime_gid=1000
     )
-    assert outcome.egress_ip == "203.0.113.7"
-    assert any(
-        path.name == "proxy_credentials.json" and (uid, gid) == (1000, 1000)
-        for path, uid, gid in chown_calls
+    target = tmp_path / "proxy_credentials.json"
+    core._write_proxy_credentials(
+        target,
+        {
+            "scheme": "http",
+            "host": "proxy.example.com",
+            "port": 8080,
+            "username": "user",
+            "password": "pw",
+            "credential_revision": 1,
+        },
     )
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert (target, 1000, 1000) in chown_calls
 
 
 def test_prepare_profile_directories_chowns_intermediate_profile_and_artifact_parents(

@@ -10,6 +10,7 @@ import {
   useProfileEventsSync,
   profileKeys,
   groupKeys,
+  probeJobKeys,
   proxyKeys,
 } from "./useProfilesQuery";
 import { ApiClient } from "../../shared/api/client";
@@ -1026,6 +1027,37 @@ describe("useProfilesQuery & SSE Sync", () => {
     });
     expect(invalidateSpy).not.toHaveBeenCalledWith({
       queryKey: groupKeys.lists(),
+    });
+  });
+
+  it("writes the shared probe-job cache key so env batch progress stays live (t094)", () => {
+    let cb: ((event: any) => void) | null = null;
+    mockSseClient.onProbeJobProgress = (fn) => {
+      cb = fn as any;
+      return () => {
+        cb = null;
+      };
+    };
+    renderHook(() => useProfileEventsSync(mockSseClient), {
+      wrapper: createWrapper(),
+    });
+    const job = {
+      event: "probe_job_progress",
+      job_id: "job-shared",
+      state: "running",
+      total: 3,
+      completed: 2,
+      failed: 0,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+      members: [],
+    };
+    act(() => {
+      cb?.(job);
+    });
+    expect(queryClient.getQueryData(probeJobKeys.detail("job-shared"))).toMatchObject({
+      job_id: "job-shared",
+      completed: 2,
     });
   });
 });
