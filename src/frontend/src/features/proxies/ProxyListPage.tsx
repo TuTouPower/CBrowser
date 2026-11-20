@@ -136,7 +136,7 @@ function probeJobStatusText(
 ): string {
   if (job.state === "running") {
     return t("proxyProbeJobProgress", {
-      completed: job.completed,
+      processed: job.processed,
       total: job.total,
     });
   }

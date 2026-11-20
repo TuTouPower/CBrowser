@@ -434,7 +434,7 @@ export function EnvironmentListPage() {
         <div data-testid="env-batch-job-status" className="batch-job-status" role="status">
           {activeBatchJob.state === "running"
             ? t("envBatchJobProgress", {
-                completed: activeBatchJob.completed + activeBatchJob.failed,
+                processed: activeBatchJob.processed,
                 total: activeBatchJob.total,
               })
             : activeBatchJob.failed === 0

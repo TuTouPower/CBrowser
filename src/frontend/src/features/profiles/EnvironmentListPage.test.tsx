@@ -424,6 +424,7 @@ function makeStub(options: StubOptions = {}) {
         total: 2,
         completed: 0,
         failed: 0,
+        processed: 0,
         created_at: "2026-01-01T00:00:00Z",
         updated_at: "2026-01-01T00:00:00Z",
         members: [],

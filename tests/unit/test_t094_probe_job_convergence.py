@@ -102,15 +102,6 @@ async def test_resume_recovers_unfinished_job_after_restart(repo, service):
 
 
 @pytest.mark.asyncio
-async def test_concurrent_subset_probes_do_not_interleave(repo, service):
-    """Two probe jobs running at once keep their member results isolated
-    (t094 AC-002 parallel probes must not cross-talk)."""
-    runner = _StubRunner(delay=0.01)
-    service.set_egress_probe_runner(runner)
-    await service.request_probe_jobs(["p1", "p2"])
-    await service.request_probe_jobs(["p3", "p4"])
-    await service.await_probe_jobs()
-    assert runner.peak <= 1  # drivers are serialized per event loop, no shared state
-    for job_id in await repo.list_unfinished_jobs():
-        raise AssertionError(f"job {job_id} did not converge")
+async def test_unknown_job_read_returns_none(repo, service):
+    """A job id that was never created has no read model (t094 AC-004)."""
     assert (await repo.get_probe_job("j-none")) is None

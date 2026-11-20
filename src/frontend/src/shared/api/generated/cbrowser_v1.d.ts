@@ -1985,6 +1985,10 @@ export interface components {
         /**
          * ProxyProbeJob
          * @description Authoritative read model for one probe job (t094 AC-004).
+         *
+         *     ``completed``/``failed`` are the terminal result split; ``processed``
+         *     is the progress magnitude (成功+失败). Progress is never inferred from
+         *     the observation table — this read model is the sole authority (t095).
          */
         ProxyProbeJob: {
             /** Job Id */
@@ -2006,6 +2010,11 @@ export interface components {
             updated_at: string;
             /** Members */
             members: components["schemas"]["ProxyProbeJobMember"][];
+            /**
+             * Processed
+             * @description 已处理数 = 成功 + 失败；运行中进度与终态汇总共用同一语义。
+             */
+            readonly processed: number;
         };
         /**
          * ProxyProbeJobAccepted

@@ -1,0 +1,15 @@
+{
+  "tid": "t095",
+  "attempt": 1,
+  "execution_id": "5bdd11a055c04c59875828d73e52fa3b",
+  "status": "done",
+  "branch": "t095_probe_job_progress_realtime_and_concurrency",
+  "base_sha": "94ec7cdff9ca62309367ce984d20db4595189852",
+  "spec_source_sha": "94ec7cdff9ca62309367ce984d20db4595189852",
+  "tests": "`scripts/run_gates.sh` EXIT=0（contract 388 passed / 1 skipped；unit 2417 passed / 13 skipped；integration 216 passed / 18 skipped；前端 731 passed；design lint / check / build 全绿）。TDD：`test_t095_probe_job_progress.py` 七例先红后绿，覆盖全失败进度推进、读模型权威、观测历史 TTL、并发上限与耗时、超限排队、慢成员隔离、多作业隔离；前端新增失败进度 + 事件驱动列表刷新用例。",
+  "blackbox": "`blackbox_verify` 需真实 Docker/Chrome 镜像 ID，本机缺失；AC-006 不以 mock/skip 冒充，按既定口径由主会话立 pending 跟踪。",
+  "review": "full 双轴 code/test 均 PASS（各 1 minor 遗留 p151），`review_scope=ok`、`ac_review=ok`、`next_action=finalize`；6 条 AC 全 TICK-VALID（AC-001~005 re_verified，AC-006 trust_prior 处置型）。",
+  "review_scope": "ebe33b906c8aebb4",
+  "pending": [],
+  "findings": []
+}

@@ -1,7 +1,7 @@
 ---
 slug: proxy_management
 status: active
-tasks: [baseline, t076, t077, t079, t082, t094]
+tasks: [baseline, t076, t077, t079, t082, t094, t095]
 ---
 # 代理库界面
 
@@ -10,7 +10,7 @@ tasks: [baseline, t076, t077, t079, t082, t094]
 ## 1. 列表、卡片视图与测速（t038，t052+；t074 重写见 §10）
 
 - t074 起 `/proxies` 支持列表（8 列）与卡片网格两种视图，由工具栏右侧图标按钮切换；列定义见 §10。旧「6 列 / 位置列 / 使用环境数链接」描述已废弃。
-- 工具栏：搜索（名称、host、国家名、城市、地区标签，大小写不敏感）、协议筛选、独立国家筛选与城市筛选（联动去重）、批量闪电测速按钮（`Zap` 图标）、列表/卡片图标切换器、主按钮「添加代理」。筛选条件 `q` / `scheme` / `country` / `city` 存 URL SearchParams（`useProxyFilters`）、视图布局存 `localStorage`（`useProxyLayout`），刷新后筛选、视图、国家、城市、延迟、状态全部保留；联动筛选须单次原子提交。t076 起列表读服务端集合页（`GET /api/v1/proxies/collection`，每页 50 条，翻页器在列表下方），国家筛选值取稳定国家代码（选项由 `GET /api/v1/proxies/countries` 的范围提供，t079 起标签为国旗 + 国家名并按规范英文名排序、城市按同一规则排序，身份始终是代码），城市选项随所选国家联动；批量测速自 t094 起提交服务端作业，作用于过滤后的全集（提交时冻结目标 ID 集合），分页只作视图，进度经 SSE `probe_job_progress` 推送。t077 起国家/城市筛选为可搜索选择（顶部搜索框 + 完整范围客户端过滤 + Enter 选首个匹配，身份始终是国家代码/城市名），100 候选下列表内部滚动、滚轮可达末项。t079 起测速失败在表格、卡片与编辑弹窗统一呈本地化错误说明（机器码仅作诊断保留），国家呈现统一为国旗 + 名称（未知代码用占位），见 ui_design_system §2.9。
+- 工具栏：搜索（名称、host、国家名、城市、地区标签，大小写不敏感）、协议筛选、独立国家筛选与城市筛选（联动去重）、批量闪电测速按钮（`Zap` 图标）、列表/卡片图标切换器、主按钮「添加代理」。筛选条件 `q` / `scheme` / `country` / `city` 存 URL SearchParams（`useProxyFilters`）、视图布局存 `localStorage`（`useProxyLayout`），刷新后筛选、视图、国家、城市、延迟、状态全部保留；联动筛选须单次原子提交。t076 起列表读服务端集合页（`GET /api/v1/proxies/collection`，每页 50 条，翻页器在列表下方），国家筛选值取稳定国家代码（选项由 `GET /api/v1/proxies/countries` 的范围提供，t079 起标签为国旗 + 国家名并按规范英文名排序、城市按同一规则排序，身份始终是代码），城市选项随所选国家联动；批量测速自 t094 起提交服务端作业，作用于过滤后的全集（提交时冻结目标 ID 集合），分页只作视图，进度经 SSE `probe_job_progress` 推送。t095 起重做进度语义：运行中进度按「已处理数 = 成功 + 失败」（读模型只读字段 `processed`）/ 总数展示，失败计入已处理数、不再长期停在 0/N；服务端在并发上限内并行探测、单成员超时独立、观测写入后经同一进度事件即时刷新行状态，不靠轮询。t077 起国家/城市筛选为可搜索选择（顶部搜索框 + 完整范围客户端过滤 + Enter 选首个匹配，身份始终是国家代码/城市名），100 候选下列表内部滚动、滚轮可达末项。t079 起测速失败在表格、卡片与编辑弹窗统一呈本地化错误说明（机器码仅作诊断保留），国家呈现统一为国旗 + 名称（未知代码用占位），见 ui_design_system §2.9。
 - 空列表显示空状态。每视图最多一个主按钮。
 - 单条 / 批量测速统一提交 `POST /api/v1/proxies/probe-jobs`（`proxy_ids` 或 `filters` 二选一，服务端冻结目标集后立即返回 `202` + `job_id`），经 `GET /api/v1/proxies/probe-jobs/{job_id}` 读权威进度，SSE `probe_job_progress` 推送进度；前端不再持有并行的 `probingAll` / `probingId` 进度状态，改为读服务端作业状态与行 `observation_status === "pending"`；**彻底删除组件 `speedResults` state 与 `Date.now() - startedAt` 伪测速**，延迟只取后端持久化的 `ProxyResponse.latency_ms`。后端 `observation_status === "failed"` 即使 HTTP 200 也标红并提示错误 toast、不误报成功；`ok` 提示成功。
 
