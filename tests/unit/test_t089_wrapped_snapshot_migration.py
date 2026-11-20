@@ -21,6 +21,8 @@ REVISION_0013_PREDECESSOR = "d83a2c12b083"
 REVISION_0013 = "d75a0013f001"
 REVISION_LEGACY_HEAD = "d7e3a91f4c62"
 REVISION_0014_COMPENSATION = "e89a0014c001"
+# t094 appends the probe-job migration after the t089 head.
+REVISION_HEAD = "f1a2b3c4d5e6"
 
 WIN_SET = "1" * 64
 MAC_SET = "2" * 64
@@ -418,13 +420,13 @@ def test_compensation_0014_repairs_polluted_snapshots_idempotently(tmp_path: Pat
 
     cfg = get_alembic_config(db)
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_heads() == [REVISION_0014_COMPENSATION]
+    assert script.get_heads() == [REVISION_HEAD]
 
     run_database_migrations(db)
 
     conn = sqlite3.connect(db)
     try:
-        assert conn.execute("SELECT version_num FROM alembic_version").fetchone()[0] == REVISION_0014_COMPENSATION
+        assert conn.execute("SELECT version_num FROM alembic_version").fetchone()[0] == REVISION_HEAD
         dirs = dict(conn.execute("SELECT id, user_data_dir FROM profiles").fetchall())
         assert dirs == {
             "p-en": str(en_dir),
@@ -607,7 +609,7 @@ def test_compensation_0014_allows_clean_post0013_db_with_null_and_failed_font_se
     try:
         assert (
             conn.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-            == REVISION_0014_COMPENSATION
+            == REVISION_HEAD
         )
         after = dict(
             conn.execute("SELECT id, snapshot FROM profile_config_versions").fetchall()
@@ -627,7 +629,7 @@ def test_pre_0013_wrapped_snapshots_upgrade_directly_to_head(tmp_path: Path) -> 
     try:
         assert (
             conn.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-            == REVISION_0014_COMPENSATION
+            == REVISION_HEAD
         )
         rows = {
             row_id: json.loads(raw)

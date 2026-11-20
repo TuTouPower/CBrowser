@@ -533,8 +533,17 @@ bash scripts/run_automation_probe.sh
 - 正式 spike `s022`（`docs/spikes/s022_proxy_sdk_privacy_egress/report.md`）在 macOS OrbStack Linux aarch64 隔离网络命名空间内以真实 `cloakbrowser==0.6.4` + `chromium-146.0.7680.177.3/chrome` 验证：`launch_persistent_context_async(proxy=...)` 统一支持带认证 `http://`、`https://`（TLS-to-proxy）、`socks5://`、`http://[fd00::]:port`（IPv6）及 `geoip=True` 同路路由，并沉淀为 `d046` / `d047` 与 ADR 038。
 - 回归覆盖：
     - **unit**（`tests/unit/test_egress_plan_and_runner_sdk.py`、`test_t035_proxy_runtime.py`、`test_network_policy.py`、`test_t052_supervisor_probe.py`）：统一规划 `ProfileEgressPlan` 在运行/Supervisor/探针三端一致性、`--disable-quic` 与 `--force-webrtc-ip-handling-policy=disable_non_proxied_udp` 参数注入、`proxy=` URL 规范化编码、失败封闭凭据校验、`proxy_enforced=True` 双栈 `OUTPUT -j DROP` 规则渲染与 `SupervisorCore` 策略漂移 `fail_close_container` 触发。
-    - **真实 Docker E2E**：`tests/e2e/test_browser_runtime_e2e.py::test_p102_authenticated_proxy_sdk_hardening_e2e`（真 HTTP Basic + 特殊字符密码及真 RFC 1929 SOCKS5 代理 + `BrowserRunner` CLI 旗标验证）、`tests/e2e/test_supervisor_namespace_policy_e2e.py::test_kernel_proxy_enforced_blocks_public_egress_and_non_proxy_udp`（真内核双栈 `proxy_enforced=True` 阻断 `1.1.1.1:80`、IPv6 越权与 STUN/DNS UDP 旁路 + `probe_egress_plan` 对齐）。
+    - **真实 Docker E2E**：`tests/e2e/test_browser_runtime_e2e.py::test_p102_authenticated_proxy_sdk_hardening_e2e`（真 HTTP Basic + 特殊字符密码及真 RFC 1929 SOCKS5 代理 + `BrowserRunner` CLI 旗标验证）、`tests/e2e/test_supervisor_namespace_policy_e2e.py::test_kernel_proxy_enforced_blocks_public_egress_and_non_proxy_udp`（真内核双栈 `proxy_enforced=True` 阻断 `1.1.1.1:80`、IPv6 越权与 STUN/DNS UDP 旁路；t094 起策略由 Browser 侧 `derive_supervisor_egress_plan` 派生，无探测 helper 容器或专用 bridge）。
 - 平台豁免声明：本轮真实引擎与内核实证仅覆盖 `linux-arm64`（`chromium-146.0.7680.177.3`）；`linux-x64`（`chromium-146.0.7680.177.5`）沿用既定环境豁免正式记为 `NOT_RUN / USER_WAIVED`。
+
+## 出口测速与防泄露的两条独立验证链（t094）
+
+t094 移除探测容器沙箱后，测速正确性与防泄露证据由两条互不替代的链分别承担；探针不再自称隔离自检或防泄露保证。
+
+- **探针链（测速与出口信息展示）**：单元层以 `tests/unit/test_t052_egress_probe_helper.py` 等覆盖 http/https/socks5 三协议的显式 `proxy=` + `trust_env=False`、固定白名单回显与私有/保留/回环目标拒绝、失败无直连回退、并发结果不串扰、冻结延迟口径（只计一次成功 HTTP 往返）与本地 GeoIP 缺库 / 缺城市状态，并断言不再调用 Supervisor 探测路由与 helper 建毁路径。真实 Docker 探针链（[deploy]，AC-008）以受控代理 / 回显 / GeoIP 夹具断言预期出口，并核对零 helper / 专用 bridge / 策略资源事件（容器、网络与 Docker 事件）和冻结后延迟；内核策略用例（如 namespace policy E2E）改由 Browser 侧 `derive_supervisor_egress_plan` 派生策略，仍触达生产路径。探针链只证明测速与出口信息准确，不证明防泄露。
+- **Browser 链（防泄露）**：配置代理的 Browser Profile 继续受 ADR 038 双栈 `OUTPUT DROP` 约束，由 `tests/e2e/test_browser_runtime_e2e.py`、`test_supervisor_namespace_policy_e2e.py`、`test_supervisor_ipv6_policy_e2e.py` 与 `test_supervisor_policy_failure_e2e.py` 验证 IPv4/IPv6、Docker DNS 与外部 DNS、私有 / 保留地址阻断、策略安装失败封闭与公网出口对照；`tests/e2e/test_proxy_library_e2e.py` 以 UI 建代理 → Profile 引用 → 启动 → 浏览器出站，通过监听代理日志的 `PROXY_GET` 行证明 Chrome 出口经代理，并断言直连公网 / STUN / 外部 DNS 旁路流量为零。
+
+两条链的入口、夹具与证据各自独立：探针链通过不替代 Browser 链，Browser 链通过也不证明探针测速口径；缺少真实 Docker / Chrome 前置时按必跑模式失败封闭并列出缺项，不以 mock、skip 或历史结果冒充已验（[deploy] 项顺延本地补验）。`doctor_cmd` / `test_cmd` / `blackbox_verify` / `verification_policy` / `verification_notes` 机械锚点章节名与命令形式不变。
 
 ## Linux 原生卷挂载隔离与迁移故障矩阵（t080）
 

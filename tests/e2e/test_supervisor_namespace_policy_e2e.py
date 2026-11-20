@@ -104,6 +104,10 @@ def resource_tracker(docker_client: docker.DockerClient):
     volume_prefixes: list[str] = []
 
     class Tracker:
+        def counts(self) -> tuple[int, int]:
+            """Return (containers, networks) registered so far."""
+            return len(containers), len(networks)
+
         def register_container(
             self, container: docker.models.containers.Container
         ) -> docker.models.containers.Container:
@@ -720,13 +724,16 @@ def test_kernel_proxy_enforced_blocks_public_egress_and_non_proxy_udp(
     resource_tracker: Any,
     tmp_path: Path,
 ) -> None:
-    """p102/d047 E2E: when proxy_enforced=True (proxied Browser or egress probe),
-    dual-stack filter rules end in OUTPUT -j DROP instead of OUTPUT -j ACCEPT.
-    Only the resolved proxy TCP endpoint is reachable; direct public IPv4 egress
+    """p102/d047 E2E: when proxy_enforced=True (proxied Browser), dual-stack
+    filter rules end in OUTPUT -j DROP instead of OUTPUT -j ACCEPT. Only the
+    resolved proxy TCP endpoint is reachable; direct public IPv4 egress
     (1.1.1.1:80), unauthorized IPv6 ULA peers, external DNS (8.8.8.8:53/udp),
     and WebRTC-like STUN UDP (port 3478) are all blocked at the kernel layer.
+
+    t094: the policy is derived from the Browser-side egress plan helpers,
+    with no probe helper container or dedicated bridge network involved.
     """
-    from cbrowser.shared.egress_plan import probe_egress_plan
+    from cbrowser.shared.egress_plan import derive_supervisor_egress_plan
 
     prefix = f"t102-strict-{uuid.uuid4().hex[:8]}"
 
@@ -816,12 +823,30 @@ def test_kernel_proxy_enforced_blocks_public_egress_and_non_proxy_udp(
     except OSError as exc:
         pytest.fail(f"host cannot reach 1.1.1.1:80 baseline ({exc})")
 
-    # Build NetworkPolicySpec from the exact unified probe/proxied plan helper.
-    spec = NetworkPolicySpec.model_validate(
-        probe_egress_plan("http", ip_c, 8888).to_network_policy_spec(
-            allowed_tcp=[(ip_c, 8888)]
-        )
+    # Derive strict proxy policy from the Browser-side unified plan helper.
+    # Building the plan must produce zero Docker resource events: no helper
+    # container and no dedicated probe network (the t094 in-process probe
+    # replaced the sandbox path entirely).
+    before = resource_tracker.counts()
+    creds_path = tmp_path / "proxy_credentials.json"
+    creds_path.write_text(
+        json.dumps(
+            {
+                "scheme": "http",
+                "host": ip_c,
+                "port": 8888,
+                "username": "user",
+                "password": "secret",
+                "credential_revision": 1,
+            }
+        ),
+        encoding="utf-8",
     )
+    plan = derive_supervisor_egress_plan(has_proxy=True, creds_path=creds_path)
+    spec = NetworkPolicySpec.model_validate(
+        plan.to_network_policy_spec(allowed_tcp=[(ip_c, 8888)])
+    )
+    assert resource_tracker.counts() == before
     assert spec.proxy_enforced is True
 
     agent_client = _start_policy_agent(

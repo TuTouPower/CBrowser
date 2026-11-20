@@ -62,8 +62,6 @@ from cbrowser.domain.proxy_endpoint import (
 from cbrowser.supervisor.docker_adapter import (
     DockerAdapter,
     DockerSandboxError,
-    EgressProbeFailure,
-    LoopbackMappingError,
     StreamContainerResidueError,
     StreamResidue,
 )
@@ -2845,63 +2843,6 @@ class SupervisorCore:
             "password": password,
             "credential_revision": current,
             "proxy_credential_revision": frozen if frozen is not None else current,
-        }
-
-    async def probe_proxy_egress(
-        self, proxy_id: str, payload: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Run one egress probe for a proxy (t052).
-
-        ``payload`` carries the stored endpoint + credentials (from the
-        API, over the token-authenticated control plane); the public probe
-        API accepts only the proxy id.  The endpoint fingerprint in the
-        payload must match the endpoint, or the probe is refused.  The
-        result is always a dict — ``{"status": "ok", "egress_ip",
-        "country_code", "country_name", "city", "latency_ms"}`` or
-        ``{"status": "failed", "error_code"}`` — so the API can record a
-        failed observation instead of failing the request.
-        """
-        try:
-            endpoint = ProxyEndpoint(
-                scheme=payload["scheme"],
-                host=payload["host"],
-                port=payload["port"],
-                username=payload.get("username"),
-                password=payload.get("password"),
-            )
-        except (KeyError, TypeError, ValueError, ProxyLinkError):
-            return {"status": "failed", "error_code": "invalid_endpoint"}
-        if endpoint.fingerprint != payload.get("endpoint_fingerprint"):
-            return {"status": "failed", "error_code": "endpoint_mismatch"}
-        credentials = {
-            "password": endpoint.password,
-            "credential_revision": payload.get("credential_revision"),
-        }
-        try:
-            outcome = await asyncio.to_thread(
-                self.docker.run_egress_probe,
-                proxy_id=proxy_id,
-                endpoint=endpoint,
-                credentials=credentials,
-            )
-        except EgressProbeFailure as exc:
-            return {"status": "failed", "error_code": exc.code}
-        except LoopbackMappingError:
-            return {"status": "failed", "error_code": "loopback_mapping_unavailable"}
-        except DockerSandboxError as exc:
-            logger.warning(
-                "Egress probe failed: proxy=%s error_type=%s",
-                proxy_id,
-                type(exc).__name__,
-            )
-            return {"status": "failed", "error_code": "probe_failed"}
-        return {
-            "status": "ok",
-            "egress_ip": outcome.egress_ip,
-            "country_code": outcome.country_code,
-            "country_name": outcome.country_name,
-            "city": outcome.city,
-            "latency_ms": outcome.latency_ms,
         }
 
     def _write_proxy_credentials(

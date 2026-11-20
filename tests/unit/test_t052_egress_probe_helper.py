@@ -1,230 +1,171 @@
-"""t052: egress probe helper CLI (runs in the Browser image).
+"""t094: in-process egress probe core tests (the container sandbox is retired).
 
-The helper is exercised in-process here (same code path the Supervisor
-helper container executes) against controlled local echo/proxy fixtures.
+``runtime_agent.egress_probe`` no longer exists. These tests cover the
+lightweight replacement instead: the runners in ``services.egress_probe``
+and the pure probe functions in ``shared.egress`` they delegate to. No
+container, bridge network, policy agent or helper executable is involved.
 """
 
 from __future__ import annotations
 
-import http.client
-import http.server
-import json
-import socketserver
-import sys
-import threading
-import types
-from pathlib import Path
-from urllib.parse import urlparse
+from types import SimpleNamespace
 
+import httpx
 import pytest
 
-from cbrowser.runtime_agent.egress_probe import main
+from cbrowser.domain.proxy_endpoint import ProxyEndpoint
+from cbrowser.services import egress_probe as runner_mod
+from cbrowser.services.egress_probe import (
+    EgressProbeResult,
+    InProcessEgressProbeRunner,
+    LocalEgressProbeRunner,
+)
+from cbrowser.shared.egress import (
+    EgressProbeDetail,
+    EgressProbeError,
+    GeoLocation,
+    fetch_egress_ip,
+    fetch_egress_ip_timed,
+    probe_egress_detail,
+)
 
 
-class _EchoHandler(http.server.BaseHTTPRequestHandler):
-    body = b"203.0.113.7"
-
-    def do_GET(self):
-        data = self.body
-        self.send_response(200)
-        self.send_header("Content-Type", "text/plain")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
-
-    def log_message(self, *args):
-        pass
-
-
-class _ForwardProxyHandler(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):
-        target = urlparse(self.path)
-        conn = http.client.HTTPConnection(target.hostname, target.port or 80, timeout=5)
-        try:
-            conn.request("GET", target.path or "/", headers={"Host": target.netloc})
-            resp = conn.getresponse()
-            data = resp.read()
-        finally:
-            conn.close()
-        self.send_response(resp.status)
-        self.send_header("Content-Type", "text/plain")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
-
-    def log_message(self, *args):
-        pass
-
-
-class _ThreadingServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
-    daemon_threads = True
-    allow_reuse_address = True
-
-
-@pytest.fixture(scope="module")
-def proxy_fixture():
-    echo = _ThreadingServer(("127.0.0.1", 0), _EchoHandler)
-    proxy = _ThreadingServer(("127.0.0.1", 0), _ForwardProxyHandler)
-    for srv in (echo, proxy):
-        threading.Thread(target=srv.serve_forever, daemon=True).start()
-    yield {
-        "echo_url": f"http://127.0.0.1:{echo.server_address[1]}/ip",
-        "proxy_port": proxy.server_address[1],
-    }
-    for srv in (echo, proxy):
-        srv.shutdown()
-        srv.server_close()
-
-
-@pytest.fixture
-def stub_geoip2(monkeypatch, tmp_path):
-    mapping = {"203.0.113.7": "JP"}
-
-    class FakeCountry:
-        def __init__(self, code):
-            self.iso_code = code
-            self.name = "Japan" if code == "JP" else "United States"
-
-    class FakeCityRecord:
-        def __init__(self, code):
-            self.name = "Tokyo" if code == "JP" else None
-
-    class FakeCity:
-        def __init__(self, code):
-            self.country = FakeCountry(code)
-            self.city = FakeCityRecord(code)
-
-    class FakeReader:
-        def __init__(self, path):
-            self.path = path
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *exc):
-            return False
-
-        def city(self, ip):
-            return FakeCity(mapping[ip])
-
-    database_mod = types.ModuleType("geoip2.database")
-    database_mod.Reader = FakeReader
-    geoip2_mod = types.ModuleType("geoip2")
-    geoip2_mod.database = database_mod
-    monkeypatch.setitem(sys.modules, "geoip2", geoip2_mod)
-    monkeypatch.setitem(sys.modules, "geoip2.database", database_mod)
-    db_path = tmp_path / "GeoLite2-City.mmdb"
-    db_path.write_bytes(b"fake-mmdb")
-    return db_path
-
-
-def _credentials_file(tmp_path, proxy_port, password="s3cret-pw"):
-    path = tmp_path / "proxy_credentials.json"
-    path.write_text(
-        json.dumps(
-            {
-                "scheme": "http",
-                "host": "127.0.0.1",
-                "port": proxy_port,
-                "username": "user",
-                "password": password,
-                "credential_revision": 1,
-            }
-        ),
-        encoding="utf-8",
+def _endpoint() -> ProxyEndpoint:
+    return ProxyEndpoint(
+        scheme="http",
+        host="proxy.example.com",
+        port=8080,
+        username="user",
+        password="s3cret-pw",
     )
-    return path
 
 
-def test_helper_prints_full_observation(
-    proxy_fixture, stub_geoip2, tmp_path, capsys
-):
-    """Replaces ``test_helper_prints_egress_and_country``: t074 emits the
-    full observation (country_name/city/latency_ms); the old two-field
-    assertion would lock an obsolete output contract."""
-    creds = _credentials_file(tmp_path, proxy_fixture["proxy_port"])
-    rc = main(
-        [
-            "--credentials-file",
-            str(creds),
-            "--geoip-db",
-            str(stub_geoip2),
-            "--echo-url",
-            proxy_fixture["echo_url"],
-        ]
+def _detail() -> EgressProbeDetail:
+    return EgressProbeDetail(
+        egress_ip="203.0.113.7",
+        country_code="JP",
+        country_name="Japan",
+        city="Tokyo",
+        latency_ms=128,
+        source="local_geoip",
     )
-    assert rc == 0
-    out = capsys.readouterr().out
-    payload = json.loads(out)
-    assert payload["egress_ip"] == "203.0.113.7"
-    assert payload["country_code"] == "JP"
-    assert payload["country_name"] == "Japan"
-    assert payload["city"] == "Tokyo"
-    assert isinstance(payload["latency_ms"], int) and payload["latency_ms"] >= 1
-    # Byte-level: the password never appears in the helper's stdout.
-    assert b"s3cret-pw" not in out.encode("utf-8")
 
 
-def test_helper_missing_geoip_db(proxy_fixture, tmp_path, capsys):
-    creds = _credentials_file(tmp_path, proxy_fixture["proxy_port"])
-    rc = main(
-        [
-            "--credentials-file",
-            str(creds),
-            "--geoip-db",
-            str(tmp_path / "GeoLite2-City.mmdb"),
-            "--echo-url",
-            proxy_fixture["echo_url"],
-        ]
+class _StubGeoIp:
+    def location(self, ip: str) -> GeoLocation:
+        assert ip == "203.0.113.7"
+        return GeoLocation(
+            country_code="JP", country_name="Japan", city="Tokyo"
+        )
+
+
+@pytest.mark.asyncio
+async def test_in_process_runner_maps_detail_without_any_sandbox(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called: dict = {}
+
+    def fake_detail(proxy_url: str, **kwargs: object) -> EgressProbeDetail:
+        called["proxy_url"] = proxy_url
+        called["kwargs"] = kwargs
+        return _detail()
+
+    monkeypatch.setattr(runner_mod, "probe_egress_detail", fake_detail)
+    runner = InProcessEgressProbeRunner()
+
+    assert runner.is_enabled() is True
+    result = await runner.probe("px-1", _endpoint(), 1)
+
+    assert result == EgressProbeResult(
+        egress_ip="203.0.113.7",
+        country_code="JP",
+        country_name="Japan",
+        city="Tokyo",
+        latency_ms=128,
+        source="local_geoip",
     )
-    assert rc == 1
-    assert json.loads(capsys.readouterr().out) == {
-        "error_code": "geoip_db_missing"
-    }
+    assert "s3cret-pw" in called["proxy_url"]
+    assert "transport" not in called["kwargs"]
 
 
-def test_helper_unreachable_echo(stub_geoip2, tmp_path, capsys):
-    creds = _credentials_file(tmp_path, 1)
-    rc = main(
-        [
-            "--credentials-file",
-            str(creds),
-            "--geoip-db",
-            str(stub_geoip2),
-            "--echo-url",
-            "http://127.0.0.1:1/ip",
-            "--timeout",
-            "2",
-        ]
+@pytest.mark.asyncio
+async def test_in_process_runner_propagates_probe_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def boom(*_a: object, **_k: object) -> None:
+        raise EgressProbeError("echo_unreachable", "echo down")
+
+    monkeypatch.setattr(runner_mod, "probe_egress_detail", boom)
+    with pytest.raises(EgressProbeError) as exc:
+        await InProcessEgressProbeRunner().probe("px-1", _endpoint(), 1)
+    assert exc.value.code == "echo_unreachable"
+
+
+@pytest.mark.asyncio
+async def test_in_process_runner_rejects_missing_proxy_url() -> None:
+    endpoint = SimpleNamespace(proxy_url=lambda: None)
+    with pytest.raises(EgressProbeError) as exc:
+        await InProcessEgressProbeRunner().probe("px-1", endpoint, 1)
+    assert exc.value.code == "proxy_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_local_runner_uses_injected_transport_and_geoip() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == "https://echo.example/ip"
+        return httpx.Response(200, text="203.0.113.7\n")
+
+    runner = LocalEgressProbeRunner(
+        echo_urls=("https://echo.example/ip",),
+        transport=httpx.MockTransport(handler),
+        geoip=_StubGeoIp(),
     )
-    assert rc == 1
-    assert json.loads(capsys.readouterr().out) == {
-        "error_code": "echo_unreachable"
-    }
-
-
-def test_helper_missing_credentials_file(stub_geoip2, tmp_path, capsys):
-    rc = main(
-        [
-            "--credentials-file",
-            str(tmp_path / "nope.json"),
-            "--geoip-db",
-            str(stub_geoip2),
-        ]
+    result = await runner.probe(
+        "px-1", SimpleNamespace(proxy_url=lambda: None), 1
     )
-    assert rc == 1
-    assert json.loads(capsys.readouterr().out) == {
-        "error_code": "proxy_credentials_unavailable"
-    }
+    assert result.egress_ip == "203.0.113.7"
+    assert result.country_code == "JP"
+    assert result.city == "Tokyo"
 
 
-def test_helper_malformed_credentials_file(stub_geoip2, tmp_path, capsys):
-    bad = tmp_path / "bad.json"
-    bad.write_text("{not json", encoding="utf-8")
-    rc = main(
-        ["--credentials-file", str(bad), "--geoip-db", str(stub_geoip2)]
+def test_fetch_egress_ip_parses_first_valid_echo_response() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="203.0.113.7\n")
+
+    ip = fetch_egress_ip(
+        None,
+        echo_urls=("https://echo.example/ip",),
+        transport=httpx.MockTransport(handler),
     )
-    assert rc == 1
-    assert json.loads(capsys.readouterr().out) == {
-        "error_code": "proxy_credentials_unavailable"
-    }
+    assert ip == "203.0.113.7"
+
+
+def test_fetch_egress_ip_timed_reports_positive_latency() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="203.0.113.7")
+
+    ip, latency_ms = fetch_egress_ip_timed(
+        None,
+        echo_urls=("https://echo.example/ip",),
+        transport=httpx.MockTransport(handler),
+    )
+    assert ip == "203.0.113.7"
+    assert isinstance(latency_ms, int) and latency_ms >= 1
+
+
+def test_probe_egress_detail_uses_local_geoip_without_services() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="203.0.113.7")
+
+    detail = probe_egress_detail(
+        None,
+        echo_urls=("https://echo.example/ip",),
+        geoip=_StubGeoIp(),
+        transport=httpx.MockTransport(handler),
+        geo_service_urls=(),
+    )
+    assert detail.egress_ip == "203.0.113.7"
+    assert detail.country_code == "JP"
+    assert detail.country_name == "Japan"
+    assert detail.city == "Tokyo"
+    assert detail.source == "local_geoip"

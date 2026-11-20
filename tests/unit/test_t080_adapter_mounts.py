@@ -21,12 +21,10 @@ from cbrowser.supervisor.selkies_tokens import SelkiesTokens
 from cbrowser.runtime_agent import socket_root as sr
 from cbrowser.supervisor.docker_adapter import DockerAdapter
 from cbrowser.supervisor.path_validator import PathValidator
-from cbrowser.domain.proxy_endpoint import parse_proxy_link
 
 BROWSER = "sha256:" + "a" * 64
 STREAM = "sha256:" + "b" * 64
 PREFIX = "cbrowser-t005"
-DATA_VOL = f"{PREFIX}-data"
 FONTS_VOL = f"{PREFIX}-fonts"
 RUNTIME_VOL = f"{PREFIX}-runtime"
 
@@ -391,50 +389,78 @@ def test_stream_ports_map_udp_mux_to_loopback() -> None:
     assert stream_ports(30006) == {"30006/udp": ("127.0.0.1", 30006)}
 
 
-def test_probe_helper_uses_browser_policy_and_returns_full_observation(
+@pytest.mark.asyncio
+async def test_browser_policy_install_and_credentials_mount_use_browser_posture(
     tmp_path: Path,
 ) -> None:
-    from tests.unit.test_t052_supervisor_probe import _adapter as probe_adapter
-    from tests.unit.test_t052_supervisor_probe import _probe_kwargs
-
-    adapter, fake, calls, _root = probe_adapter(tmp_path)
-    endpoint = parse_proxy_link("http://user:pw@proxy.example.com:8080")
-    outcome = adapter.run_egress_probe(
-        proxy_id="px-1",
-        endpoint=endpoint,
-        credentials={"password": "pw", "credential_revision": 1},
+    """Browser-side equivalent of the retired probe helper mount/policy case."""
+    root = (tmp_path / "data").resolve()
+    (root / "engine_cache" / "geoip").mkdir(parents=True)
+    adapter = DockerAdapter(
+        path_validator=PathValidator(root),
+        engine_cache_dir=root / "engine_cache",
+        docker_client=MagicMock(),
+        browser_image=BROWSER,
+        stream_image=STREAM,
+        policy_image=BROWSER,
+        deployment_instance_id="dep-test",
     )
-    assert outcome.egress_ip == "203.0.113.7"
-    assert outcome.country_code == "JP"
-    assert outcome.latency_ms >= 1
+    adapter.create_browser_network = AsyncMock()
+    adapter.ensure_runtime_cache = AsyncMock()
+    adapter.setup_x11_permissions = MagicMock()
+    adapter.cleanup_container_by_name = MagicMock()
+    adapter._prepare_policy_gate = MagicMock(return_value=root / "gate")
+    adapter._validate_cache_paths = MagicMock()
+    adapter._install_network_policy = MagicMock()
+    _stub_agent(adapter)
 
-    probe = _probe_kwargs(calls, "time.sleep")
-    assert probe["network"].startswith("cbrowser-t005-probe-net-")
-    assert probe["extra_hosts"] is None
-    assert probe["labels"]["com.cbrowser.role"] == "egress-probe"
-    assert probe["labels"]["com.cbrowser.managed-by"] == "supervisor"
-    mounts = _by_target(probe["mounts"])
-    assert mounts["/data/engine-cache/geoip"]["ReadOnly"] is True
-    creds_mount = mounts["/run/cbrowser/runtime/proxy_credentials.json"]
+    adapter.remember_profile_number("p1", 1)
+    dirs = adapter.prepare_profile_directories("p1")
+    (dirs["runtime"] / "snapshot.json").write_text(
+        json.dumps({"version": 1, "config": {"proxy_id": "px1"}}),
+        encoding="utf-8",
+    )
+    secret_dir = adapter.validator.get_secret_dir("p1")
+    secret_dir.mkdir(parents=True, exist_ok=True)
+    creds = secret_dir / "proxy_credentials.json"
+    creds.write_text(
+        json.dumps(
+            {
+                "scheme": "http",
+                "host": "proxy.example.com",
+                "port": 8080,
+                "username": "user",
+                "password": "pw",
+                "credential_revision": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+    creds.chmod(0o600)
+    container = MagicMock()
+    container.id = "cid"
+    adapter.client.containers.run = MagicMock(return_value=container)
+
+    await adapter.start_browser_container(
+        profile_id="p1",
+        runtime_instance_id="inst_1",
+        snapshot_json_path=dirs["runtime"] / "snapshot.json",
+    )
+
+    kwargs = adapter.client.containers.run.call_args.kwargs
+    creds_mount = _by_target(kwargs["mounts"])["/run/cbrowser/proxy_credentials.json"]
+    assert creds_mount["Source"] == RUNTIME_VOL
+    assert (
+        creds_mount["VolumeOptions"]["Subpath"]
+        == ".secrets/p1/proxy_credentials.json"
+    )
     assert creds_mount["ReadOnly"] is True
-    # Probe credentials are written per-probe under the data volume's
-    # control/probe/<probe_id> directory (pre-existing layout).
-    assert creds_mount["Source"] == DATA_VOL
-    assert creds_mount["VolumeOptions"]["Subpath"].startswith("control/probe/")
-    assert creds_mount["VolumeOptions"]["Subpath"].endswith(
-        "/proxy_credentials.json"
-    )
-    agent_kwargs = _probe_kwargs(calls, "policy_agent")
-    assert agent_kwargs["network_mode"] == "container:fake-probe-id"
-    installed = adapter._test_rig.executor.installed  # type: ignore[attr-defined]
-    assert len(installed) == 1
-    policy_doc = installed[0][0]
-    assert policy_doc.role == "browser"
-    assert policy_doc.proxy_enforced is True
-    assert policy_doc.allowed_tcp == [("93.184.216.34", 8080)]
-    assert policy_doc.allowed_udp == [("127.0.0.11", 53)]
-    assert all(c.removed for c in fake.containers.created)
-    assert all(n.removed for n in fake.networks.created)
+
+    policy = adapter._install_network_policy.call_args.args[1]
+    assert policy["role"] == "browser"
+    assert policy["proxy_enforced"] is True
+    assert policy["allowed_tcp"] == [("93.184.216.34", 8080)]
+    assert policy["allowed_udp"] == [("127.0.0.11", 53)]
 
 
 # --- _runtime_policy_ready with named-volume subpath mounts ---

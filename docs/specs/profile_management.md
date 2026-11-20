@@ -1,7 +1,7 @@
 ---
 slug: profile_management
 status: active
-tasks: [baseline, t075, t076, t077, t078, t079, t090]
+tasks: [baseline, t075, t076, t077, t078, t079, t090, t094]
 ---
 # 需求规范：Profile 管理与外部标签页
 
@@ -129,7 +129,7 @@ tasks: [baseline, t075, t076, t077, t078, t079, t090]
 - **引用校验是字段级 422（A28）**：创建或更新 Profile 时引用不存在的分组 / 代理，返回 422 `validation_error`，`details` 列出每个缺失字段的 `loc` / `msg` / `type`（两字段同时缺失一次报出两个）；PATCH 只校验请求中出现的引用键，显式 null 清除引用不查库。分组重排必须提交全集：缺失、未知或重复 id 一律 422。
 - **分组与代理写操作幂等（A23）**：group / proxy 的 create / update / delete 支持 `Idempotency-Key`，与 Profile 同一审计语义；重放不重复触发探测等副作用。详见 `proxy_management.md` 第 8 节。
 - **Profile 创建锁（A23）**：创建提交是同步 ref 锁，同一 tick 内双击只发一次请求；幂等键绑定到当前打开的创建弹窗，关闭重开复用同一键直至创建成功，成功后才换新键。
-- **引用变更事件（A31）**：分组或代理写成功后服务端经 SSE 推送 `groups_changed` / `proxies_changed`，前端使对应列表查询与 Profile 列表查询失效重取；探测不发事件。
+- **引用变更事件（A31）**：分组或代理写成功后服务端经 SSE 推送 `groups_changed` / `proxies_changed`，前端使对应列表查询与 Profile 列表查询失效重取；测速作业进度改由 SSE `probe_job_progress` 推送（原「探测不发事件」口径废止）。
 - **统一错误契约（A15）**：全部 API 错误响应体为 `ErrorResponse`（`error` / `message` / `retryable` + 可选结构化 `details`），422 的字段级错误列表进 `details`；429 为 `rate_limited` 并带 `Retry-After`。详见 `docs/blueprint/conventions.md` 第 7 节。
 
 ## 前端状态一致性（t058）

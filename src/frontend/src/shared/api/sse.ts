@@ -1,4 +1,8 @@
-import type { ProfileRuntimeStatusEvent } from "./types";
+import type {
+  ProfileRuntimeStatusEvent,
+  ProxyProbeJob,
+  ProxyProbeJobMember,
+} from "./types";
 import { resolveSameOriginUrl } from "./same_origin";
 
 /**
@@ -21,17 +25,32 @@ export interface ReferenceChangedEvent {
   entity_id: string | null;
 }
 
+/** t094: a server-owned probe job progress snapshot. The wire `data` is the
+ * bare ProxyProbeJob; the `event` discriminator is added by this client after
+ * parsing (same pattern as runtime_state / profile_preview). */
+export type ProbeJobProgressEvent = ProxyProbeJob & {
+  event: "probe_job_progress";
+};
+
 export type ProfileSseEvent =
   | ProfileRuntimeEvent
   | ProfilePreviewEvent
-  | ReferenceChangedEvent;
+  | ReferenceChangedEvent
+  | ProbeJobProgressEvent;
 
 export type ProfileEventListener = (event: ProfileRuntimeEvent) => void;
 export type ProfilePreviewEventListener = (event: ProfilePreviewEvent) => void;
 export type ReferenceChangedEventListener = (
   event: ReferenceChangedEvent,
 ) => void;
+export type ProbeJobProgressListener = (event: ProbeJobProgressEvent) => void;
 export type ProfileErrorListener = (error: unknown) => void;
+
+export function isProbeJobProgressEvent(
+  event: ProfileSseEvent,
+): event is ProbeJobProgressEvent {
+  return "event" in event && event.event === "probe_job_progress";
+}
 
 export function isProfilePreviewEvent(
   event: ProfileSseEvent,
@@ -207,6 +226,53 @@ export function parseReferenceChangedEvent(
   return raw as ReferenceChangedEvent;
 }
 
+const PROBE_JOB_STATES = new Set(["running", "done"]);
+const PROBE_MEMBER_STATES = new Set(["pending", "ok", "failed"]);
+
+function isValidProbeJobMember(value: unknown): value is ProxyProbeJobMember {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const member = value as Record<string, unknown>;
+  if (typeof member.proxy_id !== "string" || member.proxy_id.length === 0) {
+    return false;
+  }
+  if (
+    typeof member.state !== "string" ||
+    !PROBE_MEMBER_STATES.has(member.state)
+  ) {
+    return false;
+  }
+  if (!isNullableString(member.error_code)) return false;
+  if (!isNullableIsoTimestamp(member.observed_at)) return false;
+  return true;
+}
+
+/** Validate an SSE `probe_job_progress` payload against the generated
+ * ProxyProbeJob read model. The `data` frame carries the bare job, so an
+ * `event` discriminator is attached only after validation succeeds. */
+export function parseProbeJobProgressEvent(
+  raw: unknown,
+): ProbeJobProgressEvent | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const job = raw as Record<string, unknown>;
+  if (typeof job.job_id !== "string" || job.job_id.length === 0) return null;
+  if (typeof job.state !== "string" || !PROBE_JOB_STATES.has(job.state)) {
+    return null;
+  }
+  for (const key of ["total", "completed", "failed"] as const) {
+    if (typeof job[key] !== "number" || !Number.isFinite(job[key])) return null;
+  }
+  if (typeof job.created_at !== "string" || !isNullableIsoTimestamp(job.created_at)) {
+    return null;
+  }
+  if (typeof job.updated_at !== "string" || !isNullableIsoTimestamp(job.updated_at)) {
+    return null;
+  }
+  if (!Array.isArray(job.members) || !job.members.every(isValidProbeJobMember)) {
+    return null;
+  }
+  return { ...(raw as ProxyProbeJob), event: "probe_job_progress" };
+}
+
 export interface ProfileEventsClientOptions {
   reconnectIntervalMs?: number;
   maxReconnectIntervalMs?: number;
@@ -231,6 +297,7 @@ export class ProfileEventsClient {
   private listeners: Set<ProfileEventListener> = new Set();
   private previewListeners: Set<ProfilePreviewEventListener> = new Set();
   private referenceListeners: Set<ReferenceChangedEventListener> = new Set();
+  private probeJobProgressListeners: Set<ProbeJobProgressListener> = new Set();
   private errorListeners: Set<ProfileErrorListener> = new Set();
 
   constructor(options: ProfileEventsClientOptions = {}) {
@@ -254,6 +321,11 @@ export class ProfileEventsClient {
   onReferenceEvent(listener: ReferenceChangedEventListener): () => void {
     this.referenceListeners.add(listener);
     return () => this.referenceListeners.delete(listener);
+  }
+
+  onProbeJobProgress(listener: ProbeJobProgressListener): () => void {
+    this.probeJobProgressListeners.add(listener);
+    return () => this.probeJobProgressListeners.delete(listener);
   }
 
   setOnUnauthorized(callback?: () => void): void {
@@ -402,6 +474,14 @@ export class ProfileEventsClient {
             );
             return;
           }
+        } else if (eventName === "probe_job_progress") {
+          event = parseProbeJobProgressEvent(parsed);
+          if (!event) {
+            this.dispatchError(
+              new Error("Malformed probe_job_progress event payload"),
+            );
+            return;
+          }
         } else {
           return;
         }
@@ -462,7 +542,15 @@ export class ProfileEventsClient {
   }
 
   private dispatchEvent(event: ProfileSseEvent): void {
-    if (isReferenceChangedEvent(event)) {
+    if (isProbeJobProgressEvent(event)) {
+      for (const listener of this.probeJobProgressListeners) {
+        try {
+          listener(event);
+        } catch (err) {
+          console.error("Error in SSE probe job progress listener:", err);
+        }
+      }
+    } else if (isReferenceChangedEvent(event)) {
       for (const listener of this.referenceListeners) {
         try {
           listener(event);

@@ -105,6 +105,65 @@ class ProxyEgressObservationModel(Base):
     )
 
 
+class ProxyProbeJobModel(Base):
+    """Durable server-side egress probe job (t094).
+
+    Submitted with a frozen target set, driven in the background and read
+    back by id.  ``state`` is running until every member reaches a terminal
+    state.  Counts are derived from member rows and persisted for a stable
+    authoritative read model across refreshes and restarts.
+    """
+
+    __tablename__ = "proxy_probe_jobs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    state: Mapped[str] = mapped_column(
+        String(16), default="running", nullable=False
+    )
+    total: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    completed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    failed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    kind: Mapped[str] = mapped_column(
+        String(32), default="probe", nullable=False
+    )
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str] = mapped_column(
+        String(64), default=utc_now_iso, nullable=False
+    )
+    updated_at: Mapped[str] = mapped_column(
+        String(64), default=utc_now_iso, onupdate=utc_now_iso, nullable=False
+    )
+
+    __table_args__ = (Index("idx_proxy_probe_jobs_state", "state"),)
+
+
+class ProxyProbeJobMemberModel(Base):
+    """One frozen target of a probe job (t094).
+
+    ``state`` walks pending -> ok/failed. ``observation_at`` is the ISO time
+    of the member's terminal observation, used to fence late/overlapping
+    attempts: a stale attempt may not overwrite a newer terminal result.
+    """
+
+    __tablename__ = "proxy_probe_job_members"
+
+    job_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("proxy_probe_jobs.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    proxy_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    state: Mapped[str] = mapped_column(
+        String(16), default="pending", nullable=False
+    )
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    observation_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[str] = mapped_column(
+        String(64), default=utc_now_iso, nullable=False
+    )
+
+    __table_args__ = (Index("idx_proxy_probe_job_members_job", "job_id"),)
+
+
 class ProfileDisplaySequenceModel(Base):
     """Monotonic allocator for Profile display numbers (t050).
 

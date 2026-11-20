@@ -176,3 +176,37 @@ async def test_concurrent_subscribers_do_not_share_snapshot_state() -> None:
     finally:
         await snapshot_sub.aclose()
         await replay_sub.aclose()
+
+
+@pytest.mark.asyncio
+async def test_typed_probe_job_snapshot_survives_out_of_window_reconnect() -> None:
+    """t094: an out-of-window reconnect rebuilds in-flight probe-job progress
+    from the typed snapshot (no runtime_state-only truncation)."""
+    from cbrowser.api.runtime_coordinator import TypedSseEvent
+    from cbrowser.domain.models import ProxyProbeJob, ProxyProbeJobMember
+
+    broadcaster = RuntimeEventBroadcaster(maxlen=2)
+    job = ProxyProbeJob(
+        job_id="job-snap", state="running", total=3, completed=1, failed=0,
+        created_at="2026-01-01T00:00:00Z", updated_at="2026-01-01T00:00:00Z",
+        members=[ProxyProbeJobMember(proxy_id="p1", state="ok")],
+    )
+
+    # Overflow the ring so a replay from an old id cannot be served.
+    for i in range(5):
+        await broadcaster.publish(_event(f"p{i}"))
+
+    async def provider() -> list:
+        return [TypedSseEvent(id="snapshot:job-snap", event="probe_job_progress", data=job)]
+
+    generator = broadcaster.subscribe(
+        last_event_id=f"{broadcaster._epoch}:1",
+        initial_snapshot_provider=provider,
+    )
+    try:
+        frame = await asyncio.wait_for(generator.__anext__(), timeout=1.0)
+    finally:
+        await generator.aclose()
+    joined = frame
+    assert "event: probe_job_progress" in joined
+    assert "job-snap" in joined

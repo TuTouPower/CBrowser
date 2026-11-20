@@ -12,6 +12,9 @@ from cbrowser.domain.models import (
     ProxyCandidateEntry,
     ProxyCountryRange,
     ProxyCreateRequest,
+    ProxyProbeJob,
+    ProxyProbeJobAccepted,
+    ProxyProbeJobRequest,
     ProxyResponse,
     ProxyUpdateRequest,
     ProxyUsedByResponse,
@@ -160,29 +163,41 @@ async def update_proxy(
 
 
 @proxy_router.post(
-    "/{proxy_id}/probe", response_model=ProxyResponse
+    "/probe-jobs", response_model=ProxyProbeJobAccepted,
+    status_code=status.HTTP_202_ACCEPTED,
 )
-async def probe_proxy(proxy_id: str, request: Request, service: Service):
-    """Manual egress probe (t052 AC-006/AC-009).
+async def create_probe_job(
+    payload: ProxyProbeJobRequest,
+    service: Service,
+):
+    """Submit a server-owned probe job (t094).
 
-    The request carries no body: only the proxy id is accepted, and the
-    stored endpoint + credentials are loaded server-side, so a caller can
-    never redirect the stored password to another host, port, scheme or
-    username.  Any request body is rejected (AC-009 negative path).
+    The target set is resolved to explicit proxy ids and frozen before any
+    work runs; submission returns immediately. Both the global "probe all"
+    and the per-row button use this endpoint (the latter with one id).
     """
-    body = await request.body()
-    if body and body.strip() not in (b"", b"{}"):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="probe accepts only the proxy id; no request body allowed",
+    proxy_ids: list[str]
+    if payload.proxy_ids is not None:
+        proxy_ids = list(dict.fromkeys(payload.proxy_ids))
+    else:
+        proxy_ids = await service.list_proxy_ids_for_filters(
+            search=payload.filters.search if payload.filters else None,
+            country_code=payload.filters.country_code if payload.filters else None,
+            city=payload.filters.city if payload.filters else None,
+            scheme=payload.filters.scheme if payload.filters else None,
         )
-    proxy = await service.probe_proxy_egress(proxy_id)
-    if proxy is None:
+    return await service.request_probe_jobs(proxy_ids)
+
+
+@proxy_router.get("/probe-jobs/{job_id}", response_model=ProxyProbeJob)
+async def get_probe_job(job_id: str, service: Service):
+    job = await service.get_probe_job(job_id)
+    if job is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Proxy {proxy_id} not found",
+            detail=f"Probe job {job_id} not found",
         )
-    return proxy
+    return job
 
 
 @proxy_router.delete("/{proxy_id}", status_code=status.HTTP_204_NO_CONTENT)

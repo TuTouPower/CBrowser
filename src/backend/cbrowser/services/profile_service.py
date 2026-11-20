@@ -35,6 +35,8 @@ from cbrowser.domain.models import (
     ProfileRuntime,
     ProxyCandidateEntry,
     ProxyCountryRange,
+    ProxyProbeJob,
+    ProxyProbeJobAccepted,
     ProxyResponse,
     ProxyUsedByEntry,
     RuntimeEvent,
@@ -289,6 +291,15 @@ class ProfileService:
         self._locks = ProfileLockRegistry()
         self._egress_probe_runner = egress_probe_runner
         self._probe_tasks: set[asyncio.Task] = set()
+        # t094: server-owned probe jobs. `_probe_jobs` holds live driver
+        # tasks keyed by job id so a single job is driven exactly once.
+        self._probe_job_tasks: dict[str, asyncio.Task] = {}
+        # Optional callback (job_id, state) used to publish SSE progress;
+        # wired by the app once the coordinator exists.
+        self._probe_job_progress: Callable[[str], Awaitable[None]] | None = None
+        # Long-operation timeout budget is centralized in the runner's
+        # ``timeout`` (wired into the HTTP client in shared.egress), not
+        # re-declared here.
         # t078 deletion lifecycle: background drivers per operation id,
         # an optional artifact cleaner wired by the app, and a per-op
         # lock so the async driver and the synchronous DELETE path can
@@ -1626,6 +1637,22 @@ class ProfileService:
             page_size=page_size,
         )
 
+    async def list_proxy_ids_for_filters(
+        self,
+        *,
+        search: str | None = None,
+        country_code: str | None = None,
+        city: str | None = None,
+        scheme: str | None = None,
+    ) -> list[str]:
+        """Resolve the frozen target set for a filter-scoped probe job."""
+        return await self._repo.list_proxy_ids_for_filters(
+            search=search,
+            country_code=country_code,
+            city=city,
+            scheme=scheme,
+        )
+
     async def list_proxy_candidates(
         self, search: str = "", limit: int = 20
     ) -> list[ProxyCandidateEntry]:
@@ -1760,7 +1787,7 @@ class ProfileService:
                 proxy_id,
                 fingerprint,
                 revision,
-                "supervisor_unavailable",
+                "runner_unavailable",
                 datetime.datetime.now(datetime.timezone.utc),
             )
         else:
@@ -1818,6 +1845,276 @@ class ProfileService:
                     ),
                 )
         return await self._repo.get_proxy(proxy_id)
+
+    def set_probe_job_progress(
+        self, callback: Callable[[str], Awaitable[None]] | None
+    ) -> None:
+        """Wire the SSE progress publisher (app lifespan, t094)."""
+        self._probe_job_progress = callback
+
+    async def _publish_probe_job_progress(self, job_id: str) -> None:
+        if self._probe_job_progress is None:
+            return
+        try:
+            await self._probe_job_progress(job_id)
+        except Exception:  # pragma: no cover - progress is best-effort
+            logger.warning("probe job progress publish failed: job=%s", job_id)
+
+    async def request_probe_jobs(
+        self, proxy_ids: list[str], *, filters: Any | None = None
+    ) -> ProxyProbeJobAccepted:
+        """Submit one probe job (t094 AC-003).
+
+        The target set is frozen here; submission persists the job and
+        schedules a background driver, returning immediately. ``filters`` is
+        accepted for API compatibility but the resolved explicit id set is
+        always the authoritative scope (frozen before any work runs).
+        """
+        job_id = uuid.uuid4().hex
+        job = await self._repo.create_probe_job(job_id=job_id, proxy_ids=proxy_ids)
+        task = asyncio.create_task(self._drive_probe_job(job_id))
+        self._probe_job_tasks[job_id] = task
+        task.add_done_callback(lambda t: self._probe_job_tasks.pop(job_id, None))
+        return ProxyProbeJobAccepted(
+            job_id=job.job_id,
+            state=job.state,
+            total=job.total,
+            completed=job.completed,
+            failed=job.failed,
+        )
+
+    async def get_probe_job(self, job_id: str) -> ProxyProbeJob | None:
+        return await self._repo.get_probe_job(job_id)
+
+    async def list_unfinished_probe_jobs(self) -> list[ProxyProbeJob]:
+        jobs = []
+        for job_id in await self._repo.list_unfinished_jobs():
+            job = await self._repo.get_probe_job(job_id)
+            if job is not None:
+                jobs.append(job)
+        return jobs
+
+    async def resume_pending_probe_jobs(self) -> None:
+        """Restart drivers for jobs left running by a process restart.
+
+        Members already terminal are skipped by the repository fence, so a
+        resumed job converges without re-running finished work. A job stuck
+        with no driver and no terminal members is driven to completion here.
+        """
+        for job_id in await self._repo.list_unfinished_jobs():
+            if job_id in self._probe_job_tasks:
+                continue
+            task = asyncio.create_task(self._drive_probe_job(job_id))
+            self._probe_job_tasks[job_id] = task
+            task.add_done_callback(lambda t: self._probe_job_tasks.pop(job_id, None))
+
+    async def await_probe_jobs(self) -> None:
+        """Test helper: wait until all live job drivers finish."""
+        pending = [t for t in self._probe_job_tasks.values() if not t.done()]
+        if pending:
+            await asyncio.gather(*pending)
+
+    async def _drive_probe_job(self, job_id: str) -> None:
+        meta = await self._repo.get_job_meta(job_id)
+        if meta is not None and meta[0] == "profile_batch":
+            await self._drive_profile_batch_job(job_id, meta[1])
+            return
+        job = await self._repo.get_probe_job(job_id)
+        if job is None:
+            return
+        completed = job.completed
+        failed = job.failed
+        try:
+            for member in list(job.members):
+                if member.state != "pending":
+                    continue
+                status, error_code = await self._probe_one_member(
+                    job_id, member.proxy_id
+                )
+                if status == "ok":
+                    completed += 1
+                else:
+                    # failed / gone: both converge the member so the job
+                    # always reaches a terminal state (t094 AC-004).
+                    failed += 1
+                done = (completed + failed) >= job.total
+                await self._repo.update_probe_job_member(
+                    job_id=job_id,
+                    proxy_id=member.proxy_id,
+                    state="ok" if status == "ok" else "failed",
+                    error_code=error_code,
+                    observation_at=datetime.datetime.now(
+                        datetime.timezone.utc
+                    ).isoformat(),
+                    completed=completed,
+                    failed=failed,
+                    done=done,
+                )
+                await self._publish_probe_job_progress(job_id)
+        except Exception as exc:
+            # A driver fault (DB error, unexpected runner bug) must never
+            # leave members pending forever. Converge every remaining
+            # pending member to failed so the job terminates (t094 AC-004).
+            logger.warning(
+                "Probe job driver fault: job=%s type=%s",
+                job_id, type(exc).__name__, exc_info=True,
+            )
+            failed += max(0, job.total - completed - failed)
+            await self._repo.finalize_probe_job(job_id, completed, failed)
+        await self._publish_probe_job_progress(job_id)
+
+    async def request_profile_batch_job(
+        self, action: str, profile_ids: list[str], group_id: str | None = None
+    ) -> ProxyProbeJobAccepted:
+        """Submit a server-driven environment batch (t094 AC-007).
+
+        The action and options are persisted in the job ``detail`` so a
+        process restart can resume the same frozen set with the same action.
+        """
+        job_id = uuid.uuid4().hex
+        detail = json.dumps(
+            {"action": action, "group_id": group_id}, separators=(",", ":")
+        )
+        job = await self._repo.create_probe_job(
+            job_id=job_id,
+            proxy_ids=profile_ids,
+            kind="profile_batch",
+            detail=detail,
+        )
+        task = asyncio.create_task(self._drive_probe_job(job_id))
+        self._probe_job_tasks[job_id] = task
+        task.add_done_callback(lambda t: self._probe_job_tasks.pop(job_id, None))
+        return ProxyProbeJobAccepted(
+            job_id=job.job_id, state=job.state, total=job.total
+        )
+
+    async def _drive_profile_batch_job(
+        self, job_id: str, detail_json: str | None
+    ) -> None:
+        job = await self._repo.get_probe_job(job_id)
+        if job is None:
+            return
+        try:
+            detail = json.loads(detail_json or "{}")
+        except ValueError:
+            detail = {}
+        action = detail.get("action", "start")
+        group_id = detail.get("group_id")
+        completed = job.completed
+        failed = job.failed
+        for member in list(job.members):
+            if member.state != "pending":
+                continue
+            ok = await self._apply_profile_batch_action(
+                member.proxy_id, action, group_id
+            )
+            completed += 1 if ok else 0
+            failed += 0 if ok else 1
+            done = (completed + failed) >= job.total
+            await self._repo.update_probe_job_member(
+                job_id=job_id,
+                proxy_id=member.proxy_id,
+                state="ok" if ok else "failed",
+                error_code=None if ok else "batch_action_failed",
+                observation_at=datetime.datetime.now(
+                    datetime.timezone.utc
+                ).isoformat(),
+                completed=completed,
+                failed=failed,
+                done=done,
+            )
+            await self._publish_probe_job_progress(job_id)
+        await self._publish_probe_job_progress(job_id)
+
+    async def _apply_profile_batch_action(
+        self, profile_id: str, action: str, group_id: str | None
+    ) -> bool:
+        """Apply one environment action to one frozen target; never raise.
+
+        Missing profiles / conflicts are per-member failures, not job aborts.
+        """
+        try:
+            if action == "start":
+                await self.set_desired_state(profile_id, "running")
+            elif action == "stop":
+                await self.set_desired_state(profile_id, "stopped")
+            elif action == "moveToGroup":
+                await self.update_profile(profile_id, {"group_id": group_id})
+            else:
+                return False
+            return True
+        except Exception as exc:
+            logger.warning(
+                "Profile batch action failed: target=%s action=%s type=%s",
+                profile_id, action, type(exc).__name__,
+            )
+            return False
+
+    async def _probe_one_member(self, job_id: str, proxy_id: str) -> tuple[str, str | None]:
+        """Probe one frozen member through the shared single-probe path.
+
+        Returns ``(status, error_code)`` where status is ok/failed/gone. The
+        observation row written here is the per-item result; the job member
+        state and error code are the job-level view (t094 AC-004).
+        """
+        endpoint_data = await self._repo.get_proxy_endpoint(proxy_id)
+        if endpoint_data is None:
+            return "gone", "proxy_not_found"
+        endpoint = ProxyEndpoint(
+            scheme=endpoint_data["scheme"],
+            host=endpoint_data["host"],
+            port=endpoint_data["port"],
+            username=endpoint_data["username"],
+            password=endpoint_data["password"],
+        )
+        fingerprint = endpoint_data["endpoint_fingerprint"]
+        revision = endpoint_data["credential_revision"]
+        await self._record_pending_observation(proxy_id, endpoint)
+        runner = self._egress_probe_runner
+        if runner is None:
+            await self._record_failed_observation(
+                proxy_id, fingerprint, revision, "runner_unavailable",
+                datetime.datetime.now(datetime.timezone.utc),
+            )
+            return "failed", "runner_unavailable"
+        try:
+            result = await runner.probe(proxy_id, endpoint, revision)
+        except EgressProbeError as exc:
+            await self._record_failed_observation(
+                proxy_id, fingerprint, revision, exc.code,
+                datetime.datetime.now(datetime.timezone.utc),
+            )
+            return "failed", exc.code
+        except Exception as exc:
+            logger.warning(
+                "Probe job member failed: job=%s proxy=%s type=%s",
+                job_id, proxy_id, type(exc).__name__,
+            )
+            await self._record_failed_observation(
+                proxy_id, fingerprint, revision, "probe_failed",
+                datetime.datetime.now(datetime.timezone.utc),
+            )
+            return "failed", "probe_failed"
+        completed_at = datetime.datetime.now(datetime.timezone.utc)
+        await self._repo.record_egress_observation(
+            proxy_id,
+            EgressObservation(
+                proxy_id=proxy_id,
+                endpoint_fingerprint=fingerprint,
+                credential_revision=revision,
+                egress_ip=result.egress_ip,
+                country_code=result.country_code,
+                country_name=result.country_name,
+                city=result.city,
+                latency_ms=result.latency_ms,
+                source=getattr(result, "source", "local_geoip"),
+                status="ok",
+                observed_at=completed_at,
+                expires_at=completed_at
+                + datetime.timedelta(seconds=OBSERVATION_TTL_SECONDS),
+            ),
+        )
+        return "ok", None
 
     async def _record_pending_observation(
         self, proxy_id: str, endpoint: ProxyEndpoint

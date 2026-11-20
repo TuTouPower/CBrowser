@@ -1,10 +1,10 @@
-"""Unified Profile and Probe egress plan shared across Supervisor and Runner.
+"""Unified Profile egress plan shared across Supervisor and Runner.
 
 Single source of truth for direct vs proxied egress semantics:
 - Derives CloakBrowser SDK ``proxy=`` URLs (all schemes: http/https/socks5, with auth).
 - Selects defense-in-depth Chromium hardening flags in proxied mode.
 - Derives IPv4/IPv6 ``NetworkPolicySpec`` dictionaries identically for container startup,
-  periodic convergence verification, readiness checks, and egress probes.
+  periodic convergence verification, and readiness checks.
 """
 
 from __future__ import annotations
@@ -115,7 +115,7 @@ class ProfileEgressPlan:
         self,
         allowed_tcp: list[tuple[str, int]] | tuple[tuple[str, int], ...],
     ) -> dict[str, Any]:
-        """Derive the Browser/Probe ``NetworkPolicySpec`` payload."""
+        """Derive the Browser ``NetworkPolicySpec`` payload."""
         return {
             "role": "browser",
             "allowed_tcp": list(allowed_tcp) if self.proxy_enforced else [],
@@ -197,20 +197,4 @@ def derive_supervisor_egress_plan(
         upstream_url=upstream_url,
         needs_proxy_dns=needs_proxy_dns,
         extra_browser_args=PROXY_HARDENING_ARGS,
-    )
-
-
-def probe_egress_plan(scheme: str, host: str, port: int) -> ProfileEgressPlan:
-    """Derive the egress plan for an isolated Egress Probe container."""
-    upstream_url = format_proxy_url(
-        {"scheme": scheme, "host": host, "port": port},
-        include_auth=False,
-    )
-    return ProfileEgressPlan(
-        mode="proxy",
-        proxy_enforced=True,
-        proxy_url=None,
-        upstream_url=upstream_url,
-        needs_proxy_dns=not is_ip_literal(host),
-        extra_browser_args=(),
     )

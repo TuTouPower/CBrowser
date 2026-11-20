@@ -26,7 +26,10 @@ export interface ProxyTableProps {
   onEdit: (proxy: ProxyResponse) => void;
   onDelete: (proxy: ProxyResponse) => void;
   onProbe: (proxy: ProxyResponse) => void;
-  probingId?: string | null;
+  /** t094: ids pending in the active server-owned probe job. */
+  pendingProbeIds?: ReadonlySet<string>;
+  /** t094: while a probe job is running every row's test button is disabled. */
+  probeJobRunning?: boolean;
   /** t076 AC-004: the count comes from the backend union; the click
    * resolves the detail (single -> navigate, many -> popover) in the
    * page, so the table never derives used-by from current config. */
@@ -47,7 +50,8 @@ export function ProxyTable({
   onEdit,
   onDelete,
   onProbe,
-  probingId,
+  pendingProbeIds,
+  probeJobRunning,
   onUsedByClick,
 }: ProxyTableProps) {
   const { t } = useI18n();
@@ -75,7 +79,9 @@ export function ProxyTable({
             const id = proxy.id;
             const blocked = proxy.used_by_count > 0;
             const isTesting =
-              probingId === id || proxy.observation_status === "pending";
+              probeJobRunning === true ||
+              proxy.observation_status === "pending" ||
+              pendingProbeIds?.has(proxy.id) === true;
             const count = proxy.used_by_count;
             const label = usedByLabel(count, t);
 

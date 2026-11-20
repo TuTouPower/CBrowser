@@ -27,10 +27,10 @@ from urllib.parse import quote, unquote
 
 PROXY_SCHEMES = ("http", "https", "socks5")
 
-#: Hostname the Supervisor substitutes for a loopback endpoint so a
-#: containerised Browser/probe helper can reach a proxy that only listens
-#: on the host's loopback interface.  The container is given
-#: ``extra_hosts={"host.docker.internal": "host-gateway"}`` for this.
+#: Hostname the API container substitutes for a loopback endpoint so it
+#: can reach a proxy that only listens on the host's loopback interface
+#: (t094 in-process probe; the API container is given
+#: ``extra_hosts={"host.docker.internal": "host-gateway"}``).
 HOST_GATEWAY_HOSTNAME = "host.docker.internal"
 
 _LOOPBACK_NETWORKS = (ipaddress.ip_network("127.0.0.0/8"),)

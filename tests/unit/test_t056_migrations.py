@@ -363,6 +363,13 @@ def test_fresh_db_schema_matches_golden_except_intended_changes(
         ("table", "profile_deletion_batch_members"),
         ("index", "sqlite_autoindex_profile_deletion_batch_members_1"),
         ("index", "idx_deletion_batch_members_operation"),
+        # t094: server-side egress probe jobs and their frozen members.
+        ("table", "proxy_probe_jobs"),
+        ("index", "sqlite_autoindex_proxy_probe_jobs_1"),
+        ("index", "idx_proxy_probe_jobs_state"),
+        ("table", "proxy_probe_job_members"),
+        ("index", "sqlite_autoindex_proxy_probe_job_members_1"),
+        ("index", "idx_proxy_probe_job_members_job"),
     }
     catalog_sql = after[("table", "font_set_assets")]
     for column in (

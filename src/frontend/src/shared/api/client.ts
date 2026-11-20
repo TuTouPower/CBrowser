@@ -25,6 +25,10 @@ import type {
   ProxyCreateRequest,
   ProxyUpdateRequest,
   ProxyUsedByResponse,
+  ProxyProbeJob,
+  ProxyProbeJobAccepted,
+  ProxyProbeJobRequest,
+  ProfileBatchJobRequest,
   RuntimeSummaryResponse,
   FontSetListResponse,
   UserSettingsResponse,
@@ -660,11 +664,40 @@ export class ApiClient {
         },
       );
     },
-    /** Manual egress probe (t052 AC-006): body carries only the proxy id. */
-    probe: async (proxyId: string): Promise<ProxyResponse> => {
-      return this.request<ProxyResponse>(
-        `/api/v1/proxies/${encodeURIComponent(proxyId)}/probe`,
-        { method: "POST" },
+  };
+
+  /** t094: submit a server-owned probe job. Submission is a short
+   * request (202 receipt) — it deliberately uses the default timeout,
+   * not longOperationTimeoutMs. */
+  readonly probes = {
+    createProbeJob: async (
+      input: ProxyProbeJobRequest,
+    ): Promise<ProxyProbeJobAccepted> => {
+      return this.request<ProxyProbeJobAccepted>(
+        "/api/v1/proxies/probe-jobs",
+        { method: "POST", body: JSON.stringify(input) },
+      );
+    },
+    getProbeJob: async (jobId: string): Promise<ProxyProbeJob> => {
+      return this.request<ProxyProbeJob>(
+        `/api/v1/proxies/probe-jobs/${encodeURIComponent(jobId)}`,
+      );
+    },
+  };
+
+  /** t094 AC-007: server-driven environment batch jobs. */
+  readonly profileBatchJobs = {
+    submit: async (
+      input: ProfileBatchJobRequest,
+    ): Promise<ProxyProbeJobAccepted> => {
+      return this.request<ProxyProbeJobAccepted>(
+        "/api/v1/profile-batch-jobs",
+        { method: "POST", body: JSON.stringify(input) },
+      );
+    },
+    get: async (jobId: string): Promise<ProxyProbeJob> => {
+      return this.request<ProxyProbeJob>(
+        `/api/v1/profile-batch-jobs/${encodeURIComponent(jobId)}`,
       );
     },
   };

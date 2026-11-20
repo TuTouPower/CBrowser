@@ -1,6 +1,7 @@
 aiohappyeyeballs==2.7.1
     # via aiohttp
 aiohttp==3.14.5
+    # via geoip2
 aiosignal==1.4.0
     # via aiohttp
 aiosqlite==0.22.1
@@ -35,6 +36,7 @@ frozenlist==1.8.0
     # via
     #   aiohttp
     #   aiosignal
+geoip2==5.3.0
 greenlet==3.5.6
     # via sqlalchemy
 h11==0.16.0
@@ -54,6 +56,8 @@ mako==1.4.3
     # via alembic
 markupsafe==3.0.4
     # via mako
+maxminddb==3.2.0
+    # via geoip2
 multidict==7.2.1
     # via
     #   aiohttp
@@ -73,7 +77,11 @@ pydantic-core==2.50.1
 pywin32==312 ; sys_platform == 'win32'
     # via docker
 requests==2.34.2
-    # via docker
+    # via
+    #   docker
+    #   geoip2
+socksio==1.0.0
+    # via httpx
 sqlalchemy==2.1.8
     # via alembic
 starlette==1.10.0

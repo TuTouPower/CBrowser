@@ -15,7 +15,10 @@ from cbrowser.api.v1.deps import get_profile_service
 from cbrowser.api.v1.groups_router import group_router
 from cbrowser.api.v1.proxies_router import proxy_router
 from cbrowser.api.v1.settings_router import settings_router
-from cbrowser.api.runtime_coordinator import RuntimeEventBroadcaster
+from cbrowser.api.runtime_coordinator import (
+    RuntimeEventBroadcaster,
+    TypedSseEvent,
+)
 from cbrowser.preview import PreviewPolicy, clear_preview, write_policy
 from cbrowser.api.v1.control_router import (
     get_optional_control_service,
@@ -38,12 +41,15 @@ from cbrowser.domain.models import (
     ProfileDeletionOperation,
     ProfileDeletionRequest,
     ProfileDuplicateRequest,
+    ProfileBatchJobRequest,
     ProfileResetRequest,
     ProfileResponse,
     ProfileRuntimeEventData,
     ProfileRuntimeResponse,
     ProfileRuntimeStatusEvent,
     ProfileUpdateRequest,
+    ProxyProbeJob,
+    ProxyProbeJobAccepted,
     RuntimeDesiredStateRequest,
     RuntimeEvent,
     RuntimeEventReportRequest,
@@ -172,10 +178,10 @@ async def subscribe_runtime_events(
     last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
     last_event_id_query: Annotated[str | None, Query(alias="last_event_id")] = None,
 ):
-    async def get_initial_snapshots() -> list[ProfileRuntimeEventData]:
+    async def get_initial_snapshots() -> list[ProfileRuntimeEventData | TypedSseEvent]:
+        snapshots: list[ProfileRuntimeEventData | TypedSseEvent] = []
         profiles = await service.list_profiles()
         coordinator = getattr(request.app.state, "coordinator", None)
-        snapshots = []
         for p in profiles:
             try:
                 rt = await service.get_runtime(p.id)
@@ -230,6 +236,22 @@ async def subscribe_runtime_events(
                     p.id,
                     type(exc).__name__,
                 )
+        # t094: rebuild in-flight probe-job progress on reconnect after the
+        # event ring window is exceeded (AC-004/AC-005).
+        try:
+            for job in await service.list_unfinished_probe_jobs():
+                snapshots.append(
+                    TypedSseEvent(
+                        id=f"snapshot:{job.job_id}",
+                        event="probe_job_progress",
+                        data=job,
+                    )
+                )
+        except Exception as exc:  # noqa: BLE001 - snapshot stays usable
+            logger.warning(
+                "SSE probe-job snapshot unavailable: error_type=%s",
+                type(exc).__name__,
+            )
         return snapshots
 
     effective_last_event_id = last_event_id or last_event_id_query
@@ -635,6 +657,41 @@ async def get_profile_deletion(
             detail=f"Deletion operation {operation_id} not found",
         )
     return operation
+
+
+@profile_router.post(
+    "/profile-batch-jobs",
+    response_model=ProxyProbeJobAccepted,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def create_profile_batch_job(
+    payload: ProfileBatchJobRequest,
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+):
+    """Submit a server-driven environment batch (t094 AC-007).
+
+    The target set and action are frozen at submission; progress is read
+    from the job and pushed over SSE like proxy probe jobs.
+    """
+    return await service.request_profile_batch_job(
+        payload.action,
+        list(dict.fromkeys(payload.profile_ids)),
+        payload.group_id,
+    )
+
+
+@profile_router.get("/profile-batch-jobs/{job_id}", response_model=ProxyProbeJob)
+async def get_profile_batch_job(
+    job_id: str,
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+):
+    job = await service.get_probe_job(job_id)
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Profile batch job {job_id} not found",
+        )
+    return job
 
 
 @profile_router.post(

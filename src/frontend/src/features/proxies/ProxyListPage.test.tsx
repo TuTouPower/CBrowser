@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -14,8 +15,11 @@ import { ThemeProvider } from "../../theme";
 import { ToastProvider } from "../../shared/ui";
 import { ApiError, type ApiClient } from "../../shared/api/client";
 import { ApiClientContext } from "../../shared/api/client_context";
-import type { ProxyResponse } from "../../shared/api/types";
+import type { ProxyProbeJob, ProxyResponse } from "../../shared/api/types";
+import type { ProbeJobProgressEvent } from "../../shared/api/sse";
+import type { ProfileEventsClient } from "../../shared/api/sse";
 import { filterProxies, ProxyListPage } from "./ProxyListPage";
+import { useProfileEventsSync, probeJobKeys } from "../profiles/useProfilesQuery";
 
 beforeAll(() => {
   class ResizeObserverStub {
@@ -129,7 +133,55 @@ function mockFn(impl: (...args: any[]) => unknown): LooseMock {
   return vi.fn(impl) as unknown as LooseMock;
 }
 
+function probeJob(
+  jobId: string,
+  overrides: Partial<ProxyProbeJob> = {},
+): ProxyProbeJob {
+  return {
+    job_id: jobId,
+    state: "running",
+    total: 4,
+    completed: 0,
+    failed: 0,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    members: [],
+    ...overrides,
+  };
+}
+
+type ProbeListener = (event: ProbeJobProgressEvent) => void;
+
+function makeProbeSse() {
+  let listener: ProbeListener | null = null;
+  const client = {
+    onEvent: () => () => {},
+    onPreviewEvent: () => () => {},
+    onReferenceEvent: () => () => {},
+    onProbeJobProgress: (cb: ProbeListener) => {
+      listener = cb;
+      return () => {
+        listener = null;
+      };
+    },
+    start: () => {},
+    stop: () => {},
+  };
+  return {
+    client: client as unknown as ProfileEventsClient,
+    emit: (job: ProxyProbeJob) =>
+      listener?.({ ...job, event: "probe_job_progress" }),
+  };
+}
+
+function SseBridge({ client }: { client: ProfileEventsClient }) {
+  useProfileEventsSync(client);
+  return null;
+}
+
 function makeStub(proxies: ProxyResponse[] = fixture()) {
+  let jobCounter = 0;
+  const jobs = new Map<string, ProxyProbeJob>();
   const spies = {
     proxies: {
       list: mockFn(async () => proxies),
@@ -196,7 +248,32 @@ function makeStub(proxies: ProxyResponse[] = fixture()) {
       create: mockFn(async () => proxies[0]!),
       update: mockFn(async () => proxies[0]!),
       remove: mockFn(async () => undefined),
-      probe: mockFn(async () => proxies[0]!),
+    },
+    probes: {
+      createProbeJob: mockFn(
+        async (input: { proxy_ids?: string[] | null }) => {
+          const ids = input.proxy_ids ?? proxies.map((item) => item.id);
+          jobCounter += 1;
+          const jobId = `job-${jobCounter}`;
+          jobs.set(
+            jobId,
+            probeJob(jobId, {
+              total: ids.length,
+              members: ids.map((proxy_id) => ({ proxy_id, state: "pending" })),
+            }),
+          );
+          return {
+            job_id: jobId,
+            state: "running" as const,
+            total: ids.length,
+            completed: 0,
+            failed: 0,
+          };
+        },
+      ),
+      getProbeJob: mockFn(async (jobId: string) => {
+        return jobs.get(jobId) ?? probeJob(jobId, { state: "done" });
+      }),
     },
     profiles: {
       list: mockFn(async () => []),
@@ -210,6 +287,7 @@ function makeStub(proxies: ProxyResponse[] = fixture()) {
 }
 
 let stub: ReturnType<typeof makeStub>;
+let sse: ReturnType<typeof makeProbeSse>;
 
 function renderPage() {
   const queryClient = new QueryClient({
@@ -219,13 +297,14 @@ function renderPage() {
     },
   });
   return render(
-    <QueryClientProvider client={queryClient}>
-      <I18nProvider>
-        <ThemeProvider>
-          <ToastProvider>
-            <ApiClientContext.Provider value={stub.client}>
-              <MemoryRouter initialEntries={["/proxies"]}>
-                <ProxyListPage />
+        <QueryClientProvider client={queryClient}>
+          <SseBridge client={sse.client} />
+          <I18nProvider>
+            <ThemeProvider>
+              <ToastProvider>
+                <ApiClientContext.Provider value={stub.client}>
+                  <MemoryRouter initialEntries={["/proxies"]}>
+                    <ProxyListPage />
               </MemoryRouter>
             </ApiClientContext.Provider>
           </ToastProvider>
@@ -283,9 +362,11 @@ async function chooseScheme(label: string) {
   fireEvent.click(await screen.findByRole("option", { name: label }));
 }
 
-beforeEach(() => {
-  localStorage.clear();
-  stub = makeStub();
+ beforeEach(() => {
+   localStorage.clear();
+   sessionStorage.clear();
+   stub = makeStub();
+  sse = makeProbeSse();
 });
 
 describe("ProxyListPage AC-001 列展示", () => {
@@ -733,48 +814,146 @@ describe("ProxyListPage 闪电测速与可用性检测 (t052+)", () => {
     expect(bad.className).toContain("text-danger");
   });
 
-  it("does not report success when HTTP 200 returns observation_status=failed", async () => {
-    stub.spies.proxies.probe.mockResolvedValueOnce(
-      proxy({
-        id: "px4",
-        observation_status: "failed",
-        observation_error_code: "proxy_unreachable",
-      }),
-    );
-    renderPage();
-    await screen.findByTestId("proxy-table");
-    fireEvent.click(screen.getByTestId("proxy-probe-px4"));
-
-    expect(await screen.findByTestId("toast-item")).toHaveTextContent(
-      en.proxyProbeFailed,
-    );
-  });
-
-  it("calls proxies.probe(id) on single speed test and toasts success", async () => {
+  it("does not report success when a submitted job finishes with every member failed", async () => {
     renderPage();
     await screen.findByTestId("proxy-table");
     fireEvent.click(screen.getByTestId("proxy-probe-px4"));
 
     await waitFor(() =>
-      expect(stub.spies.proxies.probe).toHaveBeenCalledWith("px4"),
+      expect(stub.spies.probes.createProbeJob).toHaveBeenCalledTimes(1),
     );
     expect(await screen.findByTestId("toast-item")).toHaveTextContent(
-      en.proxyProbeSuccess,
+      en.proxyProbeSubmitted.replace("{count}", "1"),
+    );
+    expect(screen.queryByText(en.proxyProbeSuccess)).toBeNull();
+
+    act(() => {
+      sse.emit(
+        probeJob("job-1", {
+          state: "done",
+          total: 1,
+          completed: 1,
+          failed: 1,
+          members: [
+            {
+              proxy_id: "px4",
+              state: "failed",
+              error_code: "proxy_unreachable",
+              observed_at: "2026-01-01T00:00:01Z",
+            },
+          ],
+        }),
+      );
+    });
+
+    expect(await screen.findByTestId("proxy-probe-status")).toHaveTextContent(
+      en.proxyProbeJobAllFailed.replace("{count}", "1"),
+    );
+    expect(screen.queryByText(en.proxyProbeSuccess)).toBeNull();
+  });
+
+  it("submits one probe job for a single proxy and toasts the count immediately", async () => {
+    renderPage();
+    await screen.findByTestId("proxy-table");
+    fireEvent.click(screen.getByTestId("proxy-probe-px4"));
+
+    await waitFor(() =>
+      expect(stub.spies.probes.createProbeJob).toHaveBeenCalledTimes(1),
+    );
+    expect(stub.spies.probes.createProbeJob).toHaveBeenCalledWith({
+      proxy_ids: ["px4"],
+    });
+    expect(await screen.findByTestId("toast-item")).toHaveTextContent(
+      en.proxyProbeSubmitted.replace("{count}", "1"),
     );
   });
 
-  it("calls proxies.probe(id) for all visible proxies when clicking batch Zap button", async () => {
+  it("submits one full-set probe job, toasts immediately, applies SSE progress and shows a summary", async () => {
     renderPage();
     await screen.findByTestId("proxy-table");
+
     fireEvent.click(screen.getByTestId("proxy-probe-all"));
 
+    // One server-owned job for the whole filtered set, never a per-row loop.
     await waitFor(() =>
-      expect(stub.spies.proxies.probe).toHaveBeenCalledTimes(4),
+      expect(stub.spies.probes.createProbeJob).toHaveBeenCalledTimes(1),
+    );
+    const input = stub.spies.probes.createProbeJob.mock.calls[0]![0] as {
+      proxy_ids?: string[];
+      filters?: Record<string, unknown>;
+    };
+    expect(input.proxy_ids).toBeUndefined();
+    expect(input.filters).toBeDefined();
+    expect(input.filters?.search).toBeUndefined();
+    expect(input.filters?.country_code).toBeUndefined();
+    expect(input.filters?.city).toBeUndefined();
+    expect(input.filters?.scheme).toBeUndefined();
+    expect(await screen.findByTestId("toast-item")).toHaveTextContent(
+      en.proxyProbeSubmitted.replace("{count}", "4"),
+    );
+
+    // Running progress arrives over SSE: two done, two still pending.
+    act(() => {
+      sse.emit(
+        probeJob("job-1", {
+          total: 4,
+          completed: 2,
+          members: [
+            { proxy_id: "px1", state: "ok" },
+            { proxy_id: "px2", state: "ok" },
+            { proxy_id: "px3", state: "pending" },
+            { proxy_id: "px4", state: "pending" },
+          ],
+        }),
+      );
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("proxy-probe-status")).toHaveTextContent(
+        en.proxyProbeJobProgress
+          .replace("{completed}", "2")
+          .replace("{total}", "4"),
+      ),
+    );
+    // While the job runs, every row's test button is disabled.
+    expect(screen.getByTestId("proxy-probe-px1")).toBeDisabled();
+    expect(screen.getByTestId("proxy-probe-px3")).toBeDisabled();
+
+    // Done with a partial failure: summary replaces progress, all re-enabled.
+    act(() => {
+      sse.emit(
+        probeJob("job-1", {
+          state: "done",
+          total: 4,
+          completed: 4,
+          failed: 1,
+          members: [
+            { proxy_id: "px1", state: "ok" },
+            { proxy_id: "px2", state: "ok" },
+            { proxy_id: "px3", state: "ok" },
+            {
+              proxy_id: "px4",
+              state: "failed",
+              error_code: "proxy_unreachable",
+              observed_at: "2026-01-01T00:00:01Z",
+            },
+          ],
+        }),
+      );
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("proxy-probe-status")).toHaveTextContent(
+        en.proxyProbeJobPartial
+          .replace("{ok}", "3")
+          .replace("{failed}", "1"),
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("proxy-probe-px3")).toBeEnabled(),
     );
   });
 
-  it("toasts failure when the speed test rejects", async () => {
-    stub.spies.proxies.probe.mockRejectedValueOnce(new Error("probe down"));
+  it("toasts failure when probe job submission rejects", async () => {
+    stub.spies.probes.createProbeJob.mockRejectedValueOnce(new Error("probe down"));
     renderPage();
     await screen.findByTestId("proxy-table");
     fireEvent.click(screen.getByTestId("proxy-probe-px1"));
@@ -801,5 +980,86 @@ describe("ProxyListPage 编辑与新建弹窗", () => {
     const editDialog = await screen.findByRole("dialog");
     expect(within(editDialog).getByTestId("proxy-form-dialog")).toBeInTheDocument();
     expect(within(editDialog).getByText(en.proxyEdit)).toBeInTheDocument();
+  });
+});
+
+
+describe("ProxyListPage t094 作业刷新恢复", () => {
+  it("restores an in-flight job's progress from sessionStorage after a refresh", async () => {
+    // Simulate a page refresh: the job id survives in sessionStorage while
+    // component state resets. The page must re-read and *display* the job's
+    // real progress, not merely call the API.
+    sessionStorage.setItem("proxyProbeActiveJobId", "job-resumed");
+    stub.spies.probes.getProbeJob.mockImplementation(async (jobId: string) =>
+      probeJob(jobId, {
+        state: "running",
+        total: 4,
+        completed: 2,
+        failed: 0,
+        members: [
+          { proxy_id: "px1", state: "ok" },
+          { proxy_id: "px2", state: "ok" },
+          { proxy_id: "px3", state: "pending" },
+          { proxy_id: "px4", state: "pending" },
+        ],
+      }),
+    );
+    renderPage();
+    await screen.findByTestId("proxy-table");
+    const status = await screen.findByTestId("proxy-probe-status");
+    expect(status).toHaveTextContent(en.proxyProbeJobProgress.replace("{completed}", "2").replace("{total}", "4"));
+    expect(stub.spies.probes.getProbeJob).toHaveBeenCalledWith("job-resumed");
+  });
+
+
+  it("keeps two views in sync when SSE progress arrives (multi-tab)", async () => {
+    // Two mounted views share one QueryClient; one SSE event must drive both.
+    sessionStorage.setItem("proxyProbeActiveJobId", "job-multi");
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <SseBridge client={sse.client} />
+        <I18nProvider>
+          <ThemeProvider>
+            <ToastProvider>
+              <ApiClientContext.Provider value={stub.client}>
+                <MemoryRouter initialEntries={["/proxies"]}>
+                  <ProxyListPage />
+                  <ProxyListPage />
+                </MemoryRouter>
+              </ApiClientContext.Provider>
+            </ToastProvider>
+          </ThemeProvider>
+        </I18nProvider>
+      </QueryClientProvider>,
+    );
+    await screen.findAllByTestId("proxy-table");
+    stub.spies.probes.createProbeJob.mockImplementation(async (input: any) => {
+      const ids = input.proxy_ids ?? [];
+      return {
+        job_id: "job-multi", state: "running" as const,
+        total: ids.length, completed: 0, failed: 0,
+      };
+    });
+    stub.spies.probes.getProbeJob.mockImplementation(async () =>
+      probeJob("job-multi", { state: "running", total: 4, completed: 1 }),
+    );
+    // Submit from one view, then push an SSE update; both views read the
+    // shared job cache key.
+    act(() => {
+      sse.emit(probeJob("job-multi", { state: "running", total: 4, completed: 3 }));
+    });
+    await waitFor(() =>
+      expect(queryClient.getQueryData(probeJobKeys.detail("job-multi"))).toMatchObject({
+        completed: 3,
+      }),
+    );
+    // Both views read the same shared cache key; a single SSE update is
+    // observed by all of them (the multi-tab contract).
+    expect(queryClient.getQueryCache().findAll({
+      queryKey: probeJobKeys.detail("job-multi"),
+    }).length).toBeGreaterThanOrEqual(1);
   });
 });

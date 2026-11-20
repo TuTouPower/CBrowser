@@ -18,6 +18,8 @@ from cbrowser.adapters.database.models import (
     ProfileRuntimeModel,
     ProxyEgressObservationModel,
     ProxyModel,
+    ProxyProbeJobMemberModel,
+    ProxyProbeJobModel,
     RuntimeEventModel,
     SettingModel,
 )
@@ -37,6 +39,9 @@ from cbrowser.domain.models import (
     ProfileRuntime,
     ProxyCandidateEntry,
     ProxyCountryRange,
+    ProxyProbeJob,
+    ProxyProbeJobAccepted,
+    ProxyProbeJobMember,
     ProxyResponse,
     ProxyUsedByEntry,
     ProxyUsedByResponse,
@@ -2851,3 +2856,222 @@ class ProfileRepository:
             notes=m.notes,
             sort_order=m.sort_order,
         )
+
+    # ---- egress probe jobs (t094) -------------------------------------
+
+    @staticmethod
+    def _job_model_to_domain(
+        job: ProxyProbeJobModel, members: list[ProxyProbeJobMemberModel]
+    ) -> ProxyProbeJob:
+        return ProxyProbeJob(
+            job_id=job.id,
+            state=job.state,  # type: ignore[arg-type]
+            total=job.total,
+            completed=job.completed,
+            failed=job.failed,
+            created_at=job.created_at,
+            updated_at=job.updated_at,
+            members=[
+                ProxyProbeJobMember(
+                    proxy_id=m.proxy_id,
+                    state=m.state,  # type: ignore[arg-type]
+                    error_code=m.error_code,
+                    observed_at=m.observation_at,
+                )
+                for m in members
+            ],
+        )
+
+    async def create_probe_job(
+        self,
+        *,
+        job_id: str,
+        proxy_ids: list[str],
+        kind: str = "probe",
+        detail: str | None = None,
+    ) -> ProxyProbeJob:
+        """Persist a job with a frozen target set before any work runs.
+
+        ``kind``/``detail`` let the same durable job carry non-probe batch
+        work (t094 AC-007 environment actions) without a second table.
+        """
+        now = utc_now_iso()
+        # A frozen empty target set has nothing to drive: converge it to a
+        # terminal state at creation so it never lingers as a ghost job
+        # (t094 AC-003 zero-item semantics / AC-004 convergence).
+        state = "done" if not proxy_ids else "running"
+        async with self._session_maker() as session, write_transaction(session):
+            session.add(
+                ProxyProbeJobModel(
+                    id=job_id,
+                    state=state,
+                    total=len(proxy_ids),
+                    completed=0,
+                    failed=0,
+                    kind=kind,
+                    detail=detail,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            # Flush the parent before members so the FK is satisfiable even
+            # without an ORM relationship declaring the dependency.
+            await session.flush()
+            for pid in proxy_ids:
+                session.add(
+                    ProxyProbeJobMemberModel(
+                        job_id=job_id,
+                        proxy_id=pid,
+                        state="pending",
+                        created_at=now,
+                    )
+                )
+            await session.flush()
+            return ProxyProbeJob(
+                job_id=job_id,
+                state=state,
+                total=len(proxy_ids),
+                completed=0,
+                failed=0,
+                created_at=now,
+                updated_at=now,
+                members=[
+                    ProxyProbeJobMember(proxy_id=pid, state="pending")
+                    for pid in proxy_ids
+                ],
+            )
+
+    async def get_probe_job(self, job_id: str) -> ProxyProbeJob | None:
+        async with self._session_maker() as session:
+            job = await session.get(ProxyProbeJobModel, job_id)
+            if job is None:
+                return None
+            stmt = (
+                select(ProxyProbeJobMemberModel)
+                .where(ProxyProbeJobMemberModel.job_id == job_id)
+                .order_by(ProxyProbeJobMemberModel.created_at, ProxyProbeJobMemberModel.proxy_id)
+            )
+            members = list((await session.execute(stmt)).scalars().all())
+            return self._job_model_to_domain(job, members)
+
+    async def get_job_meta(self, job_id: str) -> tuple[str, str | None] | None:
+        """Return ``(kind, detail_json)`` for a job, or None if missing."""
+        async with self._session_maker() as session:
+            job = await session.get(ProxyProbeJobModel, job_id)
+            return (job.kind, job.detail) if job is not None else None
+
+    async def list_unfinished_jobs(self, kind: str | None = None) -> list[str]:
+        async with self._session_maker() as session:
+            stmt = select(ProxyProbeJobModel.id).where(
+                ProxyProbeJobModel.state == "running"
+            )
+            if kind is not None:
+                stmt = stmt.where(ProxyProbeJobModel.kind == kind)
+            return list((await session.execute(stmt)).scalars().all())
+
+    async def list_unfinished_probe_jobs(self) -> list[str]:
+        return await self.list_unfinished_jobs(kind="probe")
+
+    async def update_probe_job_member(
+        self,
+        *,
+        job_id: str,
+        proxy_id: str,
+        state: str,
+        error_code: str | None,
+        observation_at: str,
+        completed: int,
+        failed: int,
+        done: bool,
+    ) -> None:
+        """Update one member and the job aggregate atomically.
+
+        A member that is already terminal is not overwritten: this fences
+        late/overlapping attempts so a stale result cannot replace a newer
+        terminal one (t094 AC-004).
+        """
+        async with self._session_maker() as session, write_transaction(session):
+            member = await session.get(
+                ProxyProbeJobMemberModel, (job_id, proxy_id)
+            )
+            if member is None or member.state != "pending":
+                return
+            member.state = state
+            member.error_code = error_code
+            member.observation_at = observation_at
+            job = await session.get(ProxyProbeJobModel, job_id)
+            if job is not None:
+                job.completed = completed
+                job.failed = failed
+                job.updated_at = utc_now_iso()
+                if done:
+                    job.state = "done"
+            await session.flush()
+
+    async def finalize_probe_job(
+        self, job_id: str, completed: int, failed: int
+    ) -> None:
+        """Converge all remaining pending members to failed and close a job.
+
+        Used by the driver's fault path so no member stays pending forever.
+        """
+        async with self._session_maker() as session, write_transaction(session):
+            stmt = select(ProxyProbeJobMemberModel).where(
+                ProxyProbeJobMemberModel.job_id == job_id,
+                ProxyProbeJobMemberModel.state == "pending",
+            )
+            for member in (await session.execute(stmt)).scalars().all():
+                member.state = "failed"
+                member.error_code = "driver_interrupted"
+                member.observation_at = utc_now_iso()
+            job = await session.get(ProxyProbeJobModel, job_id)
+            if job is not None:
+                job.completed = completed
+                job.failed = failed
+                job.state = "done"
+                job.updated_at = utc_now_iso()
+            await session.flush()
+
+    async def list_proxy_ids_for_filters(
+        self,
+        *,
+        search: str | None = None,
+        country_code: str | None = None,
+        city: str | None = None,
+        scheme: str | None = None,
+    ) -> list[str]:
+        """All proxy ids matching the given filters (t094 AC-006).
+
+        Same filter semantics as ``list_proxies_page`` but unbounded: the
+        job scope is the filtered whole set, not the current page.
+        """
+        async with self._session_maker() as session:
+            base = select(ProxyModel.id)
+            if search:
+                term = f"%{self._escape_like(search)}%"
+                geo = self._latest_observation_geo_subquery()
+                geo_match = select(geo.c.proxy_id).where(
+                    or_(
+                        geo.c.country_name.ilike(term, escape="\\"),
+                        geo.c.city.ilike(term, escape="\\"),
+                    )
+                )
+                base = base.where(
+                    or_(
+                        ProxyModel.name.ilike(term, escape="\\"),
+                        ProxyModel.host.ilike(term, escape="\\"),
+                        ProxyModel.region_label.ilike(term, escape="\\"),
+                        ProxyModel.id.in_(geo_match),
+                    )
+                )
+            if scheme is not None:
+                base = base.where(ProxyModel.scheme == scheme)
+            if country_code is not None or city is not None:
+                geo = self._latest_observation_geo_subquery()
+                geo_filter = select(geo.c.proxy_id)
+                if country_code is not None:
+                    geo_filter = geo_filter.where(geo.c.country_code == country_code)
+                if city is not None:
+                    geo_filter = geo_filter.where(geo.c.city == city)
+                base = base.where(ProxyModel.id.in_(geo_filter))
+            return list((await session.execute(base)).scalars().all())

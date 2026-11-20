@@ -2,8 +2,6 @@
 
 import secrets
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
-
 import httpx
 import pytest
 from cbrowser.supervisor.control_server import create_control_app
@@ -109,44 +107,31 @@ def test_cdp_websocket_authenticates_before_accept(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_probe_response_exposes_full_observation_fields(tmp_path):
+async def test_removed_probe_route_absent_and_retained_routes_authenticated(
+    tmp_path,
+):
     token = secrets.token_urlsafe(32)
     key = tmp_path / "key"
     key.write_text(token)
     key.chmod(0o600)
-    core = SimpleNamespace(
-        probe_proxy_egress=AsyncMock(
-            return_value={
-                "status": "ok",
-                "egress_ip": "203.0.113.7",
-                "country_code": "JP",
-                "country_name": "Japan",
-                "city": "Tokyo",
-                "latency_ms": 128,
-            }
-        )
-    )
-    app = create_control_app(core, key)
+    app = create_control_app(SimpleNamespace(), key)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://supervisor"
     ) as client:
-        response = await client.post(
+        removed = await client.post(
             "/supervisor/v1/proxies/px-1/probe",
             headers={"Authorization": "Bearer " + token},
-            json={
-                "scheme": "http",
-                "host": "proxy.example.com",
-                "port": 8080,
-                "username": None,
-                "password": None,
-                "credential_revision": 1,
-                "endpoint_fingerprint": "0" * 64,
-            },
+            json={"proxy_id": "px-1"},
         )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["egress_ip"] == "203.0.113.7"
-    assert body["country_code"] == "JP"
-    assert body["country_name"] == "Japan"
-    assert body["city"] == "Tokyo"
-    assert body["latency_ms"] == 128
+        assert removed.status_code == 404
+        assert token not in removed.text
+
+        denied = await client.get("/supervisor/v1/health")
+        assert denied.status_code == 401
+        assert token not in denied.text
+
+        allowed = await client.get(
+            "/supervisor/v1/health",
+            headers={"Authorization": "Bearer " + token},
+        )
+        assert allowed.status_code == 200

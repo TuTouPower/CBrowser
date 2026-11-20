@@ -191,6 +191,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/profile-batch-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Profile Batch Job
+         * @description Submit a server-driven environment batch (t094 AC-007).
+         *
+         *     The target set and action are frozen at submission; progress is read
+         *     from the job and pushed over SSE like proxy probe jobs.
+         */
+        post: operations["create_profile_batch_job_api_v1_profile_batch_jobs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/profile-batch-jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Profile Batch Job */
+        get: operations["get_profile_batch_job_api_v1_profile_batch_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/profile-deletions/{operation_id}/retry": {
         parameters: {
             query?: never;
@@ -561,7 +601,7 @@ export interface paths {
         patch: operations["update_proxy_api_v1_proxies__proxy_id__patch"];
         trace?: never;
     };
-    "/api/v1/proxies/{proxy_id}/probe": {
+    "/api/v1/proxies/probe-jobs": {
         parameters: {
             query?: never;
             header?: never;
@@ -571,15 +611,31 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Probe Proxy
-         * @description Manual egress probe (t052 AC-006/AC-009).
+         * Create Probe Job
+         * @description Submit a server-owned probe job (t094).
          *
-         *     The request carries no body: only the proxy id is accepted, and the
-         *     stored endpoint + credentials are loaded server-side, so a caller can
-         *     never redirect the stored password to another host, port, scheme or
-         *     username.  Any request body is rejected (AC-009 negative path).
+         *     The target set is resolved to explicit proxy ids and frozen before any
+         *     work runs; submission returns immediately. Both the global "probe all"
+         *     and the per-row button use this endpoint (the latter with one id).
          */
-        post: operations["probe_proxy_api_v1_proxies__proxy_id__probe_post"];
+        post: operations["create_probe_job_api_v1_proxies_probe_jobs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/proxies/probe-jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Probe Job */
+        get: operations["get_probe_job_api_v1_proxies_probe_jobs__job_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1363,6 +1419,21 @@ export interface components {
             csrf_token: string;
         };
         /**
+         * ProfileBatchJobRequest
+         * @description Frozen target set + action for a server-driven environment batch (t094 AC-007).
+         */
+        ProfileBatchJobRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "start" | "stop" | "moveToGroup";
+            /** Profile Ids */
+            profile_ids: string[];
+            /** Group Id */
+            group_id?: string | null;
+        };
+        /**
          * ProfileControlStateData
          * @description Human-priority control state for one profile (t031, ADR 019).
          *
@@ -1910,6 +1981,87 @@ export interface components {
             region_label?: string | null;
             /** Notes */
             notes?: string | null;
+        };
+        /**
+         * ProxyProbeJob
+         * @description Authoritative read model for one probe job (t094 AC-004).
+         */
+        ProxyProbeJob: {
+            /** Job Id */
+            job_id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "running" | "done";
+            /** Total */
+            total: number;
+            /** Completed */
+            completed: number;
+            /** Failed */
+            failed: number;
+            /** Created At */
+            created_at: string;
+            /** Updated At */
+            updated_at: string;
+            /** Members */
+            members: components["schemas"]["ProxyProbeJobMember"][];
+        };
+        /**
+         * ProxyProbeJobAccepted
+         * @description Immediate `202` receipt: submission is a short request (t094 AC-003).
+         */
+        ProxyProbeJobAccepted: {
+            /** Job Id */
+            job_id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "running" | "done";
+            /** Total */
+            total: number;
+            /**
+             * Completed
+             * @default 0
+             */
+            completed: number;
+            /**
+             * Failed
+             * @default 0
+             */
+            failed: number;
+        };
+        /** ProxyProbeJobFilters */
+        ProxyProbeJobFilters: {
+            /** Search */
+            search?: string | null;
+            /** Country Code */
+            country_code?: string | null;
+            /** City */
+            city?: string | null;
+            /** Scheme */
+            scheme?: ("http" | "https" | "socks5") | null;
+        };
+        /** ProxyProbeJobMember */
+        ProxyProbeJobMember: {
+            /** Proxy Id */
+            proxy_id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "pending" | "ok" | "failed";
+            /** Error Code */
+            error_code?: string | null;
+            /** Observed At */
+            observed_at?: string | null;
+        };
+        /** ProxyProbeJobRequest */
+        ProxyProbeJobRequest: {
+            /** Proxy Ids */
+            proxy_ids?: string[] | null;
+            filters?: components["schemas"]["ProxyProbeJobFilters"] | null;
         };
         /**
          * ProxyResponse
@@ -3088,6 +3240,133 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProfileDeletionOperation"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_profile_batch_job_api_v1_profile_batch_jobs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileBatchJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProxyProbeJobAccepted"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_profile_batch_job_api_v1_profile_batch_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProxyProbeJob"];
                 };
             };
             /** @description Authentication required */
@@ -4904,12 +5183,72 @@ export interface operations {
             };
         };
     };
-    probe_proxy_api_v1_proxies__proxy_id__probe_post: {
+    create_probe_job_api_v1_proxies_probe_jobs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProxyProbeJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProxyProbeJobAccepted"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_probe_job_api_v1_proxies_probe_jobs__job_id__get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                proxy_id: string;
+                job_id: string;
             };
             cookie?: never;
         };
@@ -4921,7 +5260,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ProxyResponse"];
+                    "application/json": components["schemas"]["ProxyProbeJob"];
                 };
             };
             /** @description Authentication required */

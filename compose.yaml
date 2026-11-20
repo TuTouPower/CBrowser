@@ -27,6 +27,10 @@ services:
       com.cbrowser.media-subnet-pool: ${CBROWSER_MEDIA_SUBNET_POOL:?run scripts/deploy.sh first}
     tmpfs:
       - /tmp:rw,size=256m
+    # t094 AC-002: the in-process probe maps a loopback proxy (127.0.0.1)
+    # to host.docker.internal; the API container must resolve it to the host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       <<: *no-proxy-env
       CBROWSER_DB_PATH: /data/db/cbrowser.db

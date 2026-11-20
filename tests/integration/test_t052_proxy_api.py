@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import http.client
 import http.server
+import json
 import socketserver
 import sys
 import threading
 import time
 import types
+from types import SimpleNamespace
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -110,10 +112,12 @@ def stub_geoip2(monkeypatch, tmp_path):
     class FakeCountry:
         def __init__(self, code):
             self.iso_code = code
+            self.name = {"JP": "Japan", "US": "United States"}.get(code)
 
     class FakeCity:
         def __init__(self, code):
             self.country = FakeCountry(code)
+            self.city = SimpleNamespace(name=None)
 
     class FakeReader:
         def __init__(self, path):
@@ -193,6 +197,18 @@ def _wait_for(client, headers, proxy_id, status, timeout=15.0):
             return last
         time.sleep(0.05)
     raise AssertionError(f"proxy {proxy_id} never reached {status}: {last}")
+
+
+def _wait_for_job(client, headers, job_id, timeout=15.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        job = client.get(
+            f"/api/v1/proxies/probe-jobs/{job_id}", headers=headers
+        ).json()
+        if job["state"] == "done":
+            return job
+        time.sleep(0.05)
+    raise AssertionError(f"probe job {job_id} never completed: {job}")
 
 
 def _create(client, headers, payload):
@@ -302,10 +318,15 @@ def test_password_never_leaks_into_any_response(app_client):
     assert patched.status_code == 200
     assert "rotated-secret" not in patched.text
     probed = client.post(
-        f"/api/v1/proxies/{created['id']}/probe", headers=headers
+        "/api/v1/proxies/probe-jobs",
+        json={"proxy_ids": [created["id"]]},
+        headers=headers,
     )
-    assert probed.status_code == 200
-    assert "rotated-secret" not in probed.text
+    assert probed.status_code == 202, probed.text
+    assert probed.json()["state"] == "running"
+    _wait_for_job(client, headers, probed.json()["job_id"])
+    final = client.get(f"/api/v1/proxies/{created['id']}", headers=headers).json()
+    assert "rotated-secret" not in json.dumps(final)
 
 
 def test_name_defaults_to_host_port_and_manual_name_survives(app_client):
@@ -413,13 +434,18 @@ def test_probe_runner_unexpected_error_records_failed_not_500(app_client):
     svc.set_egress_probe_runner(_ExplodingRunner())
     created = _create(client, headers, {"proxy_url": "proxy.example.com:8080"})
     # Manual probe: the unexpected runner error must become a failed
-    # observation (HTTP 200), never a 500 with the pending row hanging.
+    # observation, never leave the job hanging or surface as a 500.
     resp = client.post(
-        f"/api/v1/proxies/{created['id']}/probe", headers=headers
+        "/api/v1/proxies/probe-jobs",
+        json={"proxy_ids": [created["id"]]},
+        headers=headers,
     )
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["observation_status"] == "failed"
-    assert resp.json()["country_code"] is None
+    assert resp.status_code == 202, resp.text
+    job = _wait_for_job(client, headers, resp.json()["job_id"])
+    assert job["failed"] == 1
+    final = client.get(f"/api/v1/proxies/{created['id']}", headers=headers).json()
+    assert final["observation_status"] == "failed"
+    assert final["country_code"] is None
 
 
 # ---- AC-009: probe accepts only the proxy id -------------------------------
@@ -438,21 +464,34 @@ def test_probe_rejects_bodies_that_try_to_redirect_credentials(app_client):
         {"username": "someone-else"},
     ):
         resp = client.post(
-            f"/api/v1/proxies/{created['id']}/probe", json=body, headers=headers
+            "/api/v1/proxies/probe-jobs", json=body, headers=headers
         )
         assert resp.status_code == 422, (body, resp.text)
-    # The stored endpoint is what gets probed, not the rejected body.
-    observed = client.post(
-        f"/api/v1/proxies/{created['id']}/probe", headers=headers
+    # The stored endpoint is what gets probed, not any caller-supplied
+    # credential fields (the job accepts only an id or filter scope).
+    submitted = client.post(
+        "/api/v1/proxies/probe-jobs",
+        json={"proxy_ids": [created["id"]]},
+        headers=headers,
     )
-    assert observed.status_code == 200
-    assert observed.json()["egress_ip"] == "203.0.113.7"
+    assert submitted.status_code == 202
+    _wait_for_job(client, headers, submitted.json()["job_id"])
+    observed = client.get(f"/api/v1/proxies/{created['id']}", headers=headers).json()
+    assert observed["egress_ip"] == "203.0.113.7"
 
 
-def test_probe_missing_proxy_is_404(app_client):
+def test_probe_job_missing_proxy_is_404(app_client):
     client, headers, _fx, _gate, _svc = app_client
-    resp = client.post("/api/v1/proxies/nope/probe", headers=headers)
-    assert resp.status_code == 404
+    # An id that does not exist is still accepted (frozen scope); the member
+    # converges to failed rather than leaking a 404 for a batch submission.
+    resp = client.post(
+        "/api/v1/proxies/probe-jobs",
+        json={"proxy_ids": ["nope"]},
+        headers=headers,
+    )
+    assert resp.status_code == 202
+    job = _wait_for_job(client, headers, resp.json()["job_id"])
+    assert job["failed"] == 1
 
 
 def test_probe_failure_records_failed_observation_not_a_guess(app_client):
@@ -469,3 +508,161 @@ def test_probe_failure_records_failed_observation_not_a_guess(app_client):
     observed = _wait_for(client, headers, created["id"], "failed")
     assert observed["country_code"] is None
     assert observed["egress_ip"] is None
+
+
+# ---- t094: server-side probe jobs -------------------------------------------
+
+
+def test_probe_job_submission_immediate_and_scope_frozen(app_client):
+    """Submission returns 202 before probing completes; the target set is
+    the frozen explicit ids, not the current page (AC-003/AC-006)."""
+    client, headers, fx, gate, _svc = app_client
+    gate.clear()  # block the probe so the job cannot finish before submit
+    created = [
+        _create(client, headers, {
+            "proxy_url": f"http://u:p@127.0.0.1:{fx['proxy_port']}",
+            "name": f"scope-{i}",
+        })
+        for i in range(3)
+    ]
+    ids = [c["id"] for c in created]
+    resp = client.post(
+        "/api/v1/proxies/probe-jobs", json={"proxy_ids": ids}, headers=headers
+    )
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["state"] == "running"
+    assert body["total"] == 3
+    assert body["completed"] == 0 and body["failed"] == 0
+    # The job read model already exposes the frozen member set.
+    job = client.get(f"/api/v1/proxies/probe-jobs/{body['job_id']}", headers=headers).json()
+    assert {m["proxy_id"] for m in job["members"]} == set(ids)
+    assert all(m["state"] in ("pending", "ok", "failed") for m in job["members"])
+    gate.set()
+    done = _wait_for_job(client, headers, body["job_id"])
+    assert done["completed"] + done["failed"] == 3
+
+
+def test_probe_job_filter_scope_covers_all_matching_not_current_page(app_client):
+    """A filter-scoped job resolves the filtered whole set (> one 50-row
+    page), not just page 1 (t094 AC-006)."""
+    client, headers, fx, gate, _svc = app_client
+    gate.set()
+    for i in range(55):
+        _create(client, headers, {
+            "proxy_url": f"http://u:p@127.0.0.1:{fx['proxy_port']}",
+            "name": f"filter-{i}",
+        })
+    resp = client.post(
+        "/api/v1/proxies/probe-jobs",
+        json={"filters": {"scheme": "http"}},
+        headers=headers,
+    )
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["total"] >= 55, body
+    job = client.get(
+        f"/api/v1/proxies/probe-jobs/{body['job_id']}", headers=headers
+    ).json()
+    # The frozen member set already contains every target before completion.
+    assert len(job["members"]) == body["total"]
+    done = _wait_for_job(client, headers, body["job_id"])
+    assert done["completed"] + done["failed"] == body["total"]
+
+
+def test_probe_job_missing_job_is_404(app_client):
+    client, headers, _fx, _gate, _svc = app_client
+    resp = client.get("/api/v1/proxies/probe-jobs/nope", headers=headers)
+    assert resp.status_code == 404
+
+
+def test_probe_job_empty_scope_converges_to_done(app_client):
+    """A zero-match job converges to a terminal state instead of lingering
+    in running forever (t094 AC-003/AC-004)."""
+    client, headers, _fx, _gate, _svc = app_client
+    resp = client.post(
+        "/api/v1/proxies/probe-jobs",
+        json={"filters": {"scheme": "socks5", "city": "nowhere-city-xyz"}},
+        headers=headers,
+    )
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["total"] == 0
+    # The read model is terminal immediately; no driver can resurrect it.
+    job = client.get(
+        f"/api/v1/proxies/probe-jobs/{body['job_id']}", headers=headers
+    ).json()
+    assert job["state"] == "done"
+
+
+def test_probe_job_read_model_survives_read_after_done(app_client):
+    """The durable read model can be re-read after the driver completes, so
+    a refresh re-attaches to the same job and its per-member results (t094
+    AC-004)."""
+    client, headers, fx, gate, _svc = app_client
+    gate.set()
+    created = _create(client, headers, {
+        "proxy_url": f"http://u:p@127.0.0.1:{fx['proxy_port']}",
+        "name": "reload-target",
+    })
+    resp = client.post(
+        "/api/v1/proxies/probe-jobs",
+        json={"proxy_ids": [created["id"]]},
+        headers=headers,
+    )
+    assert resp.status_code == 202
+    job_id = resp.json()["job_id"]
+    done = _wait_for_job(client, headers, job_id)
+    # Re-read as a fresh client would after a page refresh.
+    again = client.get(f"/api/v1/proxies/probe-jobs/{job_id}", headers=headers).json()
+    assert again == done
+    assert len(again["members"]) == 1
+    assert again["members"][0]["state"] == "ok"
+
+
+def test_probe_job_filter_scope_freezes_exact_ids_and_ignores_drift(app_client):
+    """Filter scope freezes the exact matching id set (with non-matching
+    proxies included) and does not drift when observations change (t094
+    AC-006)."""
+    client, headers, fx, gate, _svc = app_client
+    gate.set()
+    http_ids = []
+    for i in range(3):
+        created = _create(client, headers, {
+            "proxy_url": f"http://u:p@127.0.0.1:{fx['proxy_port']}",
+            "name": f"scope-http-{i}",
+        })
+        http_ids.append(created["id"])
+    # A non-matching socks5 proxy must not enter the frozen set.
+    _create(client, headers, {
+        "proxy_url": f"socks5://u:p@127.0.0.1:{fx['proxy_port']}",
+        "name": "scope-socks",
+    })
+    resp = client.post(
+        "/api/v1/proxies/probe-jobs",
+        json={"filters": {"scheme": "http"}},
+        headers=headers,
+    )
+    assert resp.status_code == 202
+    job_id = resp.json()["job_id"]
+    before = client.get(
+        f"/api/v1/proxies/probe-jobs/{job_id}", headers=headers
+    ).json()
+    frozen = {m["proxy_id"] for m in before["members"]}
+    assert http_ids[0] in frozen
+    # The socks5 proxy is excluded by the scheme filter.
+    all_proxies = client.get("/api/v1/proxies/collection", headers=headers).json()
+    socks_ids = {
+        p["id"] for p in all_proxies["items"] if p["scheme"] == "socks5"
+    }
+    assert frozen.isdisjoint(socks_ids)
+    # Append a new observation to one target; the frozen set must not change.
+    client.post(
+        "/api/v1/proxies/probe-jobs",
+        json={"proxy_ids": [http_ids[0]]},
+        headers=headers,
+    )
+    after = client.get(
+        f"/api/v1/proxies/probe-jobs/{job_id}", headers=headers
+    ).json()
+    assert {m["proxy_id"] for m in after["members"]} == frozen
