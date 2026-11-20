@@ -91,14 +91,18 @@ class InProcessEgressProbeRunner:
     Echo targets are the fixed allowlist in ``ECHO_URLS``; private/reserved
     echo addresses are never contacted. No container/network is created,
     so there is no churn and no sandbox to tear down.
+
+    ``geoip`` is a required construction-time dependency (t096 AC-002):
+    the caller resolves and injects it, so probe I/O never consults hidden
+    environment variables to locate the mmdb.
     """
 
     def __init__(
         self,
         *,
+        geoip: GeoIpLookup,
         timeout: float = 10.0,
         echo_urls: tuple[str, ...] = ECHO_URLS,
-        geoip: GeoIpLookup | None = None,
         map_loopback: bool = True,
     ) -> None:
         self._timeout = timeout

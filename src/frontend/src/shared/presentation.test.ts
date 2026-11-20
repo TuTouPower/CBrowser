@@ -61,6 +61,12 @@ describe("proxyProbeErrorLabelKey (t079 AC-001)", () => {
     expect(proxyProbeErrorLabelKey("geoip_lookup_failed")).toBe(
       "proxyErrorGeoipLookupFailed",
     );
+    expect(proxyProbeErrorLabelKey("geoip_db_missing")).toBe(
+      "proxyErrorGeoipDbMissing",
+    );
+    expect(proxyProbeErrorLabelKey("geoip2_missing")).toBe(
+      "proxyErrorGeoip2Missing",
+    );
     expect(proxyProbeErrorLabelKey("proxy_auth_failed")).toBe(
       "proxyErrorAuthFailed",
     );

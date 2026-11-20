@@ -1,7 +1,7 @@
 ---
 slug: gate_verification
 status: active
-tasks: [baseline, t076, t088, t091]
+tasks: [baseline, t076, t088, t091, t096]
 ---
 # 门禁与验证体系
 
@@ -86,3 +86,8 @@ tasks: [baseline, t076, t088, t091]
 - 共享夹具与独立 E2E 用例统一复用 `tests/fixtures/e2e_volumes.py` 按 `<prefix>-{db,data,runtime,fonts}` 预初始化命名卷、`prepare_minimal_e2e_fonts_root` 导入真实最小平台字体集、`api_volume_mounts` / `supervisor_volume_mounts` 及容器内 Driver/UDS 验证入口（`run_volume_python` / `run_volume_json` / `ContainerPolicyAgentClient` / `SpoolDirectoryWatcher`），生产 `MountPlanner` 与 `FontSetUnavailableError` 保持未放宽。
 - `GatewayTopologyHarness` 等拓扑夹具先确认 API 就绪并同步字体目录采纳，再启动 Supervisor 容器；仅使用 `RealApiProcess` 且未配置 `CBROWSER_SUPERVISOR_URL` 的恢复/图谱用例通过 `/supervisor/v1/state-changes` 推送状态变更通知替代 30s 后台快照盲等。
 - `tests/fixtures/e2e_volumes.py::remove_prefix_volumes` 与 `scripts/gate_container_cleanup.py` 协同按 `com.cbrowser.prefix` 与 `com.cbrowser.gate-run` 精确清理测试命名卷，确保运行前后零残留。
+
+## 14. 探测依赖注入与真实路径查找证据（t096）
+
+- 测速探测的 GeoIP 依赖在构造时显式注入：runner 不得在探测 I/O 中读隐藏环境变量；未注入路径按资源类失败（`geoip_db_missing`）判定而非崩溃。验证覆盖两态——路径未注入仍资源失败（即使环境恰好指向真实 mmdb）、注入真实 mmdb 路径完成 GeoIP 查询；路径判定走真实 `GeoIpLookup`，只允许伪造 geoip2 的 `Reader`（`tests/unit/test_t096_geoip_explicit_injection.py`）。
+- compose 配置自洽由静态断言守护：api 与 supervisor 均声明 `CBROWSER_GEOIP_CACHE` 指向同一物理 GeoIP 缓存。云端验证不冒充生产 88 代理规模实测，该 [deploy] 项由 p151 跟踪。

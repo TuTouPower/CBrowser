@@ -35,6 +35,11 @@ services:
       <<: *no-proxy-env
       CBROWSER_DB_PATH: /data/db/cbrowser.db
       CBROWSER_DATA_ROOT: /data
+      # t096 AC-003: the in-process probe resolves the GeoIP mmdb from this
+      # path. The data volume is mounted at /data in this container, so this
+      # is the same physical cache the supervisor reaches via its own
+      # CBROWSER_GEOIP_CACHE (who uses it configures it).
+      CBROWSER_GEOIP_CACHE: /data/engine-cache/geoip
       CBROWSER_FONTS_DIR: /fonts
       CBROWSER_SUPERVISOR_URL: http://supervisor:8005
       CBROWSER_REQUIRE_SUPERVISOR: "1"

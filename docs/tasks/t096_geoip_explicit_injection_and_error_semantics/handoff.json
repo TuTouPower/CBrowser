@@ -1,0 +1,15 @@
+{
+  "tid": "t096",
+  "attempt": 1,
+  "execution_id": "7f41fa5661a2417da99e520cfd3b3a9c",
+  "status": "done",
+  "branch": "t096_geoip_explicit_injection_and_error_semantics",
+  "base_sha": "482fe068aeef0a87f6c4c6de0493559b5f1306e4",
+  "spec_source_sha": "482fe068aeef0a87f6c4c6de0493559b5f1306e4",
+  "tests": "`scripts/run_gates.sh` 全量 EXIT=0（contract 388 passed/1 skipped；unit 2417+83 passed/13 skipped；integration 216 passed/18 skipped；design_lint/design_check PASS；frontend_test 88 files/730 passed；frontend_build PASS）；`tests/unit/test_t096_geoip_explicit_injection.py` 7/7（含两态真实路径查找）；前端 `presentation.test.ts` / `i18n.test.tsx` 17/17；`npm run test:types`、`git diff --check`、`md_format --check` PASS。",
+  "blackbox": "生产 88 代理规模重测与容器内真实 mmdb 解析属 [deploy]，本机不可执行，按既定口径由 p151 跟踪；云端以注入真实 mmdb 路径的 runner 单测替代，不冒充生产实测。",
+  "review": "full 双轴 code/test 均 PASS、零 finding，`review_scope=ok`、`ac_review=ok`、`next_action=finalize`；6 条 AC 全 TICK-VALID（AC-001~005 re_verified，AC-006 trust_prior 处置型）。",
+  "review_scope": "9317a2d7b46971fe",
+  "pending": [],
+  "findings": []
+}

@@ -51,6 +51,8 @@ const PROXY_PROBE_ERROR_KEYS: Record<string, TranslationKey> = {
   echo_proxy_unsupported: "proxyErrorEchoProxyUnsupported",
   invalid_echo_response: "proxyErrorInvalidEchoResponse",
   geoip_lookup_failed: "proxyErrorGeoipLookupFailed",
+  geoip_db_missing: "proxyErrorGeoipDbMissing",
+  geoip2_missing: "proxyErrorGeoip2Missing",
   proxy_auth_failed: "proxyErrorAuthFailed",
   proxy_unreachable: "proxyErrorUnreachable",
 };

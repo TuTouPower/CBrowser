@@ -67,7 +67,7 @@ async def test_in_process_runner_passes_explicit_proxy_and_maps_result(
         return _detail()
 
     monkeypatch.setattr(runner_mod, "probe_egress_detail", fake_detail)
-    result = await InProcessEgressProbeRunner().probe("px-1", _endpoint(), 3)
+    result = await InProcessEgressProbeRunner(geoip=_StubGeoIp()).probe("px-1", _endpoint(), 3)
 
     assert result == EgressProbeResult(
         egress_ip="203.0.113.7",
@@ -95,7 +95,7 @@ async def test_in_process_runner_supports_all_three_schemes_without_downgrade(
         return _detail()
 
     monkeypatch.setattr(runner_mod, "probe_egress_detail", fake_detail)
-    await InProcessEgressProbeRunner().probe("px-1", _endpoint(scheme), 1)
+    await InProcessEgressProbeRunner(geoip=_StubGeoIp()).probe("px-1", _endpoint(scheme), 1)
     assert called["proxy_url"].startswith(f"{scheme}://")
 
 
@@ -116,7 +116,7 @@ async def test_in_process_runner_maps_loopback_proxy_to_host_gateway(
         scheme="http", host="127.0.0.1", port=21001,
         username="user", password="pw",
     )
-    result = await InProcessEgressProbeRunner().probe("px-1", loopback, 1)
+    result = await InProcessEgressProbeRunner(geoip=_StubGeoIp()).probe("px-1", loopback, 1)
     assert result.egress_ip == "203.0.113.7"
     assert called["proxy_url"] == "http://user:pw@host.docker.internal:21001"
 
@@ -138,7 +138,7 @@ async def test_in_process_runner_does_not_block_event_loop(
         return _detail()
 
     monkeypatch.setattr(runner_mod, "probe_egress_detail", fake_detail)
-    await InProcessEgressProbeRunner().probe("px-1", _endpoint(), 1)
+    await InProcessEgressProbeRunner(geoip=_StubGeoIp()).probe("px-1", _endpoint(), 1)
     assert probe_threads
     assert all(tid != main_thread for tid in probe_threads)
 
@@ -162,7 +162,7 @@ async def test_in_process_runner_never_falls_back_to_direct_egress(
     monkeypatch.setattr(httpx, "Client", spy_client)
 
     with pytest.raises(EgressProbeError) as exc:
-        await InProcessEgressProbeRunner().probe("px-1", _endpoint(), 3)
+        await InProcessEgressProbeRunner(geoip=_StubGeoIp()).probe("px-1", _endpoint(), 3)
     assert exc.value.code == "echo_unreachable"
     assert detail_calls == [1]
     assert clients == []
@@ -179,12 +179,12 @@ async def test_in_process_runner_rejects_missing_proxy_without_direct_fetch(
     )
     endpoint = SimpleNamespace(proxy_url=lambda: None)
     with pytest.raises(EgressProbeError) as exc:
-        await InProcessEgressProbeRunner().probe("px-1", endpoint, 1)
+        await InProcessEgressProbeRunner(geoip=_StubGeoIp()).probe("px-1", endpoint, 1)
     assert exc.value.code == "proxy_unavailable"
 
 
 def test_in_process_runner_is_always_enabled() -> None:
-    assert InProcessEgressProbeRunner().is_enabled() is True
+    assert InProcessEgressProbeRunner(geoip=_StubGeoIp()).is_enabled() is True
 
 
 @pytest.mark.asyncio
@@ -196,7 +196,7 @@ async def test_in_process_runner_propagates_error_code(
 
     monkeypatch.setattr(runner_mod, "probe_egress_detail", boom)
     with pytest.raises(EgressProbeError) as exc:
-        await InProcessEgressProbeRunner().probe("px-1", _endpoint(), 1)
+        await InProcessEgressProbeRunner(geoip=_StubGeoIp()).probe("px-1", _endpoint(), 1)
     assert exc.value.code == "geoip_db_missing"
 
 
@@ -212,7 +212,7 @@ async def test_proxy_url_shape_for_supported_schemes(
         return _detail()
 
     monkeypatch.setattr(runner_mod, "probe_egress_detail", fake_detail)
-    await InProcessEgressProbeRunner().probe("px-1", _endpoint(scheme), 1)
+    await InProcessEgressProbeRunner(geoip=_StubGeoIp()).probe("px-1", _endpoint(scheme), 1)
     assert captured["proxy_url"] == (
         f"{scheme}://user:s3cret-pw@proxy.example.com:8080"
     )

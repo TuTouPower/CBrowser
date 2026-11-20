@@ -205,8 +205,13 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 ### 5.10 服务端异步作业编排与轻量出口探测（t094）
 
 - **作业为编排权威**：代理测速不复用旧的客户端串行循环与同步探测端点（已删除）。提交 `POST /api/v1/proxies/probe-jobs`（`proxy_ids` 或 `filters` 二选一）只做解析与冻结目标 ID 集合的短请求，立即返回 `202` + `job_id`；`GET /api/v1/proxies/probe-jobs/{job_id}` 读权威读模型，SSE `probe_job_progress` 推送进度。作业与成员持久化在 `proxy_probe_jobs` / `proxy_probe_job_members` 两张表（增量迁移 `0015_proxy_probe_jobs.py`，只进不退）；作业持 `state`（`running` / `done`）、`total` / `completed` / `failed`，成员持 `state`（`pending` / `ok` / `failed`）、脱敏 `error_code` 与观测关联。
+
 - **冻结作用域与单一状态源**：作业作用于提交时解析出的过滤后目标 ID 集合，分页只影响视图、不参与作用域；行状态只由观测表的 `observation_status === "pending"` 表达，批量进度只由作业读模型与 SSE 表达，前端不持有并行进度状态。观测表 `proxy_egress_observations` 仍是逐项结果唯一存储，重复提交、自动探测与迟到结果不得覆盖在途作业归属，卡住的 pending 按预算收敛为终态；页面刷新由读模型恢复进度，API 进程重启按显式规则恢复或终结并暴露失败。
+
 - **轻量探测取代沙箱**：探测在 API 进程内执行（`services/egress_probe.py` + `shared/egress.py`），凭证由服务端从已存端点装载、不进命令行，显式 `proxy=` 且 `trust_env=False` 杜绝直连回退，回显目标限于固定白名单且私有/保留/回环地址拒绝，出口 IP / 城市取自身回显与本地 GeoIP，`latency_ms` 只计一次成功 HTTP 往返。不再创建 helper 容器、专用 bridge 或探测专属 Policy Agent，也不产生任何 Docker 网络 / 策略资源事件。`proxy_enforced=True` 双栈 `OUTPUT -j DROP` 只约束配置代理的 Browser/Stream 运行策略（ADR 038），与探测路径独立；探针只提供测速与出口信息展示，隔离 / 防泄露验证由单元与真实 Docker E2E 承担（见 [testing](testing.md)）。
+
+- **GeoIP 依赖显式注入（t096）**：`InProcessEgressProbeRunner` 在构造时必须注入 `GeoIpLookup`，探测 I/O 不再隐式读取 `CBROWSER_GEOIP_DB` / `CBROWSER_GEOIP_CACHE`。唯一配置解析点是 API 组合根（`api/app.py` 调 `shared/egress.resolve_geoip_db_path()` 一次），结果经 `RuntimeCoordinator(geoip_db_path=...)` → `egress_probe_runner()` 注入 runner。未配置路径时 `GeoIpLookup` 持空路径并判 `geoip_db_missing` 资源类失败，不在探测期崩溃或回退到环境变量；compose 按「谁用谁配」分别给 api 与 supervisor 声明 GeoIP 缓存路径，指向同一物理 mmdb。
+
 - **职责边界不变**：API 仍是唯一 SQLite 写入者，作业表随业务库由 API 独占写入；Supervisor 仍是唯一 Docker Socket 持有者，不参与探测。环境批量 start / stop / moveToGroup 复用同一作业提交与进度组件，与已有批量删除意图状态机并存、边界清晰。
 
 ## 6. 安全、网络与端口矩阵
