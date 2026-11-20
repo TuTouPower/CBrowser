@@ -37,6 +37,7 @@ from cbrowser.domain.models import (
     ProxyCountryRange,
     ProxyProbeJob,
     ProxyProbeJobAccepted,
+    ProxyProbeJobMember,
     ProxyResponse,
     ProxyUsedByEntry,
     RuntimeEvent,
@@ -61,6 +62,32 @@ from cbrowser.runtime_event_log import emit_runtime_event_log
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
 logger = logging.getLogger("cbrowser.services.profile_service")
+
+#: 服务端并发上限（t095 AC-003）：一次作业内最多同时探测的成员数。
+#: 超限成员在 asyncio.Semaphore 上排队，不丢弃、不拒绝。
+DEFAULT_PROBE_JOB_CONCURRENCY = 8
+
+
+def _probe_job_concurrency() -> int:
+    """从环境读取并发上限；非法/小于 1 的配置拒绝并回退默认值。"""
+    raw = os.environ.get("CBROWSER_PROBE_JOB_CONCURRENCY")
+    if raw is None:
+        return DEFAULT_PROBE_JOB_CONCURRENCY
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning(
+            "Invalid CBROWSER_PROBE_JOB_CONCURRENCY=%r; using %s",
+            raw, DEFAULT_PROBE_JOB_CONCURRENCY,
+        )
+        return DEFAULT_PROBE_JOB_CONCURRENCY
+    if value < 1:
+        logger.warning(
+            "CBROWSER_PROBE_JOB_CONCURRENCY must be >= 1; using %s",
+            DEFAULT_PROBE_JOB_CONCURRENCY,
+        )
+        return DEFAULT_PROBE_JOB_CONCURRENCY
+    return value
 
 
 class ProfileServiceError(Exception):
@@ -283,6 +310,7 @@ class ProfileService:
         runtime_gid: int = 1000,
         data_root: Path | None = None,
         egress_probe_runner: EgressProbeRunner | None = None,
+        probe_concurrency: int | None = None,
     ):
         self._repo = repo
         self.runtime_uid = runtime_uid
@@ -297,6 +325,13 @@ class ProfileService:
         # Optional callback (job_id, state) used to publish SSE progress;
         # wired by the app once the coordinator exists.
         self._probe_job_progress: Callable[[str], Awaitable[None]] | None = None
+        # t095 AC-003: 全局并发配额。所有作业的所有成员共享同一信号量，
+        # 超限成员排队等待配额；每位成员超时独立，互不阻塞。
+        self._probe_concurrency = (
+            _probe_job_concurrency() if probe_concurrency is None
+            else max(1, probe_concurrency)
+        )
+        self._probe_semaphore = asyncio.Semaphore(self._probe_concurrency)
         # Long-operation timeout budget is centralized in the runner's
         # ``timeout`` (wired into the HTTP client in shared.egress), not
         # re-declared here.
@@ -1914,28 +1949,38 @@ class ProfileService:
         if pending:
             await asyncio.gather(*pending)
 
-    async def _drive_probe_job(self, job_id: str) -> None:
-        meta = await self._repo.get_job_meta(job_id)
-        if meta is not None and meta[0] == "profile_batch":
-            await self._drive_profile_batch_job(job_id, meta[1])
-            return
-        job = await self._repo.get_probe_job(job_id)
-        if job is None:
-            return
+    async def _drive_members(
+        self,
+        job_id: str,
+        job: ProxyProbeJob,
+        run: Callable[[str], Awaitable[tuple[str, str | None]]],
+    ) -> None:
+        """受配额并发驱动所有 pending 成员，串行提交计数与状态（t095 AC-003）。
+
+        探测通过全局 ``_probe_semaphore`` 限流：并发上限内的成员并行执行，
+        超限成员排队；单成员异常被就地收敛为 failed，不影响其他成员。
+        计数在 ``counter_lock`` 内串行推进，写库仍走 write_transaction 的
+        BEGIN IMMEDIATE，因此 SQLite 不会 BUSY，也不会出现计数竞态。
+        """
         completed = job.completed
         failed = job.failed
-        try:
-            for member in list(job.members):
-                if member.state != "pending":
-                    continue
-                status, error_code = await self._probe_one_member(
-                    job_id, member.proxy_id
-                )
+        counter_lock = asyncio.Lock()
+
+        async def drive_one(member: ProxyProbeJobMember) -> None:
+            nonlocal completed, failed
+            async with self._probe_semaphore:
+                try:
+                    status, error_code = await run(member.proxy_id)
+                except Exception as exc:  # noqa: BLE001 - 单成员故障就地收敛
+                    logger.warning(
+                        "Probe job member fault: job=%s proxy=%s type=%s",
+                        job_id, member.proxy_id, type(exc).__name__,
+                    )
+                    status, error_code = "failed", "driver_member_fault"
+            async with counter_lock:
                 if status == "ok":
                     completed += 1
                 else:
-                    # failed / gone: both converge the member so the job
-                    # always reaches a terminal state (t094 AC-004).
                     failed += 1
                 done = (completed + failed) >= job.total
                 await self._repo.update_probe_job_member(
@@ -1951,10 +1996,19 @@ class ProfileService:
                     done=done,
                 )
                 await self._publish_probe_job_progress(job_id)
-        except Exception as exc:
-            # A driver fault (DB error, unexpected runner bug) must never
-            # leave members pending forever. Converge every remaining
-            # pending member to failed so the job terminates (t094 AC-004).
+
+        tasks = [
+            asyncio.create_task(drive_one(member))
+            for member in job.members
+            if member.state == "pending"
+        ]
+        try:
+            await asyncio.gather(*tasks)
+        except Exception as exc:  # noqa: BLE001 - 驱动故障不能悬挂 pending 成员
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
             logger.warning(
                 "Probe job driver fault: job=%s type=%s",
                 job_id, type(exc).__name__, exc_info=True,
@@ -1962,6 +2016,20 @@ class ProfileService:
             failed += max(0, job.total - completed - failed)
             await self._repo.finalize_probe_job(job_id, completed, failed)
         await self._publish_probe_job_progress(job_id)
+
+    async def _drive_probe_job(self, job_id: str) -> None:
+        meta = await self._repo.get_job_meta(job_id)
+        if meta is not None and meta[0] == "profile_batch":
+            await self._drive_profile_batch_job(job_id, meta[1])
+            return
+        job = await self._repo.get_probe_job(job_id)
+        if job is None:
+            return
+
+        async def run(proxy_id: str) -> tuple[str, str | None]:
+            return await self._probe_one_member(job_id, proxy_id)
+
+        await self._drive_members(job_id, job, run)
 
     async def request_profile_batch_job(
         self, action: str, profile_ids: list[str], group_id: str | None = None
@@ -2000,31 +2068,14 @@ class ProfileService:
             detail = {}
         action = detail.get("action", "start")
         group_id = detail.get("group_id")
-        completed = job.completed
-        failed = job.failed
-        for member in list(job.members):
-            if member.state != "pending":
-                continue
+
+        async def run(proxy_id: str) -> tuple[str, str | None]:
             ok = await self._apply_profile_batch_action(
-                member.proxy_id, action, group_id
+                proxy_id, action, group_id
             )
-            completed += 1 if ok else 0
-            failed += 0 if ok else 1
-            done = (completed + failed) >= job.total
-            await self._repo.update_probe_job_member(
-                job_id=job_id,
-                proxy_id=member.proxy_id,
-                state="ok" if ok else "failed",
-                error_code=None if ok else "batch_action_failed",
-                observation_at=datetime.datetime.now(
-                    datetime.timezone.utc
-                ).isoformat(),
-                completed=completed,
-                failed=failed,
-                done=done,
-            )
-            await self._publish_probe_job_progress(job_id)
-        await self._publish_probe_job_progress(job_id)
+            return ("ok", None) if ok else ("failed", "batch_action_failed")
+
+        await self._drive_members(job_id, job, run)
 
     async def _apply_profile_batch_action(
         self, profile_id: str, action: str, group_id: str | None

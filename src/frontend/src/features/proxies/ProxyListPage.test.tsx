@@ -137,12 +137,15 @@ function probeJob(
   jobId: string,
   overrides: Partial<ProxyProbeJob> = {},
 ): ProxyProbeJob {
+  const completed = overrides.completed ?? 0;
+  const failed = overrides.failed ?? 0;
   return {
     job_id: jobId,
     state: "running",
     total: 4,
-    completed: 0,
-    failed: 0,
+    completed,
+    failed,
+    processed: overrides.processed ?? completed + failed,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     members: [],
@@ -910,7 +913,7 @@ describe("ProxyListPage 闪电测速与可用性检测 (t052+)", () => {
     await waitFor(() =>
       expect(screen.getByTestId("proxy-probe-status")).toHaveTextContent(
         en.proxyProbeJobProgress
-          .replace("{completed}", "2")
+          .replace("{processed}", "2")
           .replace("{total}", "4"),
       ),
     );
@@ -949,6 +952,50 @@ describe("ProxyListPage 闪电测速与可用性检测 (t052+)", () => {
     );
     await waitFor(() =>
       expect(screen.getByTestId("proxy-probe-px3")).toBeEnabled(),
+    );
+  });
+
+  it("advances progress through failures and refreshes rows on each progress event", async () => {
+    renderPage();
+    await screen.findByTestId("proxy-table");
+    fireEvent.click(screen.getByTestId("proxy-probe-all"));
+
+    await waitFor(() =>
+      expect(stub.spies.probes.createProbeJob).toHaveBeenCalledTimes(1),
+    );
+    await screen.findByTestId("proxy-probe-status");
+    const before = stub.spies.proxies.listCollection.mock.calls.length;
+
+    // 全部失败：进度按「已处理数（成功+失败）」推进，不再停在 0/4。
+    act(() => {
+      sse.emit(
+        probeJob("job-1", {
+          state: "running",
+          total: 4,
+          completed: 0,
+          failed: 3,
+          members: [
+            { proxy_id: "px1", state: "failed", error_code: "proxy_unreachable" },
+            { proxy_id: "px2", state: "failed", error_code: "proxy_unreachable" },
+            { proxy_id: "px3", state: "failed", error_code: "proxy_unreachable" },
+            { proxy_id: "px4", state: "pending" },
+          ],
+        }),
+      );
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("proxy-probe-status")).toHaveTextContent(
+        en.proxyProbeJobProgress
+          .replace("{processed}", "3")
+          .replace("{total}", "4"),
+      ),
+    );
+    // 进度事件同时驱动列表失效，行状态随观测写入实时刷新（非轮询）。
+    await waitFor(() =>
+      expect(
+        stub.spies.proxies.listCollection.mock.calls.length,
+      ).toBeGreaterThan(before),
     );
   });
 
@@ -1007,7 +1054,7 @@ describe("ProxyListPage t094 作业刷新恢复", () => {
     renderPage();
     await screen.findByTestId("proxy-table");
     const status = await screen.findByTestId("proxy-probe-status");
-    expect(status).toHaveTextContent(en.proxyProbeJobProgress.replace("{completed}", "2").replace("{total}", "4"));
+    expect(status).toHaveTextContent(en.proxyProbeJobProgress.replace("{processed}", "2").replace("{total}", "4"));
     expect(stub.spies.probes.getProbeJob).toHaveBeenCalledWith("job-resumed");
   });
 

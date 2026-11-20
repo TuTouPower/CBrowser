@@ -9351,6 +9351,12 @@
             },
             "type": "array",
             "title": "Members"
+          },
+          "processed": {
+            "type": "integer",
+            "title": "Processed",
+            "description": "\u5df2\u5904\u7406\u6570 = \u6210\u529f + \u5931\u8d25\uff1b\u8fd0\u884c\u4e2d\u8fdb\u5ea6\u4e0e\u7ec8\u6001\u6c47\u603b\u5171\u7528\u540c\u4e00\u8bed\u4e49\u3002",
+            "readOnly": true
           }
         },
         "type": "object",
@@ -9362,10 +9368,11 @@
           "failed",
           "created_at",
           "updated_at",
-          "members"
+          "members",
+          "processed"
         ],
         "title": "ProxyProbeJob",
-        "description": "Authoritative read model for one probe job (t094 AC-004)."
+        "description": "Authoritative read model for one probe job (t094 AC-004).\n\n``completed``/``failed`` are the terminal result split; ``processed``\nis the progress magnitude (\u6210\u529f+\u5931\u8d25). Progress is never inferred from\nthe observation table \u2014 this read model is the sole authority (t095)."
       },
       "ProxyProbeJobAccepted": {
         "properties": {

@@ -35,6 +35,8 @@ project_configured
 
 - t027 发布验收矩阵（云端已验，真实环境义务归 t032 AC-009）：生产脚本 `scripts/deploy.sh` 由 fake Docker CLI 在仓库副本中实跑（`tests/unit/test_t027_release_controller.py`），覆盖每镜像只构建一次、六镜像 ID 与指纹/manifest 固定、缺管理员密码先失败列缺项、内部密钥 0600 生成且秘密不出现在输出/manifest/env、up 失败与 readiness 未收敛时上一 release 保持 current、相同配置重复发布幂等且无 restart、prefix 异项目冲突启动前拒绝（全量 ps -a 按名/标签归属）、回退成功与回退拒绝（迁移版本过低/无 readiness 能力时零 up 调用）、回退采用目标 release 身份而非调用方 shell 环境、失败发布已应用迁移版本抬高回退下限、探针 reconcile 以验收截止为超时且 report 模式只读不触发 reconcile；readiness 探针 `scripts/supervisor_readiness_probe.py` 对真实 Supervisor 控制面（stub core）走真实 HTTP 集成（`tests/integration/test_t027_readiness_probe.py`）；Gateway 健康路由走真实 Gateway harness 集成；构建上下文门禁对任一运行时镜像缺失 ignore 规则失败、且断言 data/secrets/.scratch 永不被任一白名单接纳。真实冷构建、重复发布、回退与双实例并存演练在 t032 按 `DOCKER_DEPLOYMENT.md` 的演练步骤实跑，云端 fake 结果不得记为真实部署 PASS。
 
+- t095 进度/并发/实时矩阵（本机已验）：`tests/unit/test_t095_probe_job_progress.py` 覆盖全失败进度推进到 N、进度只取作业读模型、观测历史与 TTL、并发上限内并行且总耗时低于串行基线、超限排队、慢成员不阻塞、多作业结果隔离；前端 `ProxyListPage.test.tsx` 覆盖失败计入进度的文案与进度事件驱动的列表失效，`useProfilesQuery.test.tsx` 覆盖 SSE 事件→列表重取。受配额并发上限与单成员超时用注入桩计时验证，真实 88 代理规模与公网出口可达性属 [deploy] AC-006，本机不冒充。
+
 ## doctor_cmd
 
 环境前置检查：契约测试可成功收集；另需 `md_kx` 在 PATH。预览帧的严格 JPEG 校验（`jpeginfo --check -`，d040）由门禁唯一入口 `scripts/run_gates.sh` 在环境准备阶段确定性提供：复用 PATH 内或 `.scratch/jpeginfo/` 缓存的二进制，并按 d040 契约实测（合法帧退出 0、补回 EOI 的截断帧非零），不满足即 fail closed。不做系统安装、不联网、不在 doctor 阶段人工提供。

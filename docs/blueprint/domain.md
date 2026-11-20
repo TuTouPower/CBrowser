@@ -81,11 +81,14 @@
 - **删除约束**：desired=running 或 observed 为 starting/running/stopping、或仍绑定实例的 Profile 删除返回 409 `profile_running`；observed=error 且无实例可删除。删除成功后 DB 行、Artifact 与全部 Profile 专属目录都不存在。
 - **schema 代际**：迁移目录只有一个 baseline 修订 `b7e1c9d4a2f3`；旧代（0001-0009）DB 在 API 启动与部署时失败封闭并输出重建指引，发布回退按修订链判定下限。详见 ADR 023。
 
-## 代理测速作业（t094）
+## 代理测速作业（t094，t095 重做进度语义与并发）
 
 - **作业实体与状态**：`ProxyProbeJob` 是持久化服务端作业（`proxy_probe_jobs` / `proxy_probe_job_members`，增量迁移 `0015_proxy_probe_jobs.py`，只进不退）：`job_id`、`state`（`running` / `done`）、`total` / `completed` / `failed`、`created_at` / `updated_at`；每个成员持 `proxy_id`、`state`（`pending` / `ok` / `failed`）、脱敏 `error_code` 与观测关联 `observation_at`。作业是进度权威，观测表是逐项结果权威，二者不互为副本。
+- **进度与结果正交（t095 AC-001/AC-004/AC-005）**：读模型派生只读字段 `processed = completed + failed` 表示「已处理数」，运行中进度只取 `processed / total`；`completed` / `failed` 仅作终态成功/失败汇总。失败是正常终态、必须计入进度，全部失败时进度仍推进到 `N/N`。进度只由作业读模型表达，绝不从观测表行数或状态反推。单条、批量代理测速与环境批量 start / stop / moveToGroup 共用此语义与展示。
+- **受配额并发（t095 AC-003）**：作业驱动以 `asyncio.Semaphore` 在服务端并发上限内并行探测，上限由 `CBROWSER_PROBE_JOB_CONCURRENCY` 配置（默认 8、非法值拒绝回退、至少 1）；所有作业成员共享同一配额，超限成员排队等待而非丢弃；单成员超时独立，整体耗时不再随代理数线性放大。计数在锁内串行推进、写库仍经 `write_transaction` 的 `BEGIN IMMEDIATE` 串行化，避免 SQLite BUSY 与竞态。
 - **冻结过滤作用域**：入参为 `proxy_ids` 或 `filters`（`search` / `country_code` / `city` / `scheme`）二选一；提交时按过滤条件解析为明确 ID 集合并冻结，后续分页、筛选变化或测速追加观测导致的归属变化都不改变在途作业目标。零匹配项返回 `total=0` 的即时终态语义。
-- **终态与失败重试**：成员逐项独立，成功落 `ok` 并关联有效观测，失败落 `failed` 并记脱敏错误码；`completed` 统计已终结成员（含失败），`failed` 单列失败数，全部成员终结后作业转 `done` 并保留终态作审计与回读。卡住的 `pending` 按声明预算收敛为终态；重复提交、自动探测与迟到结果不得让已收敛作业再次变化。失败成员可重新提交单成员作业重试，成功项不重复执行；自动探测与手动作业共用同一执行路径与结果投影。
+- **终态与失败重试**：成员逐项独立，成功落 `ok` 并关联有效观测，失败落 `failed` 并记脱敏错误码；`processed` 统计已终结成员（成功+失败），`completed` / `failed` 分别单列成功数与失败数，全部成员终结后作业转 `done` 并保留终态作审计与回读。卡住的 `pending` 按声明预算收敛为终态；重复提交、自动探测与迟到结果不得让已收敛作业再次变化。失败成员可重新提交单成员作业重试，成功项不重复执行；自动探测与手动作业共用同一执行路径与结果投影。
+- **观测表职责归位（t095 AC-004）**：`proxy_egress_observations` 只追加单次探测结果，历史行保留、TTL（24 小时）与端点指纹/凭据版本失效规则不变；它不承载「当前作业进度」或「作业当前状态」语义，这些只由作业读模型表达。
 - **恢复语义**：页面刷新仅由作业读模型恢复进度、作业不中断；API 进程重启按显式规则恢复未终结作业或将其终结并暴露失败，不把内存态当作权威。
 
 ## 用户设置（t074）

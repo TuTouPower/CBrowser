@@ -8,7 +8,14 @@ import hashlib
 import random
 from typing import Any, Generic, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
 from cbrowser.domain.profile_locale import validate_locale, validate_timezone
 from cbrowser.launch_args import validate_launch_args
@@ -1136,7 +1143,12 @@ class ProxyProbeJobMember(BaseModel):
 
 
 class ProxyProbeJob(BaseModel):
-    """Authoritative read model for one probe job (t094 AC-004)."""
+    """Authoritative read model for one probe job (t094 AC-004).
+
+    ``completed``/``failed`` are the terminal result split; ``processed``
+    is the progress magnitude (成功+失败). Progress is never inferred from
+    the observation table — this read model is the sole authority (t095).
+    """
 
     job_id: str
     state: ProxyProbeJobState
@@ -1146,6 +1158,12 @@ class ProxyProbeJob(BaseModel):
     created_at: str
     updated_at: str
     members: list[ProxyProbeJobMember]
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def processed(self) -> int:
+        """已处理数 = 成功 + 失败；运行中进度与终态汇总共用同一语义。"""
+        return self.completed + self.failed
 
 
 class ProxyProbeJobAccepted(BaseModel):

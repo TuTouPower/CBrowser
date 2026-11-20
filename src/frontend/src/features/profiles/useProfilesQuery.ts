@@ -925,9 +925,9 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
         invalidateProfileLists(queryClient);
       });
 
-    // t094: probe-job progress is authoritative read-model data. Write it
-    // straight into the job cache; steady-state progress never triggers a
-    // refetch. The proxy lists are refreshed once on submission.
+    // t095 AC-002: 一次成员状态迁移的 probe_job_progress 事件同时驱动
+    // 进度读模型与代理列表刷新。观测已先于事件落库，失效列表即取回最新
+    // 逐条结果；不靠固定间隔轮询。
     const unsubscribeProbeJob: (() => void) | undefined =
       sseClient.onProbeJobProgress?.((event) => {
         const { event: _event, ...job } = event;
@@ -938,6 +938,7 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
           probeJobKeys.detail(job.job_id),
           job,
         );
+        invalidateProxyLists(queryClient);
       });
 
     sseClient.start();
@@ -1174,6 +1175,7 @@ export function useSubmitProbeJobMutation(
           total: accepted.total,
           completed: accepted.completed,
           failed: accepted.failed,
+          processed: accepted.completed + accepted.failed,
           created_at: now,
           updated_at: now,
           members,
