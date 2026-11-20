@@ -86,11 +86,18 @@ SSE 按事件类型分发（t040）：`shared/api/sse.ts` 解析 `event:` 行按
 ## 8. 代理管理界面（t038+；t074 重写）
 
 - `/proxies` 由 `features/proxies/ProxyListPage.tsx` 承载；`ProxyListToolbar` 提供搜索（名称 / host / 国家名 / 城市 / 地区标签，大小写不敏感）、协议筛选（http / https / socks5）与**独立「国家筛选」「城市筛选」**（城市选项随所选国家联动去重），右侧提供批量闪电测速按钮（`Zap` 图标）、图标化列表/卡片视图切换器与「添加代理」主按钮。t077 起国家/城市筛选为可搜索选择（`SearchableSelect`，完整范围客户端过滤），列表内部滚动。`useProxyFilters` 把 `q` / `scheme` / `country` / `city` 存 URL SearchParams、`useProxyLayout` 把 `list` / `card` 存 `localStorage`，刷新后筛选、视图、国家、城市、延迟、状态全部保留；联动筛选须在一次 `setFilters({country, city})` 内原子提交，两次 `setSearchParams` 会同 tick 互相覆盖。
+
 - `ProxyTable` / 卡片展示 **8 列** = 名称（备注以感叹号图标悬浮 Tooltip 展示）/ 协议（`ProtocolChip`）/ 地址（`MonoValue` 的 `host:port`）/ 国家 / 城市 / 状态 / 使用环境 / 操作，**不展示认证列**，也不再把「位置 + 状态」混为一列。状态列：`pending` 显示探测中；`ok` 仅以绿色语义文字显示 `{latency_ms}ms`（无延迟显示「可用」），不显示额外状态数字；`failed` 以红色语义文字显示脱敏 `observation_error_code`；`unknown` 显示中性未测速提示。删除按钮用 t073 的 `IconButton variant="danger"`。
+
+- 错误码本地化（t096）：`shared/presentation.ts` 的 `proxyProbeErrorLabelKey` 把 `geoip_db_missing` / `geoip2_missing` / `geoip_lookup_failed` 映射到各自独立的本地化文案（服务端资源类失败），与 `echo_unreachable` 等「经代理无响应」网络失败区分；未知或缺失码才回落通用「测速失败」。机器码仍作为 `title` 诊断信息保留。
+
 - 使用环境列只渲染 `0 个` / `1 个` / `2 个` 等计数（去掉「查看环境」文案）：`0` 为不可点 `<span>`；`1` 点击经 `useNavigate` 直接进入对应环境配置页；`>=2` 点击先打开 `ProxyUsedByPopover` 列出全部环境（含名称与绿/灰运行点）再点选进入。t077 起该浮层列表内部滚动（共享 Popover 可用高度约束），100 环境下滚轮可达末项。计数与明细取后端并集（`GET /api/v1/proxies/{id}/used-by`，当前配置 ∪ 运行绑定版本，按环境去重，每项标 `current` / `bound` / `both`），明细只在用户点击时读取。t076 起代理列表读服务端集合页（`useProxiesCollectionQuery`，每页 50 条），国家/城市选项由 `GET /api/v1/proxies/countries` 的范围提供（国家值取国家代码）；t094 起批量测速提交服务端作业作用于过滤后全集、分页只作视图，进度由 SSE `probe_job_progress` 驱动。
+
 - 添加 / 编辑用 `Dialog size="lg"`（`ProxyFormDialog`），默认只显示「代理链接」「备注」与只读观测区（国家 / 城市 / 出口 IP / 延迟 / 失败原因）；高级设置默认折叠，链接与高级字段由同一端点值对象双向同步。`SessionDetailsPanel` 的代理位置同步展示国家 · 城市 · 延迟与失败态。
+
 - 单条与批量测速统一提交服务端作业：`ApiClient.probes.createProbeJob`（`POST /api/v1/proxies/probe-jobs`，`proxy_ids` 或 `filters` 二选一，返回 `202` + `job_id`），进度读 `GET /api/v1/proxies/probe-jobs/{job_id}` 并经 SSE `probe_job_progress` 实时更新；**彻底删除 `speedResults` state、`Date.now() - startedAt` 伪测速与 `probingAll` / `probingId` 本地进度状态**，行状态只读 `observation_status === "pending"`、批量进度只读作业读模型。提交后立即反馈「已提交 N 项」（N 取服务端接受项数，零匹配显示 0 项），共用进度组件展示成功 / 部分失败 / 全失败汇总；批量期间行测速按钮禁用，作业终结或单成员完成后按服务端状态解除。首读快照与断线超窗由快照重建 / `resync-required` 补齐，重复与迟到事件按作业 id 与更新时间围栏，稳态进度更新不靠 refetch。延迟只取后端持久化的 `ProxyResponse.latency_ms`；`observation_status === "failed"` 即使 HTTP 200 也提示错误 toast、不误报成功；`ok` 显示成功 toast。环境批量 start / stop / moveToGroup 复用同一提交与进度呈现（批量删除仍走既有意图状态机）。
-- t094/t095 前端状态源：作业读模型（`useProbeJobQuery`）是批量进度的唯一权威，SSE 进度事件直接写入该查询缓存并同步失效代理列表——一次 `probe_job_progress` 同时驱动进度条与逐行状态刷新，不靠固定轮询；页面刷新后按 `job_id` 重新读取恢复进度，多标签页与断线重连都以服务端状态收敛，前端不持久化并行进度。运行中进度展示 `processed / total`（`processed = completed + failed`），失败计入已处理数；终态分别展示成功 / 部分失败 / 全失败汇总。
+
+- t094/t095 前端状态源：作业读模型（`useProbeJobQuery`）是批量进度的唯一权威，SSE 进度事件直接写入该查询缓存并同步失效代理列表——一次 `probe_job_progress` 同时驱动进度条与逐行状态刷新，不靠固定轮询；页面刷新后按 `job_id` 重新读取恢复进度，多标签页与断线重连都以服务端状态收敛，前端不持久化并行进度。运行中进度展示 `processed / total`（`processed = completed + failed`），失败计入已处理数；终态分别展示成功 / 部分失败 / 全失败汇总。t096 起 `geoip_db_missing` / `geoip2_missing` 等资源类失败有独立本地化文案，与网络失败区分，不兜底成通用「测速失败」。
 
 ## 9. 网络访问与设置（t042；t054 只读；t074 改为宽弹窗）
 

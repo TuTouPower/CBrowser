@@ -11,6 +11,7 @@ import uuid
 from collections import deque
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import quote
 from enum import Enum
 from typing import TYPE_CHECKING, Any
@@ -325,6 +326,7 @@ class RuntimeCoordinator:
         backoff_factor: float = 2.0,
         transport: httpx.AsyncBaseTransport | None = None,
         event_broadcaster: RuntimeEventBroadcaster | None = None,
+        geoip_db_path: str | Path | None = None,
     ):
         clean_url = supervisor_url.strip().rstrip("/") if supervisor_url else None
         token_val = None
@@ -349,6 +351,9 @@ class RuntimeCoordinator:
         self.backoff_factor = backoff_factor
         self.transport = transport
         self.broadcaster = event_broadcaster or RuntimeEventBroadcaster()
+        # t096 AC-002: resolved once at the composition root (app.py) and
+        # handed to the probe runner; never read from env inside probe I/O.
+        self.geoip_db_path = geoip_db_path
 
         self._last_errors: dict[str, _LastError] = {}
         self._search_defaults: dict[str, SearchDefaultsStatusData | None] = {}
@@ -463,12 +468,18 @@ class RuntimeCoordinator:
             self._last_errors.pop(profile_id, None)
 
     def egress_probe_runner(self):
-        """Production egress-probe runner (t094): in-process, explicit-proxy
-        only. The container sandbox and Supervisor RPC were removed; the
-        runner is always available and never falls back to direct egress."""
+        """Production egress-probe runner (t094, injection made explicit in
+        t096): in-process, explicit-proxy only. The container sandbox and
+        Supervisor RPC were removed; the runner is always available and
+        never falls back to direct egress. Its GeoIpLookup is built from
+        the path injected by the caller, not from hidden environment.
+        """
         from cbrowser.services.egress_probe import InProcessEgressProbeRunner
+        from cbrowser.shared.egress import GeoIpLookup
 
-        return InProcessEgressProbeRunner()
+        return InProcessEgressProbeRunner(
+            geoip=GeoIpLookup(db_path=self.geoip_db_path)
+        )
 
     async def get_font_runtime(
         self, profile_id: str, runtime=None

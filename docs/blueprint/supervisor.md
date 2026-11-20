@@ -77,6 +77,8 @@ Browser 在直连模式（`proxy_enforced=False`）允许 loopback、已建立�
 
 出口测速（t094）：探测不再使用短生命周期 helper、专用 bridge 或探测专属 Policy Agent，改为 API 进程内经显式 `proxy=` + `trust_env=False` 的轻量探测（`services/egress_probe.py`）；凭证由服务端从库内已存端点装载、不进命令行，回显目标限于 `shared/egress.py` 固定白名单，私有/保留/回环地址拒绝，失败无直连回退，出口 IP 与城市取自身回显与本地 GeoIP。探测产物只用于测速与出口信息展示（`egress_ip` / `country_code` / `country_name` / `city` / `latency_ms`，失败记脱敏 `observation_error_code`），不再自称隔离自检或防泄露；防泄露验证由单元与真实 Docker E2E 承担（见 [testing](testing.md)）。批量测速提交服务端作业（`POST /api/v1/proxies/probe-jobs` 返回 `202` + `job_id`，`GET /api/v1/proxies/probe-jobs/{job_id}` 读进度，SSE `probe_job_progress` 推送），Supervisor 不参与探测，不创建任何容器 / 网络 / 策略资源；端点指纹不符记 `endpoint_mismatch`，不在容器内执行。配置代理的 Browser Profile 仍按上文受双栈 `OUTPUT DROP` 约束（ADR 038 / `d047`），与探测路径彼此独立。
 
+- 出口探测配置的「谁用谁配」（t096）：api 服务在 compose 中自行声明 `CBROWSER_GEOIP_CACHE`（容器内 `/data/engine-cache/geoip`，data 卷挂载点），supervisor 服务按其自身 data root 声明同名变量；两者指向同一物理 `GeoLite2-City.mmdb`。API 进程内 runner 的 `GeoIpLookup` 由组合根解析路径后显式注入，Supervisor 不再为 API 探测隐式供给配置；漏配即判 `geoip_db_missing` 资源类失败，不回退到别的进程配置。
+
 - t094 准确延迟与错误码口径（承 t074）：`latency_ms` 由 `shared/egress.py` 内 `time.monotonic()` 只包裹「经代理发起探测 HTTP 请求至收到完整响应」的一次成功往返，不含 client 构造、多次回显尝试与网络策略生命周期；进程内探测不建毁容器，无池化与清理开销。探测失败以脱敏 `observation_error_code` 落 `failed` 观测，不再有 helper 崩溃 / 非法输出的 `DockerSandboxError` 分支，也不经 Supervisor `probe_proxy_egress` 回传。
 
 轻量探测的三协议、白名单回显、失败无直连与冻结延迟口径由单元与真实 Docker 探针链验证；配置代理 Browser 的双栈 DROP、WebRTC/QUIC 与公网出口对照由独立的 Browser 链验证（见 [testing](testing.md)）。两条链各自独立，探针不再承担或宣称隔离 / 防泄露职责。

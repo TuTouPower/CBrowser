@@ -38,6 +38,7 @@ from cbrowser.api.v1.font_sets_router import font_set_router
 from cbrowser.api.v1.router import get_profile_service, v1_router
 from cbrowser.network_config import DEFAULT_HTTPS_PORT, derive_origin_whitelist
 from cbrowser.shared.client_ip import parse_trusted_proxy_cidrs
+from cbrowser.shared.egress import resolve_geoip_db_path
 from cbrowser.shared.viewer_grants import ViewerGrantAuthority
 from cbrowser.auth.dependencies import get_auth_service
 from cbrowser.auth.service import AuthService
@@ -319,6 +320,9 @@ def create_app(
             supervisor_token=app.state.supervisor_token,
             profile_service=service,
             require_supervisor=resolved_require_sup,
+            # t096 AC-002/003: resolve deployment config once here and hand
+            # the path to the probe runner; no hidden env read in probe I/O.
+            geoip_db_path=resolve_geoip_db_path(),
         )
         app.state.coordinator = coordinator
 
@@ -359,7 +363,9 @@ def create_app(
         adopt_task.add_done_callback(_log_adoption_failure)
 
         # t094: egress probes run in-process through an explicit proxy; no
-        # container sandbox or Supervisor RPC is involved any more.
+        # container sandbox or Supervisor RPC is involved any more. t096:
+        # the runner's GeoIpLookup is injected from the coordinator's
+        # resolved db path (compose supplies CBROWSER_GEOIP_CACHE to api).
         service.set_egress_probe_runner(coordinator.egress_probe_runner())
 
         async def _publish_probe_job(job_id: str) -> None:

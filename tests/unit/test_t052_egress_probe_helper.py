@@ -71,7 +71,7 @@ async def test_in_process_runner_maps_detail_without_any_sandbox(
         return _detail()
 
     monkeypatch.setattr(runner_mod, "probe_egress_detail", fake_detail)
-    runner = InProcessEgressProbeRunner()
+    runner = InProcessEgressProbeRunner(geoip=_StubGeoIp())
 
     assert runner.is_enabled() is True
     result = await runner.probe("px-1", _endpoint(), 1)
@@ -97,7 +97,7 @@ async def test_in_process_runner_propagates_probe_error(
 
     monkeypatch.setattr(runner_mod, "probe_egress_detail", boom)
     with pytest.raises(EgressProbeError) as exc:
-        await InProcessEgressProbeRunner().probe("px-1", _endpoint(), 1)
+        await InProcessEgressProbeRunner(geoip=_StubGeoIp()).probe("px-1", _endpoint(), 1)
     assert exc.value.code == "echo_unreachable"
 
 
@@ -105,7 +105,7 @@ async def test_in_process_runner_propagates_probe_error(
 async def test_in_process_runner_rejects_missing_proxy_url() -> None:
     endpoint = SimpleNamespace(proxy_url=lambda: None)
     with pytest.raises(EgressProbeError) as exc:
-        await InProcessEgressProbeRunner().probe("px-1", endpoint, 1)
+        await InProcessEgressProbeRunner(geoip=_StubGeoIp()).probe("px-1", endpoint, 1)
     assert exc.value.code == "proxy_unavailable"
 
 

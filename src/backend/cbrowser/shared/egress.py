@@ -12,11 +12,15 @@ service may supply a missing city, but the local database is the primary
 source (t074 / d048: online services are unreliable and rate-limited).
 
 It is I/O, not domain logic: it performs HTTP through ``httpx``,
-reads the GeoIP database file and resolves paths from the environment.
-The pure observation value object and validity rules live in
+reads the GeoIP database file at an injected path. The pure observation
+value object and validity rules live in
 ``cbrowser.domain.egress_observation``. This module imports no other
 cbrowser module at all, so every image that ships the shared package
 can import it.
+
+The database path is a construction-time dependency of ``GeoIpLookup``;
+``resolve_geoip_db_path`` is the single deployment-config resolver called
+at the API composition root — probe I/O never reads the environment.
 
 ``geoip2`` is imported lazily: the API/Supervisor images do not ship
 it, only the Browser image does (``cloakbrowser[geoip]``).
@@ -68,11 +72,17 @@ class GeoIpUnavailableError(RuntimeError):
 
 
 def resolve_geoip_db_path(explicit: str | Path | None = None) -> Path | None:
-    """Locate ``GeoLite2-City.mmdb``.
+    """Resolve the GeoIP mmdb path from deployment configuration.
+
+    Called once at the API composition root (``api/app.py``) and the result
+    is injected into the probe runner. ``probe_egress_detail`` and
+    ``GeoIpLookup`` never call this: no hidden environment read decides
+    the path during a probe (t096 AC-002).
 
     Precedence: explicit path, ``CBROWSER_GEOIP_DB`` (file),
     ``CBROWSER_GEOIP_CACHE`` (directory, set by compose) /
-    ``GeoLite2-City.mmdb``.  Returns ``None`` when nothing is configured.
+    ``GeoLite2-City.mmdb``. Returns ``None`` when nothing is configured —
+    a resource-class probe failure, not a crash.
     """
     if explicit is not None:
         return Path(explicit)
@@ -90,11 +100,12 @@ class GeoIpLookup:
 
     A missing database or reader is a hard failure
     (``GeoIpUnavailableError``) — the observation is recorded as failed,
-    never guessed.
+    never guessed. ``db_path`` is injected by the caller; this class never
+    reads the environment (t096 AC-002).
     """
 
     def __init__(self, db_path: str | Path | None = None) -> None:
-        self.db_path = resolve_geoip_db_path(db_path)
+        self.db_path: Path | None = Path(db_path) if db_path is not None else None
 
     def country_code(self, ip: str) -> str | None:
         if self.db_path is None or not self.db_path.is_file():

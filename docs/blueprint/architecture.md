@@ -212,6 +212,8 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 
 - **轻量探测取代沙箱**：探测在 API 进程内执行（`services/egress_probe.py` + `shared/egress.py`），凭证由服务端从已存端点装载、不进命令行，显式 `proxy=` 且 `trust_env=False` 杜绝直连回退，回显目标限于固定白名单且私有/保留/回环地址拒绝，出口 IP / 城市取自身回显与本地 GeoIP，`latency_ms` 只计一次成功 HTTP 往返。不再创建 helper 容器、专用 bridge 或探测专属 Policy Agent，也不产生任何 Docker 网络 / 策略资源事件。`proxy_enforced=True` 双栈 `OUTPUT -j DROP` 只约束配置代理的 Browser/Stream 运行策略（ADR 038），与探测路径独立；探针只提供测速与出口信息展示，隔离 / 防泄露验证由单元与真实 Docker E2E 承担（见 [testing](testing.md)）。
 
+- **GeoIP 依赖显式注入（t096）**：`InProcessEgressProbeRunner` 在构造时必须注入 `GeoIpLookup`，探测 I/O 不再隐式读取 `CBROWSER_GEOIP_DB` / `CBROWSER_GEOIP_CACHE`。唯一配置解析点是 API 组合根（`api/app.py` 调 `shared/egress.resolve_geoip_db_path()` 一次），结果经 `RuntimeCoordinator(geoip_db_path=...)` → `egress_probe_runner()` 注入 runner。未配置路径时 `GeoIpLookup` 持空路径并判 `geoip_db_missing` 资源类失败，不在探测期崩溃或回退到环境变量；compose 按「谁用谁配」分别给 api 与 supervisor 声明 GeoIP 缓存路径，指向同一物理 mmdb。
+
 - **职责边界不变**：API 仍是唯一 SQLite 写入者，作业表随业务库由 API 独占写入；Supervisor 仍是唯一 Docker Socket 持有者，不参与探测。环境批量 start / stop / moveToGroup 复用同一作业提交与进度组件，与已有批量删除意图状态机并存、边界清晰。
 
 - **受配额并发执行（t095 AC-003）**：`ProfileService._drive_members` 是代理测速与环境批量的唯一驱动：成员探测在共享 `asyncio.Semaphore`（上限取 `CBROWSER_PROBE_JOB_CONCURRENCY`，默认 8）内并行，超限排队；单成员异常就地收敛为 `failed`，不阻塞其他成员；计数在 `asyncio.Lock` 内串行推进，SQLite 写仍走 `write_transaction` 的 `BEGIN IMMEDIATE`，多作业并发不串线、不 BUSY。

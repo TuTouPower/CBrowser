@@ -72,13 +72,23 @@
 ## 代理链接录入与出口观测（t052）
 
 - **链接为唯一录入**：`ProxyCreateRequest` / `ProxyUpdateRequest` 只接受 `proxy_url`（`extra="forbid"`，平铺字段与 `country_code` 一律 422）。四种格式：标准 URL `scheme://user:pass@host:port`、无协议 `host:port`（默认 http）、`host:port:user:pass`、`user:pass@host:port`；scheme 白名单 http/https/socks5、IPv6 必须括号、端口 1..65535、密码 percent-decode 且非法转义报错；裸 IPv6 与三段无协议形式判 ambiguous。`ProxyResponse` 返回脱敏链接（不含密码）与派生只读字段（scheme/host/port/username），密码永不进响应。
+
 - **名称派生**：创建时 name 省略或为空由 `host:port`（IPv6 加括号）派生；前端手动填写后不被后续解析覆盖。
+
 - **PATCH 语义**：`proxy_url` 省略 = 端点（含密码）不变；提供 = 整端点（含密码）整体替换，`password_supplied=True`，触发新配置版本、pending 观测与自动探测。编辑端点而密码框留空时，前端拦截提交（否则会静默清除已存密码），须重填密码或显式清除。
+
 - **国家 / 城市是观测，不是配置**：`proxies.country_code` 列由迁移 `0006` 删除（无真实用户，不做数据迁移）；`ProxyResponse.country_code` / `country_name` / `city` / `egress_ip` / `observation_status` / `latency_ms` / `observation_error_code` / `observed_at` / `expires_at` 均由当前有效观测派生。端点指纹或凭据版本变化、观测过期（TTL 24 小时）时旧观测立即失效，界面显示未测速；探测失败记 failed 行、不猜国家或城市。
+
 - **探测视角**：观测结果自 t094 起由 API 进程内轻量探测产生，结果标识从 API 侧定义，不再由 Supervisor 在 Browser 同视角的短生命周期 helper 内执行；历史 `browser` 视角字面值仅作兼容保留，旧观测按端点指纹 / 凭据版本 / TTL 失效规则自然淘汰。出口 IP 取自 IP 回显端点（复用 cloakbrowser SDK 的 `api.ipify.org` / `checkip.amazonaws.com` / `ifconfig.me/ip`，只发一次 HTTPS GET 取自身出口 IP）；国家 / 城市主链由本机 GeoLite2（`CBROWSER_GEOIP_CACHE/GeoLite2-City.mmdb`）完整读取 `country.names` / `city.names` 判定，t074 起在线只读 HTTPS Geo 服务仅作可选城市补充（白名单、无凭据、`trust_env=False`、每请求短生命周期 client，处理 307 / 429 / TLS 失败回落，见 ADR 029 修订）。`latency_ms` 只计经代理的实际 HTTP 往返，不含容器建毁。
+
+- **GeoIP 路径与资源类失败（t096）**：GeoIP 数据库路径是 `GeoIpLookup` 的构造期依赖，由 API 组合根解析后显式注入 runner，不靠探测期隐藏环境变量。缺库、缺 `geoip2` 包、查询异常分别记 `geoip_db_missing` / `geoip2_missing` / `geoip_lookup_failed`，属可诊断的资源类失败，与 `echo_unreachable` 等真实网络失败类别不同；二者不得在展示层合并为笼统「测速失败」。未注入路径即判资源失败，不猜测国家 / 城市，也不在探测中崩溃。
+
 - **观测记录**：表 `proxy_egress_observations`（proxy_id FK ON DELETE CASCADE + 索引）；t074 增量迁移 `0010` 增 `country_name` / `city` / `latency_ms` 三列（revision `8c3f1d0a7b92`，`down_revision=796adb0bf159`，只进不退）。创建与端点/凭据变更后先记 pending 行再后台自动探测；t094 起手动测速提交服务端作业 `POST /api/v1/proxies/probe-jobs`（`proxy_ids` 或 `filters` 二选一，`202` + `job_id`），进度读 `GET /api/v1/proxies/probe-jobs/{job_id}` 与 SSE `probe_job_progress`。
+
 - **运行态扩展字段**：`ProfileRuntime` 增加 `last_started_at` / `last_stopped_at`（ISO 8601 带时区）、`browser_product` / `browser_user_agent`（来自容器内 CDP `Browser.getVersion`）；未运行时两浏览器字段为 null，进入 stopped/error 时清空。
+
 - **删除约束**：desired=running 或 observed 为 starting/running/stopping、或仍绑定实例的 Profile 删除返回 409 `profile_running`；observed=error 且无实例可删除。删除成功后 DB 行、Artifact 与全部 Profile 专属目录都不存在。
+
 - **schema 代际**：迁移目录只有一个 baseline 修订 `b7e1c9d4a2f3`；旧代（0001-0009）DB 在 API 启动与部署时失败封闭并输出重建指引，发布回退按修订链判定下限。详见 ADR 023。
 
 ## 代理测速作业（t094，t095 重做进度语义与并发）
