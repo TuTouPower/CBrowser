@@ -12,7 +12,7 @@ diff_anchor: ""
 spec_source_sha: ""
 depends_on: ""
 conflicts_with: ""
-note: "用户 2026-11-20 授权：p149+p150 按开发铁律聚合立项；纳入 useBatchActions 环境批量与沙箱依赖测试改写；只创建 backlog，不实施。"
+note: "用户 2026-11-20 授权：p149+p150 按开发铁律聚合立项；纳入 useBatchActions 环境批量与沙箱依赖测试改写；只创建 backlog，不实施。; ；2026-11-20 按 spec_review.md 15 条意见逐项修订 task.md，引用核对至 main@b52808a 实际路径/行号，仍未实施"
 ---
 
 # Task 进展
@@ -25,7 +25,7 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 创建期不预测实施步骤。只记有追溯价值的内容；无事项时写“无”。
 
-无
+- 2026-11-20：按 `spec_review.md` 的 15 条意见逐项修订 `task.md`，所有引用核对至 main@b52808a 的实际路径、符号与行号；AC 补入独立验收量尺与两条 E2E 链，仍未开始实施。
 
 ## Review 处置
 
