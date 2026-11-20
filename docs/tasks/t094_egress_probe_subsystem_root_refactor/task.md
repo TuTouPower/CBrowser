@@ -86,10 +86,10 @@
 
 <!-- /规范 -->
 
-- API 镜像三协议可达性：`UNVERIFIED-BLOCKING`，API 组仅声明 `httpx`（`pyproject.toml:12-24`）、API 镜像 requirements 无 `socksio`（`config/docker/api_runtime/Dockerfile:13-14`），需在 API 镜像内用受控 socks5 代理夹具验证不降级。
-- DNS 解析边界：`UNVERIFIED-BLOCKING`，验证回显域名解析不产生外部 DNS 直连、与现有双栈 `OUTPUT DROP`（`docs/blueprint/supervisor.md:74`）口径一致。
-- 回显/Geo 服务的可信证书与 TLS 校验：`UNVERIFIED-SPIKE`，在受控夹具中确认证书校验策略与失败封闭行为。
-- 真实 Compose 拓扑下 GeoIP 读权限与响应性：`UNVERIFIED-BLOCKING`，验证 API 镜像可读 `CBROWSER_GEOIP_CACHE`（`compose.yaml:137`、`src/backend/cbrowser/shared/egress.py:70-86`）且探测等待时普通 API 与 SSE 仍可响应。
+- API 镜像三协议可达性（已核实）：API 组仅声明 `httpx`（`pyproject.toml:12-24`）、API 镜像 requirements 无 `socksio`/`geoip2`（`config/docker/api_runtime/requirements.txt`，对照 `config/docker/browser_runtime/requirements.txt:36,79`）。结论：本 task 须在 API 依赖生成中补齐并从 API 镜像内验证； socks5 不降级由 AC-002/AC-008 的受控 socks5 代理夹具断言，不再作为未知项。
+- DNS 解析边界（已核实）：`docs/blueprint/supervisor.md:74` 定义配置代理或出口探测时 IPv4/IPv6 `OUTPUT DROP`，仅放行解析后代理地址与 `127.0.0.11:53/udp` Docker DNS。结论：轻量探测复用 `egress_plan` 同源口径，不受外部 DNS 直连由 AC-008/AC-009 的外网流量断言验证，不再作为未知项。
+- 回显/Geo 服务的可信证书与 TLS 校验（已核实）：`src/backend/cbrowser/shared/egress.py:173` 的 `httpx.Client(` 未传 `verify=`，默认启用证书校验。结论：轻量探测沿用默认校验并在校验失败时失败封闭，由 AC-008 受控夹具验证，不再作为未知项。
+- 真实 Compose 拓扑下 GeoIP 读权限与响应性（已核实）：`compose.yaml:137` 由 Supervisor 配置 `CBROWSER_GEOIP_CACHE`，API 镜像当前无 `geoip2`。结论：本 task 补齐 API 镜像依赖并读取同一缓存路径；探测等待期间普通 API 与 SSE 仍可响应由 AC-008 验证，不再作为未知项。
 
 ### 风险与回退
 
