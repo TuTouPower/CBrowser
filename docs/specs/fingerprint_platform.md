@@ -1,13 +1,15 @@
 ---
 slug: fingerprint_platform
 status: active
-tasks: [baseline, t075, t080, t081, t087]
+tasks: [baseline, t075, t080, t081, t087, t100]
 ---
 # 需求规范：指纹平台与平台字体集 (fingerprint_platform)
 
+发布镜像自带 Windows 与 macOS 字体制品。部署将其导入 fonts 卷并等待目录接管，Profile 创建和运行继续使用后端托管的字体绑定。
+
 ## 1. 业务目标与适用范围
 
-本 spec 累积 t041 交付的指纹平台选择与平台专有字体集隔离契约、t053 交付的语言分流与字体集链路收紧，以及 t075 交付的运行身份统一（字体绑定改后端托管、CJK 暴露改显式开关、GPU 身份改引擎派生、字体就绪改启动前真实验证，ADR 040）。Profile 可选 `windows` / `macos` 指纹平台，字体集绑定由后端按平台从资产目录解析默认集，用户不再手选字体包；平台专有字体只从官方渠道取得、只在运行时只读挂载，不进镜像与仓库。基础开源字体进入 Browser 镜像满足 CloakBrowser 安装要求，但不进入指纹 Profile 的 fontconfig 白名单；Profile 可见集合只含绑定的平台字体集，避免 Linux 专属字体形成平台指纹矛盾（用户 2026-11-06 裁决）。关联 task：`docs/tasks/t041_fingerprint_platform_fonts/task.md`（AC-001~009）、`docs/tasks/t053_profile_locale_fonts_defaults/task.md`（AC-001~015）、`docs/tasks/t075_profile_identity_assets_and_readiness/task.md`（AC-001~009）、`docs/tasks/t081_immutable_font_resource_lifecycle/task.md`（AC-001~009，字体集不可变资源生命周期与资产目录，ADR 030）。证据：正式 spike `docs/spikes/s014_fingerprint_platform_fonts/report.md`、`docs/spikes/s026_gpu_platform_capability/report.md`（GPU 平台能力矩阵，结论入 findings `d051`）、findings `d032`（UA-CH architecture 裁决）与 `d033`（字体集隔离实测）、`docs/plan_20261105_ui_redesign.md` 6.8 节。
+本 spec 累积 t041 交付的指纹平台选择与平台专有字体集隔离契约、t053 交付的语言分流与字体集链路收紧，以及 t075 交付的运行身份统一（字体绑定改后端托管、CJK 暴露改显式开关、GPU 身份改引擎派生、字体就绪改启动前真实验证，ADR 040）。Profile 可选 `windows` / `macos` 指纹平台，字体集绑定由后端按平台从资产目录解析默认集，用户不再手选字体包；平台专有字体从官方来源取得，由 Browser 镜像携带压缩制品。运行时只读挂载 Profile 绑定的单个字体集。基础开源字体进入 Browser 镜像满足 CloakBrowser 安装要求，但不进入指纹 Profile 的 fontconfig 白名单；Profile 可见集合只含绑定的平台字体集，避免 Linux 专属字体形成平台指纹矛盾（用户 2026-11-06 裁决）。关联 task：`docs/tasks/t041_fingerprint_platform_fonts/task.md`（AC-001~009）、`docs/tasks/t053_profile_locale_fonts_defaults/task.md`（AC-001~015）、`docs/tasks/t075_profile_identity_assets_and_readiness/task.md`（AC-001~009）、`docs/tasks/t081_immutable_font_resource_lifecycle/task.md`（AC-001~009，字体集不可变资源生命周期与资产目录，ADR 030）。证据：正式 spike `docs/spikes/s014_fingerprint_platform_fonts/report.md`、`docs/spikes/s026_gpu_platform_capability/report.md`（GPU 平台能力矩阵，结论入 findings `d051`）、findings `d032`（UA-CH architecture 裁决）与 `d033`（字体集隔离实测）、`docs/plan_20261105_ui_redesign.md` 6.8 节。
 
 ## 2. 行为契约
 
@@ -46,15 +48,11 @@ tasks: [baseline, t075, t080, t081, t087]
 - t075 起字体就绪以 Runner 启动前的一次真实验证为准：对实际挂载目录核对 manifest、平台、逐文件 sha256 内容哈希，并用该实例生成的 fontconfig 跑真实 `fc-list` 枚举有效字体；CJK 开时另以 FreeType 真实光栅化证明至少一个中文面能渲染中文字形；挂载为空、manifest 损坏、内容不符、过滤后无必需字形（CJK 开时无中文字体面、CJK 关时中文字体泄漏）、中文字形渲染失败任一成立即不启动并记录失败原因。验证结论随 `runner_info` 持久化，Agent 健康与 runtime 响应/SSE 只读结论（`font_set_id`、`missing_fonts` 为可选探测字体的覆盖缺口、失败原因），不逐请求重扫字体字节；`ready` 要求字体结论为 verified。可选探测覆盖不足只记覆盖缺口、不判失败，与必需渲染失败严格区分。
 - `GET /api/v1/font-sets` 需登录会话，列出各字体集的平台、来源、版本、静态完整性（Windows 8 个 / Office 10 个 / Mac 20 个检测字体覆盖情况）与 `used_by_count`；文件被篡改或缺失时完整性显示不一致（AC-002）。导入工具生成带 manifest 的不可变字体集，相同内容重复导入得到同一 `set_id`（AC-001）。
 
-### 2.6 字体目录作为独立部署输入（t051）
+### 2.6 字体制品与部署接管（t100）
 
-- 字体目录是独立部署输入，不再经 `${CBROWSER_DATA_ROOT}/fonts` 派生：compose 以 `${CBROWSER_FONTS_DIR}:/fonts:ro` 只读挂载（API 与 Supervisor 容器内 `CBROWSER_FONTS_DIR=/fonts`），`CBROWSER_FONTS_DIR` 写入 release env。默认部署时 `CBROWSER_FONTS_DIR` 指向主仓 `data/fonts`。
-
-- 部署时字体 preflight 只警告、永不阻塞：字体目录缺失或无有效字体集时，部署输出可执行提示（如何导入字体集），部署继续；`GET /api/v1/font-sets` 的返回以实际导入的字体集为准。
-
-- 平台字体只从官方渠道取得：macOS 取本机 `/System/Library/Fonts`、`Supplemental`、`/Library/Fonts` 与 `/System/Library/AssetsV2/` 下的苹方资源；Windows 取微软官方 Windows 11 企业评估版 ISO，经 `7zz` 从 `sources/install.wim` 提取 `Windows/Fonts`。不使用第三方字体站或 GitHub 镜像。
-
-- 字体不进入任何镜像层与 git 仓库，部署 / 发布脚本不复制字体目录；系统不提供字体集删除功能（AC-008）。
+- Windows 与 macOS 字体制品以 SHA-256 和两套内容 ID 锁定。源码构建按锁定 URL 下载压缩包，发布者可提供相同摘要的本地副本。仓库仅保存锁文件。
+- Browser 镜像包含两套字体压缩制品。部署以一次性容器校验制品，并按内容 ID 导入实例的 fonts named volume。已有同内容字体集会复用。API 和 Supervisor 只读消费 fonts 卷。
+- 两套字体集在资产目录进入 verified 状态后，部署才激活 release。已有 Profile 仍引用原字体集 ID。系统不提供字体集删除功能。
 
 ### 2.7 语言分流与字体集链路收紧（t053）
 
@@ -65,7 +63,7 @@ tasks: [baseline, t075, t080, t081, t087]
 
 ## 3. 验收标准（摘要）
 
-完整 AC 与可测试性声明见关联 task `t041` 与 `t053`；本 spec 只作需求级累积。
+以下保留关联任务当时的验收记录。当前字体交付方式见 2.6，完整验收见 [t100](../tasks/t100_bundled_font_image_distribution/task.md)。
 
 - [x] AC-001：导入工具生成带 manifest 的不可变字体集，相同内容同一 `set_id`、内容变化新 `set_id`、已有集不被修改。
 - [x] AC-002：`GET /api/v1/font-sets` 需登录，列出平台 / 来源 / 版本 / 静态完整性 / `used_by_count`，篡改或缺失显示不一致。

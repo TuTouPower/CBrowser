@@ -1,0 +1,8 @@
+{
+  "url": "https://github.com/TuTouPower/cbrowser/releases/download/font-assets-v1/cbrowser-fonts.tar.zst",
+  "sha256": "ca0aca8df9f4173050a954909273b7293963dee0119cb20ff23954ee839bc03f",
+  "sets": {
+    "windows": "71e2df2b186e52ba099aade3fc42951f58ae38f4f3adb6a44688c52b8f9d881b",
+    "macos": "99cb17d4ba0fb6c461f3585b790b3a08fa65b33fda8cd7279b72f38491e6710a"
+  }
+}

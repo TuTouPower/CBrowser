@@ -4,14 +4,13 @@
 
 ## 构建完整镜像
 
-从仓库根目录执行，只把明确列出的源文件目录送入构建上下文，避免将 .env、用户数据或仓库 scratch 发送给 Docker：
+从仓库根目录执行。统一构建脚本会自动获取并校验锁定字体，将字体作为独立的 Docker 构建上下文，生成包含 Browser 镜像 ID 的清单。
 
 ```bash
 set -euo pipefail
-tar --exclude='__pycache__' -cf - \
-  src/backend/cbrowser config/docker/browser_runtime tests/fixtures/runtime_probe \
-  | docker build -f config/docker/browser_runtime/Dockerfile -t cbrowser-runtime:local-test -
-export CBROWSER_RUNTIME_TEST_IMAGE="$(docker image inspect cbrowser-runtime:local-test --format '{{.Id}}')"
+manifest="$PWD/.scratch/runtime_validation/images.json"
+bash scripts/build_images.sh "$manifest"
+export CBROWSER_RUNTIME_TEST_IMAGE="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["images"]["browser"])' "$manifest")"
 ```
 
 测试始终使用取得的不可变 image ID，不挂载宿主源码。镜像包含真正的 XShm 捕获探针；C 编译器及开发头文件只留在构建阶段，不进入运行阶段。

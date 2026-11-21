@@ -1,18 +1,23 @@
 # Independent, reproducible Browser Runtime image for cbrowser
-FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS xshm_probe_builder
-RUN apt-get update && apt-get install -y --no-install-recommends \
+FROM python:3.15-slim-trixie@sha256:8c13a3f37a6a5b71498228e902c4b9f51c1f7900d49fabf71f9a650c6120e0d0 AS browser_python_base
+FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS browser_debian_base
+ARG APT_MIRROR=mirrors.tuna.tsinghua.edu.cn
+RUN sed -i "s|^URIs: http://deb.debian.org/|URIs: http://$APT_MIRROR/|" /etc/apt/sources.list.d/debian.sources
+
+FROM browser_debian_base AS xshm_probe_builder
+RUN apt-get -o Acquire::Retries=3 -o APT::Update::Error-Mode=any update && apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
     gcc libx11-dev libxext-dev libc6-dev && rm -rf /var/lib/apt/lists/*
 COPY tests/fixtures/runtime_probe/test_mitshm.c /tmp/test_mitshm.c
 RUN gcc -O2 /tmp/test_mitshm.c -lX11 -lXext -o /test_mitshm
 
-FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS base_fonts_builder
+FROM browser_debian_base AS base_fonts_builder
 # Base open-source fonts (plan 6.8, six apt packages) satisfy CloakBrowser's
 # documented minimum install. They are Linux-flavoured, so they live under
 # /opt/cbrowser-base-fonts outside fontconfig's default scan paths and are
 # deliberately NOT whitelisted by the per-profile FONTCONFIG_FILE: a windows
 # or macos fingerprint Profile must never see WenQuanYi, Unifont, FreeFont,
 # IPAGothic or Loma. Only the bound platform font set is whitelisted.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get -o Acquire::Retries=3 -o APT::Update::Error-Mode=any update && apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
     fonts-noto-color-emoji \
     fonts-freefont-ttf \
     fonts-unifont \
@@ -23,14 +28,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && cp -a /usr/share/fonts/. /opt/cbrowser-base-fonts/ \
     && rm -rf /var/lib/apt/lists/*
 
-FROM python:3.15-slim-trixie@sha256:8c13a3f37a6a5b71498228e902c4b9f51c1f7900d49fabf71f9a650c6120e0d0
+FROM browser_python_base
+ARG APT_MIRROR=mirrors.tuna.tsinghua.edu.cn
+RUN sed -i "s|^URIs: http://deb.debian.org/|URIs: http://$APT_MIRROR/|" /etc/apt/sources.list.d/debian.sources
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1
 
 # Install system dependencies: X11, Openbox, PulseAudio, and Chromium runtime libraries
 # (GTK 3 is loaded by Chromium for the page file chooser dialog)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get -o Acquire::Retries=3 -o APT::Update::Error-Mode=any update && apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
     tini \
     supervisor \
     xvfb \
@@ -70,7 +77,7 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt && \
 
 # Keep the strict frame checker separate from the stable browser dependency
 # layer so adding it does not reinstall the entire display/browser stack.
-RUN apt-get update && apt-get install -y --no-install-recommends jpeginfo && \
+RUN apt-get -o Acquire::Retries=3 -o APT::Update::Error-Mode=any update && apt-get -o Acquire::Retries=3 install -y --no-install-recommends jpeginfo && \
     rm -rf /var/lib/apt/lists/*
 
 # Create non-root user 'cbrowser' with UID 1000 and GID 1000
@@ -131,3 +138,9 @@ WORKDIR /home/cbrowser
 
 ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/app/entrypoint.sh"]
 CMD ["--help"]
+
+# Deployment uses this compressed payload to publish the two immutable sets
+# into the fonts volume. Runtime fontconfig only sees the bound volume subpath.
+COPY --from=font_assets --link /fonts.tar.zst /opt/cbrowser-font-bundle/fonts.tar.zst
+COPY config/font_assets.lock.json /opt/cbrowser-font-bundle/lock.json
+COPY scripts/font_bundle.py /opt/cbrowser-font-bundle/seed.py

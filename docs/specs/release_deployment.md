@@ -1,7 +1,7 @@
 ---
 slug: release_deployment
 status: active
-tasks: [baseline, t075, t080]
+tasks: [baseline, t075, t080, t100]
 ---
 # 需求规范：Release 发布与回退
 
@@ -9,7 +9,7 @@ tasks: [baseline, t075, t080]
 
 ## 不可变 release
 
-- 每次发布是一个不可变 release：五个运行时镜像各按当前源只构建一次并打 release 标签，Caddy 使用固定上游引用；release manifest/env 以不可变镜像 ID 固定 API、Gateway、Supervisor、Browser、Stream、Caddy 全部六个镜像，并记录 compose 文件、Caddyfile、前端产物的 SHA-256 指纹与数据库迁移版本（alembic head），以及 readiness/reconcile 能力标记。t034 起基础镜像为 digest 固定的 `python:3.15-slim-trixie` / `debian:trixie-slim`（辅助阶段），Caddy 为 digest 固定的 2.x，`CADDY_REF` 默认值随之更新；Python 依赖由 `uv.lock` 单一来源按依赖组导出。
+- 构建入口产出六个镜像和本地清单。部署入口读取本地镜像 ID 或拉取 registry digest 引用，再用解析到的六个镜像 ID 固定 API、Gateway、Supervisor、Browser、Stream、Caddy。Caddy 镜像承载前端，release 以该镜像身份固定前端内容，并记录 compose、渲染后 Caddyfile、数据库迁移版本与 readiness/reconcile 能力标记。
 - release 文件保存在 `config/deploy/releases/<release_id>.{env,json}`，同名 release 禁止覆盖。当前/上一 release 只经单一 JSON 指针文件 `config/deploy/release_pointer.json`（`{"current": …, "previous": …|null}`）表示，指针只在发布或回退通过验收后原子写（文件 + 父目录 fsync）；生成或部署中途失败不覆盖上一份有效 release，上一 release 的镜像保留在 daemon 中。指针文件损坏时 fail-soft 替换（previous 丢失）。
 - compose.yaml 的全部服务镜像只读 release 变量且无 build 块，`up` 永不触发构建。
 
@@ -52,7 +52,7 @@ tasks: [baseline, t075, t080]
 ## 控制面数据库进 named volume、部署身份与发布原子性（t051）
 
 - 控制面数据库（含 `-wal` / `-shm`）位于 compose named volume `db`（`name: ${CBROWSER_PREFIX:-cbrowser}-db`），API 挂载 `db:/data/db`、`CBROWSER_DB_PATH=/data/db/cbrowser.db`；数据库文件不位于任何宿主 bind mount 上。WAL 的 `-shm` wal-index 须与数据库同机共享内存，宿主 bind mount 跨 OrbStack VM 边界时锁语义失稳（p068：2026-11-10 登录持续 500 `disk I/O error`），named volume 是根因修正。
-- 字体是独立部署输入：compose 以 `${CBROWSER_FONTS_DIR}:/fonts:ro` 挂载（API 与 Supervisor 容器内 `CBROWSER_FONTS_DIR=/fonts`），`CBROWSER_FONTS_DIR` 写入 release env；部署时字体 preflight 只警告、永不阻塞（缺失或无有效集时输出可执行提示）。运行时口径与部署 preflight 分离（t075）：字体挂载错误或为空时实例验证失败、不报告就绪，readiness 对照可区分「部署完成但字体不可用」与真实就绪；数据库迁移 0013 的阻塞清单（旧 GPU 取值/悬空绑定/无集可绑）会在 API 启动迁移时暴露，部署前须先按清单处置存量 Profile 并做 DB 文件级备份。
+- 平台字体随浏览器镜像交付。部署用一次性容器把两套锁定字体发布到 fonts 卷，运行服务以只读方式消费。发布成功观察两套目录记录均进入 verified 状态。已绑定的 Profile 保留现有字体集 ID。
 - 首次部署身份确定性派生：`instance_id = sha256("cbrowser-instance-v1\0<prefix>\0<data_root>")[:32]`，媒体子网池按 `pool_index = sha256(identity) mod 64` 得 `10.{192+index}.0.0/16`；两者写入 release env 与 manifest 的 `instance` 块，跨 release 稳定、跨（prefix, data_root）区分。compose 四服务带 `com.cbrowser.instance-id` 与 `com.cbrowser.media-subnet-pool` 标签。同一 prefix 再次部署且 release 记录的数据根与当前数据根指向同一文件系统目录时，复用该 release 的部署身份、媒体池与 edge 子网；macOS 目录大小写改名不会改变资源归属。
 - 冲突判定以 instance-id 为唯一依据：deploy.sh 扫描运行容器，instance-id 标签等于本实例 id 时认领；标签缺失时仅当容器项目为本实例项目才认领（早于标签的旧容器、数据根迁移重部署情形）；标签存在且不符即拒绝；`<prefix>-profiles` project 名豁免已删除。媒体池重叠在同一扫描内判定（与 prefix 无关，己方 instance-id 跳过），重叠即部署失败并提示。
 - schema 代际检查在新存储位置上仍按原语义执行：先建 API 镜像，再以只读挂载的 volume 在容器内读 stamp（`db_inspect.py stamp`）；不可读库 fail-closed（部署前拒绝），不以写模式打开数据库。

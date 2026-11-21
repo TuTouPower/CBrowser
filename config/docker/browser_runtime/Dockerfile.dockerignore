@@ -15,3 +15,5 @@
 
 **/__pycache__
 **/*.pyc
+!config/font_assets.lock.json
+!scripts/font_bundle.py

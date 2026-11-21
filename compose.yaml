@@ -143,6 +143,7 @@ services:
       CBROWSER_SOCKET_ROOT: ${CBROWSER_SOCKET_ROOT:-/run/cb/socks}
       CBROWSER_POLICY_AGENT_ROOT: ${CBROWSER_POLICY_AGENT_ROOT:-/run/cb/policy-agents}
       CBROWSER_ENGINE_CACHE: ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/engine-cache
+      CBROWSER_ENGINE_DOWNLOAD_PROXY: ${CBROWSER_ENGINE_DOWNLOAD_PROXY:-}
       CBROWSER_GEOIP_CACHE: ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/engine-cache/geoip
       CLOAKBROWSER_AUTO_UPDATE: "false"
       CBROWSER_ENGINE_BUILD: ${CBROWSER_ENGINE_BUILD:?run scripts/deploy.sh first}
@@ -221,7 +222,6 @@ services:
         read_only: true
         volume:
           subpath: network
-      - ./src/frontend/dist:/var/www/html:ro
       - caddy_data:/data
       - caddy_config:/config
     networks: [edge]

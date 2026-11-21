@@ -15,8 +15,8 @@ Selection basis:
   representative Latin and CJK families covering the fonts observed in the
   d033 fontconfig isolation probe, with PingFang as the distinguishing CJK face.
 
-Only file names are recorded here; font bytes are never vendored into the
-repository or any image.
+Only file names are recorded here. The Browser image carries a locked
+bundle for deployment to publish into the runtime fonts volume.
 """
 
 from __future__ import annotations

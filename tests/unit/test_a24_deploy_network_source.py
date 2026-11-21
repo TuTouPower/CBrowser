@@ -74,7 +74,7 @@ case "${1:-}" in
   ps) exit 0 ;;
   network) exit 0 ;;
   build) exit 0 ;;
-  image) echo "sha256:fakeapimage" ;;
+  image) echo "sha256:0000000000000000000000000000000000000000000000000000000000000000" ;;
   run) exit 0 ;;
   *) exit 1 ;;
 esac
@@ -83,6 +83,10 @@ esac
 PY_STUB = (
     "import os\n"
     "import sys\n"
+    "if any(arg.endswith(\"image_manifest.py\") for arg in sys.argv):\n"
+    "    print(\"browser sha256:0000000000000000000000000000000000000000000000000000000000000000\")\n"
+    "    print(\"api sha256:0000000000000000000000000000000000000000000000000000000000000000\")\n"
+    "    sys.exit(0)\n"
     "if \"render\" in sys.argv[1:]:\n"
     "    rc = int(os.environ.get(\"STUB_RENDER_RC\", \"2\"))\n"
     "    sys.stderr.write(\"stub: simulated cli failure rc=%d\\n\" % rc)\n"
@@ -112,6 +116,8 @@ def _run_isolated_deploy(tmp_path, render_rc):
         dockerfile_dir.mkdir(parents=True)
         (dockerfile_dir / "Dockerfile").write_text("", encoding="utf-8")
         (dockerfile_dir / "Dockerfile.dockerignore").write_text("", encoding="utf-8")
+
+    shutil.copy(ROOT / "config/font_assets.lock.json", repo / "config")
 
     bins = tmp_path / "bins"
     bins.mkdir()

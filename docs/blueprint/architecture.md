@@ -83,7 +83,7 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 
 ### 3.1 发布与实例身份（t027）
 
-发布由 `scripts/deploy.sh` 单一入口执行，交付物是不可变 release：六个镜像（API、Gateway、Supervisor、Browser、Stream、Caddy）以镜像 ID 固定在 `config/deploy/releases/<release_id>.{env,json}`，连同 compose/Caddyfile/前端产物指纹与数据库迁移版本；compose 全部服务镜像只读 release 变量、无 build 块。发布与回退都以 t026 的 `reconcile_all` + `readiness` 为唯一验收（经 `docker compose exec` 在 Supervisor 容器内执行探针，宿主机不持密钥、无新增端口），验收通过后才原子移动 current/previous 指针。回退在目标 release 缺 readiness 能力、目标 head 与当前 DB 实际 stamp 不等（无降级：同代旧 head 与跨代旧 release 均拒绝，含旧 t042，不做 `ALLOWED_ORIGINS` 兼容）、或工作树 compose 指纹与目标 `compose_sha256` 不一致时变更前拒绝。实例身份（compose 项目、容器名、资源 prefix、edge 网络、数据根、secrets 目录、HTTPS 端口）全部参数化，第二实例可同 daemon 并存；prefix 被异项目占用时启动前拒绝。细节契约见 `docs/specs/release_deployment.md` 与 ADR 017。
+镜像构建由 `scripts/build_images.sh` 执行，Caddy 镜像携带前端，Browser 镜像携带两套锁定平台字体包。部署入口 `scripts/deploy.sh` 可消费本地镜像清单或拉取 registry digest 引用，交付物是不可变 release：六个镜像（API、Gateway、Supervisor、Browser、Stream、Caddy）以镜像 ID 固定在 `config/deploy/releases/<release_id>.{env,json}`，连同 compose/Caddyfile/前端产物指纹与数据库迁移版本；compose 全部服务镜像只读 release 变量、无 build 块。发布与回退都以 t026 的 `reconcile_all` + `readiness` 为唯一验收（经 `docker compose exec` 在 Supervisor 容器内执行探针，宿主机不持密钥、无新增端口），验收通过后才原子移动 current/previous 指针。回退在目标 release 缺 readiness 能力、目标 head 与当前 DB 实际 stamp 不等（无降级：同代旧 head 与跨代旧 release 均拒绝，含旧 t042，不做 `ALLOWED_ORIGINS` 兼容）、或工作树 compose 指纹与目标 `compose_sha256` 不一致时变更前拒绝。实例身份（compose 项目、容器名、资源 prefix、edge 网络、数据根、secrets 目录、HTTPS 端口）全部参数化，第二实例可同 daemon 并存；prefix 被异项目占用时启动前拒绝。细节契约见 `docs/specs/release_deployment.md` 与 ADR 017。
 
 ### 3.2 部署身份、数据库位置与发布指针（t051）
 
@@ -95,7 +95,7 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 
 ### 3.5 字体资产目录与验证权威（t081）
 
-字体集是发布后不可变的资源（ADR 030）：受信发布者经导入 CLI 完整验证后以内容寻址 set_id 原子发布进 fonts 卷；API（唯一 DB 写者）在启动接管与显式审计时把验证结论持久化到资产目录 `font_set_assets`（平台、来源/版本、内容身份、文件数、detection 覆盖、验证状态/时间、资源修订 `revision` 与审计围栏 `state_seq`）。runtime REST/SSE、字体列表、默认集选择与 Profile 绑定校验只读目录记录，成本与字体字节数无关；审计有界并发（2）、同集去重、回执按 `state_seq` 围栏条件写入，迟到回执不覆盖已应用的新回执/接管（发布/修复只写文件、经后续审计生效）。运行状态的字体口径以运行实例绑定的配置版本为准。Supervisor 对实际挂入集的启动验证每实例只执行一次（见 supervisor.md），细节与旧实时扫描契约的废止见 ADR 030。
+部署使用浏览器镜像内字体包初始化 fonts 卷并等待 API 接管。字体集是发布后不可变的资源（ADR 030）：受信发布者经导入 CLI 完整验证后以内容寻址 set_id 原子发布进 fonts 卷；API（唯一 DB 写者）在启动接管与显式审计时把验证结论持久化到资产目录 `font_set_assets`（平台、来源/版本、内容身份、文件数、detection 覆盖、验证状态/时间、资源修订 `revision` 与审计围栏 `state_seq`）。runtime REST/SSE、字体列表、默认集选择与 Profile 绑定校验只读目录记录，成本与字体字节数无关；审计有界并发（2）、同集去重、回执按 `state_seq` 围栏条件写入，迟到回执不覆盖已应用的新回执/接管（发布/修复只写文件、经后续审计生效）。运行状态的字体口径以运行实例绑定的配置版本为准。Supervisor 对实际挂入集的启动验证每实例只执行一次（见 supervisor.md），细节与旧实时扫描契约的废止见 ADR 030。
 
 （t075 补充，ADR 040）Profile 的字体绑定改后端托管：服务在创建、克隆与切换平台时按目录默认规则写定绑定，字体根已配置时（一切真实部署）平台无 verified 集则写入前失败，生产数据库中不再产生无绑定的新 Profile（未配置字体根的进程创建可暂无绑定，但启动/就绪失败封闭，真实部署不可达）；迁移 `0013_profile_identity.py` 把存量行与历史快照一次性改写到新形状（删 `gpu_family`、配色收敛 light/dark、按旧有效暴露派生 `include_cjk_fonts`、未绑定行补默认集），不可等价映射在改写前整体阻塞。实例级字体就绪由 Runner 在启动前对实际挂载做一次真实验证（manifest/哈希 + `fc-list` 枚举）并把结论持久化进 `runner_info`，Agent 与 API 只读结论；Supervisor 构造字体挂载时校验源目录存在，杜绝空挂载零字体启动。
 

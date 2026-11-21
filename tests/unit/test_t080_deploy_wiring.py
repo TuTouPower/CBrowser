@@ -76,11 +76,12 @@ def test_deploy_renders_caddyfile_and_hashes_the_product() -> None:
     assert "copy_into_data_volume" in text
 
 
-def test_deploy_checks_engine_cache_and_fonts_inside_volumes() -> None:
-    text = _deploy_text()
-    assert "check_engine_cache_in_volume" in text
-    assert '-v "$(fonts_volume_name):/fonts:ro"' in text
-    assert "init_storage_volumes" in text
+def test_volume_initialization_precedes_bundled_font_publication() -> None:
+    deploy = _deploy_text().split("cmd_deploy() {", 1)[1]
+    assert "check_engine_cache_in_volume" in deploy
+    assert deploy.index("init_storage_volumes") < deploy.index("seed_release_fonts")
+    assert deploy.index("seed_release_fonts") < deploy.index("deploy_up_and_verify")
+    assert deploy.index("wait_for_font_adoption") < deploy.index("activate_release")
 
 
 def test_compose_api_mounts_runtime_volume_at_data_runtime() -> None:

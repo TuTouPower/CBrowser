@@ -179,6 +179,8 @@ def test_copy_sources_admitted_by_dockerignore() -> None:
                     str(path.relative_to(ROOT))
                     for path in sorted(source_path.rglob("*.py"))
                 ]
+                if (source_path / "package.json").is_file():
+                    candidates.append(f"{source}/package.json")
                 if not candidates or not any(rules.admits(c) for c in candidates):
                     rejected.append(f"{dockerfile.parent.name}: dir {source}")
             elif not rules.admits(source):

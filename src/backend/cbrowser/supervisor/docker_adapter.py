@@ -1325,6 +1325,7 @@ with path.open('w') as output:
                     marker_name,
                     run_id,
                     engine_build=self.engine_build,
+                    download_proxy=os.environ.get("CBROWSER_ENGINE_DOWNLOAD_PROXY", ""),
                 ),
                 labels=gate_labels(cache_init_labels(
                     self.resource_prefix,

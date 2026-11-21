@@ -19,31 +19,14 @@ cbrowser 是面向隐私浏览器与多身份隔离的单机 Docker 管理系统
 
 ## 3. 部署
 
-```bash
-# 构建前端
-npm ci --prefix src/frontend
-npm run build --prefix src/frontend
+- **预构建安装**：从 [GitHub Releases](https://github.com/TuTouPower/cbrowser/releases) 下载适合宿主架构的部署包，解压并运行 `bash install.sh`。
+- **源码自建**：克隆仓库并切换到所需的发布 tag，运行 `bash scripts/build_images.sh`，成功后运行 `bash scripts/deploy.sh`。
 
-# 管理员密码由你提供（脚本不生成、不打印任何秘密）
-mkdir -p config/deploy/secrets
-printf '%s' '你的管理员密码' > config/deploy/secrets/admin_password
-chmod 600 config/deploy/secrets/admin_password
+先按手册创建管理员密码文件。两种方式均自动交付前端和 Windows、macOS 字体。部署成功后，在运行 Docker 的同一台机器上用 Chrome 打开 `https://127.0.0.1:56661`。
 
-# 生成内部密钥、构建镜像、发布不可变 release 并做 readiness 验收
-bash scripts/deploy.sh
-```
+## 4. 运维
 
-访问 `https://127.0.0.1:56661`，管理密码见 `config/deploy/secrets/admin_password`。数据在 `data/instance`，密钥在 `config/deploy/secrets`，两者均不入库。每次发布生成不可变 release（`config/deploy/releases/`），回退用 `bash scripts/deploy.sh rollback`。
-
-## 4. 停用与备份
-
-```bash
-docker compose --env-file config/deploy/releases/<release_id>.env -f compose.yaml down
-bash scripts/deploy.sh env-backup     # 环境恢复点：数据库（named volume）+ 全部 Profile 数据
-bash scripts/deploy.sh env-restore data/backups/restore-points/<point-dir>   # 恢复
-```
-
-完整部署、升级、备份恢复与故障定位见 `DOCKER_DEPLOYMENT.md`。
+安装前提、密码文件、引擎下载代理、升级回退、停止和备份见 [部署手册](DOCKER_DEPLOYMENT.md)。
 
 ## 5. 研发
 

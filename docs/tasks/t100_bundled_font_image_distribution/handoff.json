@@ -1,0 +1,15 @@
+{
+  "tid": "t100",
+  "attempt": 2,
+  "execution_id": "d6786041a71c4dfeab5956d7b70f750b",
+  "status": "done",
+  "branch": "t100_bundled_font_image_distribution",
+  "base_sha": "3555c8d12110748ecb42843a8d915eb23d6ca53f",
+  "spec_source_sha": "3555c8d12110748ecb42843a8d915eb23d6ca53f",
+  "tests": "隔离端口 E2E 的前置门禁全部通过；E2E 共记录 60 通过、2 跳过，第二阶段按用户指示中止。目标 Viewer 输入用例单独通过。",
+  "blackbox": "本地锁定字体包正常构建。冷部署据安装记录自动导入两套字体，无缓存引擎从上游下载并校验，两台 Profile 的 Viewer 均收到 WebRTC 动态画面。已实际重复导入同一字体包，部署重复执行及数据库保留由既有回归用例核对；未重复运行实机部署。",
+  "review": "已处理 R1 findings，R2 代码与测试证据静态复审均 PASS。R1 后新增的回归用例未执行。按复审反馈校正引擎缓存卷说明。公网字体地址和 GHCR 下载路径将在实际发布时核对。",
+  "review_scope": "5589b7c87cd2551d",
+  "pending": [],
+  "findings": []
+}

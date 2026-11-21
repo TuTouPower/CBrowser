@@ -14,11 +14,7 @@ wholesale, not rewritten to match the new output.  Coverage for the new
 semantics (baseline in the manifest, old-generation DB/release refusal,
 same-generation publish and rollback) is added at the end of this file.
 
-The release builds five runtime images (api/browser/stream/supervisor/
-gateway) plus the fixed Caddy image, and records six image IDs in the
-manifest. ``test_deploy_success_builds_five_runtime_images_once_and_pins``
-re-asserts the whole contract (build-once, pinned manifest, release env,
-pointer, compose log, no secrets) for that image set.
+t100 supplies all six image IDs to deploy via a manifest.
 """
 
 from __future__ import annotations
@@ -109,6 +105,7 @@ case "$cmd" in
     while [ $# -gt 0 ]; do
       case "$1" in
         --rm) shift;;
+        --network|--entrypoint) shift 2;;
         -v)
           spec="$2"; shift 2
           host="${spec%%:*}"; rest="${spec#*:}"; cont="${rest%%:*}"
@@ -124,6 +121,12 @@ case "$cmd" in
           ;;
       esac
     done
+    if [ "${1:-}" = -c ] && [ "${2:-}" = "test -s /var/www/html/index.html" ]; then
+      [ "${FAKE_CADDY_FRONTEND_MISSING:-0}" != 1 ]; exit $?
+    fi
+    if [ "${1:-}" = /opt/cbrowser-font-bundle/seed.py ]; then
+      [ "${FAKE_FONT_SEED_FAIL:-0}" != 1 ]; exit $?
+    fi
     if [ "${1:-}" != "python3" ]; then
       echo "fake docker run supports only python3 commands" >&2; exit 1
     fi
@@ -259,7 +262,7 @@ def _make_fake_repo(tmp_path: Path, *, with_admin: bool = True) -> Path:
         ROOT / "scripts" / "service_readiness_probe.py",
         repo / "scripts" / "service_readiness_probe.py",
     )
-    for script in ("db_inspect.py", "db_backup.py", "db_restore.py", "check_font_sets.py", "check_edge_subnet.py", "deploy_volume_ops.py"):
+    for script in ("image_manifest.py", "db_inspect.py", "db_backup.py", "db_restore.py", "check_font_sets.py", "check_edge_subnet.py", "deploy_volume_ops.py"):
         shutil.copy(ROOT / "scripts" / script, repo / "scripts" / script)
     shutil.copy(ROOT / "compose.yaml", repo / "compose.yaml")
     _copy_tree(ROOT / "config" / "docker", repo / "config" / "docker")
@@ -285,10 +288,15 @@ def _make_fake_repo(tmp_path: Path, *, with_admin: bool = True) -> Path:
         ROOT / "src" / "backend" / "migrations",
         repo / "src" / "backend" / "migrations",
     )
-    dist = repo / "src" / "frontend" / "dist"
-    dist.mkdir(parents=True)
-    (dist / "index.html").write_text("<html>app</html>", encoding="utf-8")
-    (dist / "app.js").write_text("console.log('x')", encoding="utf-8")
+    roles = ("api", "browser", "caddy", "gateway", "stream", "supervisor")
+    images = {role: "sha256:" + hashlib.sha256(role.encode()).hexdigest() for role in roles}
+    (repo / ".scratch").mkdir()
+    (repo / ".scratch/images.json").write_text(json.dumps({"images": images}))
+    layer = repo / ".fake-state/images"
+    layer.mkdir(parents=True)
+    for ref in images.values():
+        (layer / ref.replace(":", "_")).write_text(ref)
+    shutil.copy(ROOT / "config/font_assets.lock.json", repo / "config")
     secrets = repo / "config" / "deploy" / "secrets"
     secrets.mkdir(parents=True)
     if with_admin:
@@ -387,26 +395,15 @@ def _builds(repo: Path) -> list[str]:
     ]
 
 
-def test_deploy_success_builds_five_runtime_images_once_and_pins(
-    tmp_path: Path,
-) -> None:
-    # Five runtime images are built exactly once and pinned in the
-    # manifest and release env; Caddy is the sixth fixed image.
+# t100 replaces the old build-on-deploy contract with a manifest of built images.
+def test_deploy_consumes_local_manifest_without_building(tmp_path: Path) -> None:
     repo = _make_fake_repo(tmp_path)
     bin_dir = _make_fake_bin(tmp_path)
     result = _deploy(repo, bin_dir, "rel-001")
     assert result.returncode == 0, result.stderr
-
-    builds = _builds(repo)
-    assert len(builds) == 5, builds
-    dockerfiles = sorted(line.rsplit("dockerfile=", 1)[1] for line in builds)
-    assert dockerfiles == [
-        "config/docker/api_runtime/Dockerfile",
-        "config/docker/browser_runtime/Dockerfile",
-        "config/docker/gateway_runtime/Dockerfile",
-        "config/docker/stream_runtime/Dockerfile",
-        "config/docker/supervisor_runtime/Dockerfile",
-    ]
+    assert not _builds(repo)
+    assert "docker pull" not in _docker_log(repo)
+    assert "/opt/cbrowser-font-bundle/seed.py" in _docker_log(repo)
 
     manifest = _manifest(repo, "rel-001")
     assert sorted(manifest["images"]) == [
@@ -418,10 +415,7 @@ def test_deploy_success_builds_five_runtime_images_once_and_pins(
         "supervisor",
     ]
     assert all(v.startswith("sha256:") for v in manifest["images"].values())
-    expected_api = "sha256:" + hashlib.sha256(
-        (ROOT / "config/docker/api_runtime/Dockerfile").read_bytes()
-    ).hexdigest()
-    assert manifest["images"]["api"] == expected_api
+    assert manifest["images"] == json.loads((repo / ".scratch/images.json").read_text())["images"]
     assert manifest["compose_sha256"] == hashlib.sha256(
         (ROOT / "compose.yaml").read_bytes()
     ).hexdigest()
@@ -914,16 +908,43 @@ def test_rollback_readiness_failure_reports_no_success(tmp_path: Path) -> None:
     assert _pointer(repo, "previous_release") == "rel-001"
 
 
-def test_build_failure_keeps_previous_release(tmp_path: Path) -> None:
-    """AC-001 / test f004: a mid-build failure activates nothing."""
+def test_missing_image_keeps_previous_release(tmp_path: Path) -> None:
     repo = _make_fake_repo(tmp_path)
     bin_dir = _make_fake_bin(tmp_path)
     assert _deploy(repo, bin_dir, "rel-001").returncode == 0
     ups_before = _compose_log(repo).count("up -d")
-    result = _deploy(repo, bin_dir, "rel-002", FAKE_FAIL_BUILD="1")
+    images = json.loads((repo / ".scratch/images.json").read_text())["images"]
+    (repo / ".fake-state/images" / images["stream"].replace(":", "_")).unlink()
+    result = _deploy(repo, bin_dir, "rel-002")
     assert result.returncode != 0
     assert _pointer(repo, "current_release") == "rel-001"
     assert _compose_log(repo).count("up -d") == ups_before
+
+
+def test_missing_caddy_frontend_keeps_previous_release(tmp_path: Path) -> None:
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    assert _deploy(repo, bin_dir, "rel-001").returncode == 0
+    ups_before = _compose_log(repo).count("up -d")
+    result = _deploy(repo, bin_dir, "rel-002", FAKE_CADDY_FRONTEND_MISSING="1")
+    assert result.returncode != 0
+    assert "Caddy image is missing the bundled frontend" in result.stderr
+    assert _pointer(repo, "current_release") == "rel-001"
+    assert _compose_log(repo).count("up -d") == ups_before
+
+
+def test_registry_install_pulls_all_six_immutable_refs(tmp_path: Path) -> None:
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    images = json.loads((repo / ".scratch/images.json").read_text())["images"]
+    refs = {role: f"registry.example/cbrowser/{role}@{ref}" for role, ref in images.items()}
+    (repo / "images.json").write_text(json.dumps({"images": refs}))
+    result = _run(repo, bin_dir, "deploy", "--images", "registry")
+    assert result.returncode == 0, result.stderr
+    assert set(ref for ref in _docker_log(repo).splitlines() if ref.startswith("docker pull ")) == {
+        f"docker pull {ref}" for ref in refs.values()
+    }
+    assert not _builds(repo)
 
 
 def test_internal_secrets_are_random_per_generation(tmp_path: Path) -> None:
@@ -1141,16 +1162,8 @@ def test_deploy_refuses_legacy_generation_database(tmp_path: Path) -> None:
     assert result.returncode != 0
     assert "rebuild" in result.stderr.lower()
     assert "data directory" in result.stderr.lower()
-    # Fail closed: database untouched, no container started, no pointer
-    # moved.  Exactly one build ran: the schema check needs the API image,
-    # so it is built first; building an image changes no data, and the
-    # safety property (nothing started, nothing moved, DB untouched) is
-    # preserved — the old `_builds == []` assertion cannot hold under the
-    # container-side stamp check.
     assert db.read_bytes() == before
-    builds = _builds(repo)
-    assert len(builds) == 1, builds
-    assert "api_runtime/Dockerfile" in builds[0]
+    assert "up -d" not in _compose_log(repo)
     assert _pointer(repo, "current_release") == ""
 
 
@@ -1158,7 +1171,7 @@ def test_deploy_refuses_corrupt_database(tmp_path: Path) -> None:
     """AC-018 (t051 review f003): a volume database that exists but is
     not a readable SQLite file refuses the deploy before any container
     starts — the stamp check fails closed, like the retired-generation
-    refusal, except the API image build it needs is the only build."""
+    refusal."""
     repo = _make_fake_repo(tmp_path)
     bin_dir = _make_fake_bin(tmp_path)
     db = _stamp_db(repo, BASELINE_REVISION)
@@ -1168,9 +1181,6 @@ def test_deploy_refuses_corrupt_database(tmp_path: Path) -> None:
     assert result.returncode != 0
     assert db.read_bytes() == before
     assert "up -d" not in _compose_log(repo)
-    builds = _builds(repo)
-    assert len(builds) == 1, builds
-    assert "api_runtime/Dockerfile" in builds[0]
     assert _pointer(repo, "current_release") == ""
 
 
@@ -1354,7 +1364,7 @@ def test_prefix_conflict_allows_sandbox_group_when_project_differs(
         CBROWSER_COMPOSE_PROJECT="proj-b",
     )
     assert result.returncode == 0, result.stderr
-    assert _builds(repo)
+    assert "up -d --no-build" in _compose_log(repo)
 
 
 def test_prefix_conflict_check_requests_role_label(tmp_path: Path) -> None:

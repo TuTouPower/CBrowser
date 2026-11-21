@@ -5,23 +5,8 @@
 # Caddy unconditionally, print the admin password" flow with immutable
 # releases:
 #
-#   deploy    build the API image first, then inspect the live database
-#             stamp inside a throwaway API container (named volume, never
-#             the host file), refuse a retired-generation stamp, warn about
-#             a legacy host database left behind, warn about a missing or
-#             invalid font directory, back the live database up into
-#             config/deploy/backups, build the remaining images exactly
-#             once, tag them with the release id, pin the five runtime
-#             image IDs (api/browser/stream/supervisor/gateway) plus Caddy
-#             (six fixed images) plus the compose/Caddyfile/frontend
-#             fingerprints, the database migration version and the backup
-#             path in a release manifest, `up` (never builds), a
-#             deadline-bounded service readiness probe (t083), then
-#             verify through the Supervisor's single reconcile_all +
-#             readiness entry via `docker compose exec`.  The single JSON
-#             release pointer only moves after the readiness verification
-#             passes, so a failed deploy never overwrites the previous
-#             valid release.
+#   deploy    resolve pinned images, seed fonts, and activate the release
+#             only after the existing database and readiness gates pass.
 #   rollback  re-deploy the previous (or a named) release after checking
 #             it still offers the readiness capability, its migration
 #             head belongs to the current Alembic revision chain, and its
@@ -127,7 +112,6 @@ RELEASES_DIR="$DEPLOY_DIR/releases"
 BACKUP_DIR="$DEPLOY_DIR/backups"
 POINTER_FILE="$DEPLOY_DIR/release_pointer.json"
 FONTS_DIR="${CBROWSER_FONTS_DIR:-$ROOT/data/fonts}"
-CADDY_REF="${CBROWSER_CADDY_REF:-caddy@sha256:70b3180738b46cd88e49b300d790ae448a0aca3f58edef0f000bb57d619a9ab3}"
 UP_WAIT_TIMEOUT="${CBROWSER_DEPLOY_DEADLINE_SEC:-600}"
 VERIFY_DEADLINE="${CBROWSER_VERIFY_DEADLINE_SEC:-300}"
 
@@ -370,26 +354,6 @@ sha256_of_file() {
   fi
 }
 
-sha256_of_text() {
-  if command -v sha256sum >/dev/null 2>&1; then
-    printf '%s' "$1" | sha256sum | awk '{print $1}'
-  else
-    printf '%s' "$1" | shasum -a 256 | awk '{print $1}'
-  fi
-}
-
-frontend_fingerprint() {
-  # Digest over the sorted (relative path, content sha256) pairs of the
-  # built frontend product; identifies exactly what Caddy will serve.
-  local dist="$ROOT/src/frontend/dist" listing=""
-  local file rel
-  while IFS= read -r file; do
-    rel="${file#"$dist"/}"
-    listing+="$rel $(sha256_of_file "$file")"$'\n'
-  done < <(find "$dist" -type f | LC_ALL=C sort)
-  sha256_of_text "$listing"
-}
-
 migration_head() {
   # The alembic head of the shipped source: the revision that no other
   # revision names as its down_revision.  Fails on branches/multiple heads.
@@ -543,15 +507,36 @@ check_legacy_host_storage() {
   fi
 }
 
-check_font_sets_preflight() {
-  # AC-009/AC-010: warn (never block) when the fonts volume is missing
-  # or holds no valid set; the deploy continues on the built-in fonts.
-  # t080: the check runs inside the API image against the fonts volume.
-  local api_image="$1"
-  docker run --rm \
-    -v "$(fonts_volume_name):/fonts:ro" \
-    -v "$ROOT/scripts:/scripts:ro" \
-    "$api_image" python3 /scripts/check_font_sets.py --fonts-dir /fonts || true
+seed_release_fonts() {
+  local bundle=/opt/cbrowser-font-bundle
+  docker run --rm --interactive --network none --read-only \
+    -v "$(fonts_volume_name):/fonts" --entrypoint python3 "$BROWSER_IMAGE_ID" \
+    "$bundle/seed.py" "$bundle/fonts.tar.zst" "$bundle/lock.json" /fonts \
+    --compare-lock-from-stdin < "$ROOT/config/font_assets.lock.json"
+}
+
+wait_for_font_adoption() {
+  local env_file="$1" expected
+  expected="$("$NET_CONFIG_PY" -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))["sets"]))' config/font_assets.lock.json)"
+  compose_with "$env_file" exec -T api python3 - "$UP_WAIT_TIMEOUT" "$expected" <<'PYTHON'
+import json
+import sqlite3
+import sys
+import time
+
+required = set(json.loads(sys.argv[2]).items())
+deadline = time.monotonic() + float(sys.argv[1])
+with sqlite3.connect("file:/data/db/cbrowser.db?mode=ro", uri=True) as database:
+    while True:
+        verified = set(database.execute(
+            "SELECT platform, set_id FROM font_set_assets WHERE state = 'verified'"
+        ))
+        if required <= verified:
+            break
+        if time.monotonic() >= deadline:
+            raise SystemExit("Bundled platform fonts did not reach verified state")
+        time.sleep(1)
+PYTHON
 }
 
 check_engine_artifact_preflight() {
@@ -812,15 +797,6 @@ check_prerequisites() {
   fi
   [ -s "$SECRETS_DIR/admin_password" ] || \
     missing+=("user-provided admin password: $SECRETS_DIR/admin_password (create it with mode 0600; it is never generated)")
-  [ -f "$ROOT/src/frontend/dist/index.html" ] || \
-    missing+=("frontend product: src/frontend/dist/index.html (run: npm ci --prefix src/frontend && npm run build --prefix src/frontend)")
-  [ -f "$ROOT/src/backend/cbrowser/network_config.py" ] || \
-    missing+=("network config generator: src/backend/cbrowser/network_config.py")
-  local name
-  for name in browser_runtime stream_runtime supervisor_runtime gateway_runtime api_runtime; do
-    [ -f "$ROOT/config/docker/$name/Dockerfile" ] || missing+=("Dockerfile: config/docker/$name/Dockerfile")
-    [ -f "$ROOT/config/docker/$name/Dockerfile.dockerignore" ] || missing+=("build-context rules: config/docker/$name/Dockerfile.dockerignore")
-  done
   if [ "${#missing[@]}" -gt 0 ]; then
     echo "Missing deploy prerequisites:" >&2
     printf ' - %s\n' "${missing[@]}" >&2
@@ -931,44 +907,33 @@ load_release_identity() {
   FONTS_DIR="${CBROWSER_FONTS_DIR:-$ROOT/data/fonts}"
 }
 
-build_api_image() {
-  # Build the API image first: the schema-generation check and the
-  # database backup run inside it, before any container is started.
-  # Building an image changes no data.  Sets API_IMAGE_ID.
-  local release_id="$1"
-  local tag_api="cbrowser-api:$release_id"
-  # Attestation manifests embed per-invocation build metadata, so an
-  # otherwise identical rebuild would get a different image ID and force
-  # compose to recreate healthy services. Disable them: the release
-  # manifest pins the rootfs/config digest, which is what reproducibility
-  # and rollback identity depend on (t032 AC-001/AC-010).  Same flags in
-  # build_and_record_release below.
-  docker build --provenance=false --sbom=false -t "$tag_api" -f config/docker/api_runtime/Dockerfile .
-  API_IMAGE_ID="$(docker image inspect --format '{{.Id}}' "$tag_api")"
+load_release_images() {
+  local mode="$1" manifest="$2" refs service ref id
+  refs="$("$NET_CONFIG_PY" "$ROOT/scripts/image_manifest.py" "$mode" "$manifest")"
+  while read -r service ref; do
+    if [ "$mode" = registry ]; then
+      docker pull "$ref"
+    fi
+    id="$(docker image inspect --format '{{.Id}}' "$ref")"
+    if [[ ! "$id" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+      echo "Cannot resolve image identity for $service" >&2
+      return 1
+    fi
+    case "$service" in
+      api) API_IMAGE_ID="$id" ;;
+      browser) BROWSER_IMAGE_ID="$id" ;;
+      caddy) CADDY_IMAGE_ID="$id" ;;
+      gateway) GATEWAY_IMAGE_ID="$id" ;;
+      stream) STREAM_IMAGE_ID="$id" ;;
+      supervisor) SUPERVISOR_IMAGE_ID="$id" ;;
+    esac
+  done <<< "$refs"
 }
 
-build_and_record_release() {
-  # Builds each remaining image once, writes <id>.env + <id>.json under releases/.
+record_release() {
   local release_id="$1"
-  local tag_gateway="cbrowser-gateway:$release_id"
-  local tag_supervisor="cbrowser-supervisor:$release_id" tag_browser="cbrowser-browser:$release_id"
-  local tag_stream="cbrowser-stream:$release_id"
-
-  docker build --provenance=false --sbom=false -t "$tag_browser" -f config/docker/browser_runtime/Dockerfile .
-  docker build --provenance=false --sbom=false -t "$tag_stream" -f config/docker/stream_runtime/Dockerfile .
-  docker build --provenance=false --sbom=false -t "$tag_supervisor" -f config/docker/supervisor_runtime/Dockerfile .
-  docker build --provenance=false --sbom=false -t "$tag_gateway" -f config/docker/gateway_runtime/Dockerfile .
-  if ! docker image inspect "$CADDY_REF" >/dev/null 2>&1; then
-    docker pull "$CADDY_REF"
-  fi
-
-  local api_id gateway_id supervisor_id browser_id stream_id caddy_id
-  api_id="$API_IMAGE_ID"
-  gateway_id="$(docker image inspect --format '{{.Id}}' "$tag_gateway")"
-  supervisor_id="$(docker image inspect --format '{{.Id}}' "$tag_supervisor")"
-  browser_id="$(docker image inspect --format '{{.Id}}' "$tag_browser")"
-  stream_id="$(docker image inspect --format '{{.Id}}' "$tag_stream")"
-  caddy_id="$(docker image inspect --format '{{.Id}}' "$CADDY_REF")"
+  local api_id="$API_IMAGE_ID" browser_id="$BROWSER_IMAGE_ID" caddy_id="$CADDY_IMAGE_ID"
+  local gateway_id="$GATEWAY_IMAGE_ID" stream_id="$STREAM_IMAGE_ID" supervisor_id="$SUPERVISOR_IMAGE_ID"
 
   local compose_sha caddyfile_sha frontend_sha migration
   compose_sha="$(sha256_of_file "$ROOT/compose.yaml")"
@@ -979,7 +944,7 @@ build_and_record_release() {
   # CADDYFILE_SHA256 is authoritative (the file now lives in the data
   # volume, not under a host data root).
   caddyfile_sha="${CADDYFILE_SHA256:?render the Caddyfile before recording the release}"
-  frontend_sha="$(frontend_fingerprint)"
+  frontend_sha="${caddy_id#sha256:}"
   migration="$(migration_head)"
 
   mkdir -p "$RELEASES_DIR"
@@ -1059,6 +1024,19 @@ JSON
 }
 
 cmd_deploy() {
+  local mode=local manifest=
+  if [ "${1:-}" = --images ] && [ "$#" -ge 2 ] && [ "$#" -le 3 ]; then
+    mode="$2"
+    manifest="${3:-}"
+  elif [ "$#" -ne 0 ]; then
+    echo "usage: $0 deploy [--images local|registry [manifest]]" >&2
+    return 2
+  fi
+  case "$mode" in
+    local) manifest="${manifest:-$ROOT/.scratch/images.json}" ;;
+    registry) manifest="${manifest:-$ROOT/images.json}" ;;
+    *) echo "Unknown image source: $mode" >&2; return 2 ;;
+  esac
   check_prerequisites
   check_engine_artifact_preflight
   derive_instance_identity
@@ -1082,19 +1060,21 @@ cmd_deploy() {
     exit 1
   fi
 
-  # The API image is built first so the schema check and the backup can
-  # run inside it; building an image changes no data, and no container
-  # is started and no pointer moves before the checks below pass.
-  build_api_image "$release_id"
+  load_release_images "$mode" "$manifest"
+  if ! docker run --rm --network none --read-only --entrypoint /bin/sh \
+    "$CADDY_IMAGE_ID" -c 'test -s /var/www/html/index.html'; then
+    echo "Caddy image is missing the bundled frontend: $CADDY_IMAGE_ID" >&2
+    return 1
+  fi
   check_database_schema_generation "$API_IMAGE_ID"
   check_engine_cache_in_volume "$API_IMAGE_ID"
   check_legacy_host_database
   check_legacy_host_storage
-  check_font_sets_preflight "$API_IMAGE_ID"
   backup_database "$API_IMAGE_ID"
 
   ensure_internal_secrets
   init_storage_volumes "$API_IMAGE_ID"
+  seed_release_fonts
 
   # t054: render the Caddyfile for the deploy port (the only network
   # configuration step) and export the derived trusted proxy CIDRs
@@ -1110,8 +1090,9 @@ cmd_deploy() {
   export CBROWSER_HTTPS_PORT="$HTTPS_PORT"
   export CBROWSER_TRUSTED_PROXY_CIDRS="$CBROWSER_EDGE_SUBNET"
 
-  build_and_record_release "$release_id"
+  record_release "$release_id"
   deploy_up_and_verify "$release_id"
+  wait_for_font_adoption "$RELEASES_DIR/$release_id.env"
   activate_release "$release_id"
 
   echo "Release $release_id deployed and readiness-verified."
@@ -1382,7 +1363,7 @@ cmd_status() {
 }
 
 case "$COMMAND" in
-  deploy) cmd_deploy ;;
+  deploy) cmd_deploy "$@" ;;
   rollback) cmd_rollback "$@" ;;
   restore) cmd_restore "$@" ;;
   env-backup) cmd_env_backup "$@" ;;

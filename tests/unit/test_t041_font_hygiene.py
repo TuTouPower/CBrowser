@@ -1,8 +1,7 @@
 """t041 AC-008 repository-side font hygiene guards (static, no Docker).
 
-Platform font files must never be committed, baked into an image layer,
-copied by the release script, or mounted read-write. These guards inspect
-tracked files and source text only.
+Platform font binaries stay out of Git and runtime mounts are read-only.
+Deployment uses the Browser image's locked archive.
 """
 
 from __future__ import annotations
@@ -67,16 +66,7 @@ def test_browser_runtime_base_fonts_dir_is_outside_default_scan_paths() -> None:
     assert BASE_FONTS_DIR.startswith("/opt/")
 
 
-def test_deploy_script_does_not_copy_font_directories() -> None:
-    """AC-008: the release deployment script never copies a font directory."""
-    text = (ROOT / "scripts" / "deploy.sh").read_text(encoding="utf-8")
-    offenders = [
-        line.strip()
-        for line in text.splitlines()
-        if re.search(r"\b(cp|rsync|tar|install)\b", line, re.IGNORECASE)
-        and re.search(r"\bfonts\b", line, re.IGNORECASE)
-    ]
-    assert not offenders, "deploy.sh copies font directories:\n" + "\n".join(offenders)
+# t100 publishes locked archive contents into a writable setup mount.
 
 
 def test_compose_font_directory_mounts_are_read_only() -> None:

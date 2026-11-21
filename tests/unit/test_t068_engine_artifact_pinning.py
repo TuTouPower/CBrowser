@@ -198,6 +198,16 @@ def test_cache_init_environment_disables_auto_update_and_pins_version() -> None:
     assert env["CBROWSER_INIT_GEOIP"] == "1"
 
 
+def test_cache_init_uses_only_explicit_download_proxy(monkeypatch) -> None:
+    monkeypatch.setenv("HTTPS_PROXY", "http://ambient.invalid:8080")
+    kwargs = {"engine_build": "146.0.7680.177.3"}
+    direct = cache_init_environment(False, "marker.json", "run1", **kwargs)
+    assert "HTTP_PROXY" not in direct and "HTTPS_PROXY" not in direct
+    proxy = "http://download.example.invalid:7890"
+    scoped = cache_init_environment(False, "marker.json", "run1", download_proxy=proxy, **kwargs)
+    assert scoped["HTTP_PROXY"] == scoped["HTTPS_PROXY"] == proxy
+
+
 def test_docker_adapter_cache_init_rejects_corrupted_binary_in_script(
     tmp_path: Path,
 ) -> None:

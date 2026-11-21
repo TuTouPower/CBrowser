@@ -7,8 +7,8 @@ volumes (``<repo>/.fake-state/volumes/<prefix>-data`` /
 ``<prefix>-fonts``), and compose mounts named volumes instead of host
 directories.  The behavioral assertions (rollback serves the target
 port, sha mismatch refuses without touching the live Caddyfile or the
-pointer, fingerprints hash the rendered product, fonts preflight warns
-but never blocks) are unchanged.
+pointer, fingerprints hash the rendered product) are unchanged by the
+move to named volumes. t100 supplies frontend and fonts in images.
 """
 
 from __future__ import annotations
@@ -26,7 +26,6 @@ from tests.unit.test_t027_release_controller import (
     _pointer,
     _run,
     _service_block,
-    _valid_font_set,
 )
 
 
@@ -71,60 +70,25 @@ def test_rollback_refuses_on_caddyfile_sha_mismatch_without_touching_disk(
     assert _pointer(repo, "current_release") == "rel-002"
 
 
-def test_caddy_fingerprints_recorded_and_change_sensitive(tmp_path: Path) -> None:
+def test_frontend_identity_tracks_caddy_image_change(tmp_path: Path) -> None:
     repo = _make_fake_repo(tmp_path)
     bin_dir = _make_fake_bin(tmp_path)
     assert _deploy(repo, bin_dir, "rel-001").returncode == 0
+    first = _manifest(repo, "rel-001")
 
-    def _env(release_id: str) -> dict[str, str]:
-        text = (repo / "config" / "deploy" / "releases" / f"{release_id}.env").read_text(
-            encoding="utf-8"
-        )
-        return dict(line.split("=", 1) for line in text.splitlines() if "=" in line)
-
-    def _rendered_caddy_sha(env: dict[str, str]) -> str:
-        caddyfile = (
-            repo
-            / ".fake-state"
-            / "volumes"
-            / env["CBROWSER_DATA_VOLUME"]
-            / "network"
-            / "Caddyfile"
-        )
-        return hashlib.sha256(caddyfile.read_bytes()).hexdigest()
-
-    env1 = _env("rel-001")
-    assert env1["CBROWSER_CADDYFILE_SHA256"] == _rendered_caddy_sha(env1)
-    dist = repo / "src" / "frontend" / "dist"
-    listing = "".join(
-        f"{path.relative_to(dist)} {hashlib.sha256(path.read_bytes()).hexdigest()}\n"
-        for path in sorted(dist.rglob("*"))
-        if path.is_file()
-    )
-    expected_frontend = hashlib.sha256(listing.encode()).hexdigest()
-    assert env1["CBROWSER_FRONTEND_SHA256"] == expected_frontend
-
-    net_config = repo / "src" / "backend" / "cbrowser" / "network_config.py"
-    net_config.write_text(
-        net_config.read_text(encoding="utf-8") + "\n# drill change\n",
-        encoding="utf-8",
-    )
-    fake_pythonpath = f"{repo / 'src' / 'backend'}:{ROOT / 'src' / 'backend'}"
-    result = _deploy(repo, bin_dir, "rel-002", PYTHONPATH=fake_pythonpath)
+    pin = repo / ".scratch/images.json"
+    refs = json.loads(pin.read_text())
+    updated = "sha256:" + "f" * 64
+    (repo / ".fake-state/images" / updated.replace(":", "_")).write_text(updated)
+    refs["images"]["caddy"] = updated
+    pin.write_text(json.dumps(refs))
+    result = _deploy(repo, bin_dir, "rel-002")
     assert result.returncode == 0, result.stderr
-    env2 = _env("rel-002")
-    assert env2["CBROWSER_CADDYFILE_SHA256"] == env1["CBROWSER_CADDYFILE_SHA256"]
-    assert env2["CBROWSER_CADDYFILE_SHA256"] == _rendered_caddy_sha(env2)
-    assert env2["CBROWSER_FRONTEND_SHA256"] == env1["CBROWSER_FRONTEND_SHA256"]
-    assert env2["CBROWSER_API_IMAGE"] == env1["CBROWSER_API_IMAGE"]
-
-    result = _deploy(repo, bin_dir, "rel-003", CBROWSER_HTTPS_PORT="56662")
-    assert result.returncode == 0, result.stderr
-    env3 = _env("rel-003")
-    assert env3["CBROWSER_CADDYFILE_SHA256"] != env1["CBROWSER_CADDYFILE_SHA256"]
-    assert env3["CBROWSER_CADDYFILE_SHA256"] == _rendered_caddy_sha(env3)
-    assert env3["CBROWSER_FRONTEND_SHA256"] == env1["CBROWSER_FRONTEND_SHA256"]
-    assert env3["CBROWSER_API_IMAGE"] == env1["CBROWSER_API_IMAGE"]
+    second = _manifest(repo, "rel-002")
+    assert first["images"]["caddy"] != second["images"]["caddy"] == updated
+    assert first["frontend_sha256"] != second["frontend_sha256"]
+    assert first["images"]["api"] == second["images"]["api"]
+    assert first["caddyfile_sha256"] == second["caddyfile_sha256"]
 
 
 def test_compose_yaml_volumes_and_labels_contract() -> None:
@@ -162,27 +126,14 @@ def test_compose_yaml_volumes_and_labels_contract() -> None:
     )
 
 
-def test_fonts_preflight_warns_and_continues(tmp_path: Path) -> None:
-    """AC-009/AC-010: an empty fonts volume warns but never blocks."""
+# t100 requires both bundled sets at deploy, superseding warn-only preflight.
+def test_failed_font_seed_does_not_activate_release(tmp_path: Path) -> None:
     repo = _make_fake_repo(tmp_path)
     bin_dir = _make_fake_bin(tmp_path)
-    result = _deploy(repo, bin_dir, "rel-001")
-    assert result.returncode == 0, result.stderr
-    assert "WARNING" in result.stdout
-    # The pre-t080 host-directory message ("fonts directory ... does
-    # not exist") does not apply to the volume scenario; the volume
-    # exists but is empty, which reports the no-valid-set warning.
-    assert "no valid font set found" in result.stdout
-
-
-def test_fonts_preflight_ok_with_valid_set(tmp_path: Path) -> None:
-    repo = _make_fake_repo(tmp_path)
-    bin_dir = _make_fake_bin(tmp_path)
-    _valid_font_set(repo / ".fake-state" / "volumes" / "cbrowser-fonts")
-    result = _deploy(repo, bin_dir, "rel-001")
-    assert result.returncode == 0, result.stderr
-    assert "font sets ok" in result.stdout
-    assert "windows/set-1" in result.stdout
+    assert _deploy(repo, bin_dir, "rel-001").returncode == 0
+    result = _deploy(repo, bin_dir, "rel-002", FAKE_FONT_SEED_FAIL="1")
+    assert result.returncode != 0
+    assert _pointer(repo, "current_release") == "rel-001"
 
 
 def test_deploy_refuses_corrupted_engine_cache_in_volume(tmp_path: Path) -> None:

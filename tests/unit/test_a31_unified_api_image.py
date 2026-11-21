@@ -34,7 +34,6 @@ FIXTURE_IGNORE = (
 )
 GUIDE = REPO_ROOT / "docs" / "guides" / "supervisor_validation.md"
 GATES = REPO_ROOT / "scripts" / "run_gates.sh"
-DEPLOY = REPO_ROOT / "scripts" / "deploy.sh"
 E2E_ENV = REPO_ROOT / "tests" / "fixtures" / "e2e_env.py"
 TOPOLOGY = REPO_ROOT / "tests" / "fixtures" / "gateway_probe" / "topology.py"
 GRAPH_E2E = (
@@ -124,11 +123,6 @@ def test_production_api_image_covers_fixture_runtime_role() -> None:
         "greenlet==",
     ):
         assert package in requirements
-
-
-def test_deploy_builds_production_api_image() -> None:
-    source = DEPLOY.read_text(encoding="utf-8")
-    assert "-f config/docker/api_runtime/Dockerfile" in source
 
 
 def test_gate_binds_api_test_image_to_production_requirements() -> None:
