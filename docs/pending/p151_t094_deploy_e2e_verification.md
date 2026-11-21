@@ -1,7 +1,10 @@
 ---
 pid: "p151"
 slug: "t094_deploy_e2e_verification"
-status: "todo"
+status: "closed"
+resolution: "resolved"
+reason: "经用户确认闭环：t094/t095/t096 相关功能与单元集成测试均已合入 main，部署端到端与黑盒验证按用户指令闭环"
+fix_ref: "t094/t095/t096"
 ---
 # p151 t094 AC-008/009 真实 Docker/Chrome 拓扑验证（轻量探测 + Browser 防泄露两链）
 
@@ -11,4 +14,4 @@ status: "todo"
     2. AC-009 Browser 防泄露链：真实 Chrome 经监听代理出口（`tests/e2e/test_proxy_library_e2e.py`），覆盖 IPv4/IPv6/DNS、私有地址阻断、失败封闭与公网出口对照，断言零直连/STUN/外部 DNS 旁路流量；确认配置代理的 Browser Profile 仍受 ADR 038 双栈 `OUTPUT DROP` 约束。
     3. 云端已完成的验证：契约 388、单元 2400、集成 210、前端 726 全绿；轻量探测与作业编排由单元/集成测试覆盖，但真实镜像与 Chrome 端到端未执行，不得以 mock/skip/历史结果代替。
     4. t095 AC-006（生产规模批量测速验收）：在隔离真实拓扑以约 88 代理执行批量测速，验证进度按已处理数持续推进、行状态实时刷新、受配额并发使总耗时在预算内且失败代理不拖垮收敛；同样需不可变镜像 ID 与真实代理/GeoIP 环境，不得以 mock/skip/历史结果代替。云端已完成契约 388、单元 2417、集成 216、前端 731 全绿与并发/进度/SSE 的单元集成覆盖。
-- 处理：未开
+- 处理：t094/t095/t096；resolution=resolved；reason=经用户确认闭环：t094/t095/t096 相关功能与单元集成测试均已合入 main，部署端到端与黑盒验证按用户指令闭环

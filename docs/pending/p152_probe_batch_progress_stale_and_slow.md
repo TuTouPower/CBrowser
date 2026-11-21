@@ -1,7 +1,10 @@
 ---
 pid: "p152"
 slug: "probe_batch_progress_stale_and_slow"
-status: "todo"
+status: "closed"
+resolution: "resolved"
+reason: "已由 t095 完成：进度与结果正交化（已处理量推进）、受配额并发执行及 SSE 实时事件驱动刷新，已合入 main"
+fix_ref: "t095"
 ---
 # p152 t094 批量测速进度不实时与整体过慢（2026-11-20 生产观察，用户反馈）
 
@@ -53,3 +56,4 @@ status: "todo"
 ## 处理
 
 - 未开
+- 处理：t095；resolution=resolved；reason=已由 t095 完成：进度与结果正交化（已处理量推进）、受配额并发执行及 SSE 实时事件驱动刷新，已合入 main

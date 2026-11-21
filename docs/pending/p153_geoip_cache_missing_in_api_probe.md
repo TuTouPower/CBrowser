@@ -1,7 +1,10 @@
 ---
 pid: "p153"
 slug: "geoip_cache_missing_in_api_probe"
-status: "todo"
+status: "closed"
+resolution: "resolved"
+reason: "已由 t096 完成：API 容器显式注入 GeoIP 依赖与路径配置，前端细化错误语义，根治 geoip_db_missing 全失败，已合入 main"
+fix_ref: "t096"
 ---
 # p153 测速全失败主因：探测迁入 API 进程后漏配 GeoIP 路径
 
@@ -32,3 +35,4 @@ t095 处理进度实时性与并发，不覆盖本条。本条独立，可单独
 ## 处理
 
 - 未开
+- 处理：t096；resolution=resolved；reason=已由 t096 完成：API 容器显式注入 GeoIP 依赖与路径配置，前端细化错误语义，根治 geoip_db_missing 全失败，已合入 main
