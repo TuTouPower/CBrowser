@@ -1,7 +1,10 @@
 ---
 pid: "p154"
 slug: "remove_stream_policy_agent"
-status: "todo"
+status: "closed"
+resolution: "transferred"
+reason: "已核实 Stream 策略与容器分组根因，转交同一 task 验证媒体网络隔离、裁撤 Stream Policy Agent 并按 Profile 归组 Browser Policy Agent"
+fix_ref: "t097"
 ---
 # p154 删除 Stream 推流容器的 Policy Agent：本机回环推流无需网络策略 Sidecar 与巡检
 
@@ -32,4 +35,4 @@ status: "todo"
         - 单 Profile 辅助容器数减少 1 个；多 Profile 场景下 Policy Agent 容器数量直接减半（例如 3 Profile 从 6 个降至 3 个）。
         - 显著降低 Docker daemon 容器并发压力与 Docker API 调用频次，缩短 Profile 启动延迟。
         - 架构彻底解耦，推流链路与网络策略控制面彻底脱钩。
-- 处理：未开
+- 处理：t097；resolution=transferred；reason=已核实 Stream 策略与容器分组根因，转交同一 task 验证媒体网络隔离、裁撤 Stream Policy Agent 并按 Profile 归组 Browser Policy Agent

@@ -1,7 +1,10 @@
 ---
 pid: "p157"
 slug: "color_scheme_dark_page_still_bright"
-status: "todo"
+status: "closed"
+resolution: "transferred"
+reason: "已核实原生外壳未消费环境配色，转交 task 统一原生主题与网页偏好并明确站点适配边界"
+fix_ref: "t099"
 ---
 # p157 Profile配置深色模式下浏览器外壳（地址栏/工具栏）未变黑且无适配网页保持纯白
 
@@ -57,7 +60,7 @@ status: "todo"
     - `.scratch/taobao_cdp.png`：CDP 截屏（证明页面 DOM 元素无 dark media query）
     - `.scratch/screenshot_0084.png`：0084 容器在 `who.1ms.dog` 下表现为正常深色 `(37, 38, 36)`，工具栏为浅色
     - `.scratch/screenshot_0085.png`：0085 容器在 `about:blank` 下表现为深色 `(18, 18, 18)`，工具栏为浅色
-- 用户原图：`/Users/karson/.gemini/antigravity-cli/brain/f05e7b69-c666-4ba2-bac8-3b942a2a784a/.user_uploaded/uploaded_media_1795191579905.jpg`
+- 用户原图见原始反馈，仓内复核使用上述截图。
 
 ## 建议方案与选项
 
@@ -70,6 +73,4 @@ status: "todo"
 3. **推流色彩优化**：
     - 评估 Selkies 在 X11 抓屏时使用 Full Range 编码或前端 `<video>` 渲染 CSS 对比度微调的可行性，降低 Limited Range 带来的黑电平抬高。
 
-## 处理
-
-- 未开
+- 处理：t099；resolution=transferred；reason=已核实原生外壳未消费环境配色，转交 task 统一原生主题与网页偏好并明确站点适配边界

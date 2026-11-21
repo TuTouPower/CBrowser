@@ -1,7 +1,10 @@
 ---
 pid: "p156"
 slug: "browser_policy_agent_compose_grouping_and_naming"
-status: "todo"
+status: "closed"
+resolution: "transferred"
+reason: "已核实 Stream 策略与容器分组根因，转交同一 task 验证媒体网络隔离、裁撤 Stream Policy Agent 并按 Profile 归组 Browser Policy Agent"
+fix_ref: "t097"
 ---
 # p156 将 Browser Policy Agent 纳入 cbrowser-profiles 分组并规范容器与服务命名
 
@@ -36,4 +39,4 @@ status: "todo"
         - p154 负责彻底删除 Stream 推流容器无意义的 Policy Agent；
         - 本条（p156）负责将保留下来的 Browser Policy Agent 规范化命名并归入 `cbrowser-profiles` 分组。
         - 实施后，外层根列表将不再有任何零散游离的 `cbrowser-policy-agent-*` 容器，Docker 界面彻底恢复清晰与整洁。
-- 处理：未开
+- 处理：t097；resolution=transferred；reason=已核实 Stream 策略与容器分组根因，转交同一 task 验证媒体网络隔离、裁撤 Stream Policy Agent 并按 Profile 归组 Browser Policy Agent

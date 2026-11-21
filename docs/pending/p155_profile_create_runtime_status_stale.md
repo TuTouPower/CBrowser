@@ -1,7 +1,10 @@
 ---
 pid: "p155"
 slug: "profile_create_runtime_status_stale"
-status: "todo"
+status: "closed"
+resolution: "transferred"
+reason: "已复现新环境实时状态缺失，转交 task 统一集合运行状态投影与实时对账"
+fix_ref: "t098"
 ---
 # p155 新建或启动环境后列表状态不自动刷新且SSE事件被丢弃
 
@@ -45,4 +48,4 @@ status: "todo"
     - 最小复现测试：`.scratch/repro_create_status/repro.test.tsx`，配合配置 `.scratch/repro_create_status/vitest.config.mjs`。
     - 执行命令：`cd src/frontend && npx vitest run --config ../../.scratch/repro_create_status/vitest.config.mjs`。
     - 实测输出：`AssertionError: expected undefined to be defined`，精准复现 `runtimeSummary` 中条目丢失、状态无法从 stopped 更新到 starting 的事实。
-- 处理：未开
+- 处理：t098；resolution=transferred；reason=已复现新环境实时状态缺失，转交 task 统一集合运行状态投影与实时对账
